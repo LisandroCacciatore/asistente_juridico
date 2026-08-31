@@ -447,4 +447,35 @@ def ciclo(usar_chrome=True):
 
 
 if __name__ == "__main__":
-    ciclo()
+    import sys as _sys
+    import time as _time
+    from datetime import datetime as _dt
+    from config import INTERVALO_MINUTOS, HORARIO_INICIO, HORARIO_FIN, DIAS_HABILES
+
+    modo_continuo = "--una-vez" not in _sys.argv
+
+    if not modo_continuo:
+        ciclo()
+    else:
+        print(f"  Modo continuo: revisa cada {INTERVALO_MINUTOS} min, de "
+              f"{HORARIO_INICIO} a {HORARIO_FIN}, días hábiles (lun-vie).")
+        print("  La primera vez pide login (como siempre); después, mientras la\n"
+              "  sesión de SISFE no expire, revisa solo — sin pedirte nada.")
+        print("  Para detenerlo: Ctrl+C en esta ventana.\n")
+        try:
+            while True:
+                ahora = _dt.now()
+                en_horario = (
+                    ahora.weekday() in DIAS_HABILES
+                    and HORARIO_INICIO <= ahora.strftime("%H:%M") <= HORARIO_FIN
+                )
+                if en_horario:
+                    try:
+                        ciclo()
+                    except Exception as e:
+                        print(f"  ⚠ Error en el ciclo: {type(e).__name__}: {e}")
+                else:
+                    print(f"  Fuera de horario ({ahora.strftime('%H:%M')}) — esperando...")
+                _time.sleep(INTERVALO_MINUTOS * 60)
+        except KeyboardInterrupt:
+            print("\n  Detenido.")
