@@ -1,0 +1,112 @@
+<!-- ============================================================
+     BLOQUE: "Pendientes de clasificar"
+     ------------------------------------------------------------
+     Cómo agregarlo a tu asistente_juridico.html:
+
+     1) HTML: pegá el <div id="pendientes-seccion"> de más abajo en
+        algún lugar visible del panel — antes o después de la sección
+        de "Cédulas listas" es lo más natural.
+
+     2) JS: pegá TODO el bloque <script> de abajo antes de </body>,
+        o junto a las otras funciones.
+
+     3) Llamá a renderPendientes() una vez al cargar la página. Si tu
+        loadData() ya existe, sumale una línea al final:
+            renderPendientes();
+        (si no la tenés a mano, este bloque también la llama solo
+        cada vez que refresca, así que alcanza con dejarlo pegado).
+
+     No toca ninguna función que ya tengas: nombres propios
+     (renderPendientes, elegirTipo, confirmarTipo).
+     ============================================================ -->
+
+<!-- 1) LA SECCIÓN (pegar donde quieras que aparezca) -->
+<div id="pendientes-seccion" style="margin: 20px 0;"></div>
+
+
+<!-- 2) EL SCRIPT (pegar antes de </body>) -->
+<script>
+const TIPOS_CEDULA = [
+  {valor: "estandar",    label: "Cédula estándar"},
+  {valor: "aud51",       label: "Audiencia Art. 51 CPL"},
+  {valor: "bus_federal", label: "Bus Federal — Ley 22.172"},
+  {valor: "traslado",    label: "Traslado de demanda"},
+];
+
+async function renderPendientes(){
+  let data;
+  try{
+    data = await (await fetch('/api/cedulas')).json();
+  }catch(e){ return; }  // sin servidor (modo demo): no mostrar nada
+
+  const pendientes = data.pendientes || [];
+  const cont = document.getElementById('pendientes-seccion');
+  if(!cont) return;
+
+  if(pendientes.length === 0){
+    cont.innerHTML = '';
+    return;
+  }
+
+  cont.innerHTML = `
+    <h3 style="margin-bottom:10px;">📋 Pendientes de clasificar (${pendientes.length})</h3>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      ${pendientes.map(p => tarjetaPendiente(p)).join('')}
+    </div>
+  `;
+}
+
+function tarjetaPendiente(p){
+  const opciones = TIPOS_CEDULA.map(t =>
+    `<option value="${t.valor}" ${t.valor === p.tipo_sugerido ? 'selected' : ''}>${t.label}</option>`
+  ).join('');
+
+  return `
+    <div style="border:1px solid #ddd; border-radius:10px; padding:14px 16px; background:#fffdf5;">
+      <div style="font-weight:600; margin-bottom:4px;">${p.caratula || '(sin carátula)'}</div>
+      <div style="font-size:12.5px; color:#666; margin-bottom:8px;">
+        CUIJ ${p.cuij || '—'} · ${p.novedad || ''} · ${p.fecha_decreto || ''}
+      </div>
+      <div style="background:#f7f7f7; border-radius:6px; padding:10px 12px; font-size:13px;
+                   max-height:120px; overflow:auto; margin-bottom:10px; white-space:pre-wrap;">
+        ${(p.texto_decreto || '').replace(/</g,'&lt;')}
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <label style="font-size:13px;">Tipo de cédula:</label>
+        <select id="tipo-${p.id}" style="padding:6px 8px; border-radius:6px; border:1px solid #ccc;">
+          ${opciones}
+        </select>
+        <button onclick="confirmarTipo('${p.id}')"
+                style="background:#1a2b4a; color:#fff; border:none; border-radius:6px;
+                       padding:7px 14px; cursor:pointer; font-weight:600;">
+          Generar cédula
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function confirmarTipo(idPendiente){
+  const select = document.getElementById('tipo-' + idPendiente);
+  const tipo = select.value;
+  try{
+    const r = await fetch('/api/generar_desde_pendiente', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id_pendiente: idPendiente, tipo})
+    });
+    const data = await r.json();
+    if(data.ok){
+      toast(`✓ Cédula generada`);
+      renderPendientes();
+      if (typeof loadData === 'function') loadData();  // refresca el resto del panel
+    } else {
+      toast('⚠ ' + (data.error || 'No se pudo generar'));
+    }
+  }catch(e){
+    toast('⚠ No pude contactar al servidor');
+  }
+}
+
+// Llamada inicial (por si loadData() de tu panel no la invoca).
+renderPendientes();
+</script>

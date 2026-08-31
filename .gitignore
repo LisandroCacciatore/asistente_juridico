@@ -1,0 +1,25 @@
+# --- Datos de clientes / causas reales — NUNCA subir ---
+estado.json
+estado_expedientes.json
+cedulas_procesadas.json
+log_acciones.jsonl
+cedulas_temp/
+ExpedientesDigitales/
+PDFs_decretos/
+
+# --- Sesiones de navegador (cookies de SISFE/FirmAr/MetaJurídico) ---
+chrome_profile_portales/
+chrome_profile_sisfe/
+
+# --- Credenciales (por las dudas; config.py hoy no debería tenerlas) ---
+config.py
+
+# --- Basura de Python / entorno ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- Restos de otras herramientas ---
+node_modules/
+package-lock.json

@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Asistente Jurídico — Estudio Segovia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#182338;          /* azul tinta institucional */
+    --ink-2:#2a3a57;
+    --paper:#eef1f5;        /* gris frío / papel */
+    --surface:#ffffff;
+    --line:#dbe1ea;
+    --line-strong:#c3ccd9;
+    --muted:#6a7686;
+    --muted-2:#8b96a5;
+    --escudo:#1f8a5b;       /* verde escudo = trámite/listo */
+    --escudo-soft:#e6f4ec;
+    --martillo:#4a5a8a;     /* resolución */
+    --ambar:#c07d1a;        /* pendiente */
+    --ambar-soft:#fbf1de;
+    --rojo:#b0384a;         /* requiere atención / puerta humana */
+    --rojo-soft:#f8e8ea;
+    --lock:#8a5a2a;
+    --lock-soft:#f6ecdf;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  body{
+    font-family:'Inter',system-ui,sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    line-height:1.5;
+    min-height:100vh;
+  }
+
+  /* ---------- Barra superior ---------- */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 28px;
+    background:var(--ink);
+    color:#eaeef4;
+    position:sticky;top:0;z-index:20;
+  }
+  .brand{display:flex;align-items:center;gap:11px;font-weight:600;letter-spacing:.2px}
+  .brand .mark{
+    width:26px;height:26px;border-radius:6px;
+    background:linear-gradient(135deg,#2f7d5a,#1f8a5b);
+    display:grid;place-items:center;color:#fff;font-size:14px;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.15);
+  }
+  .brand small{display:block;font-weight:400;font-size:11px;color:#9fb0c6;letter-spacing:.3px}
+  .status{display:flex;gap:20px;align-items:center;font-size:12.5px}
+  .status .item{display:flex;align-items:center;gap:7px;color:#c3cedd}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--escudo);box-shadow:0 0 0 3px rgba(31,138,91,.18)}
+  .dot.off{background:#5a6577}
+  .dot.warn{background:var(--ambar);box-shadow:0 0 0 3px rgba(192,125,26,.18)}
+
+  /* ---------- Secuencia de barrido ---------- */
+  #sweep{
+    position:fixed;inset:0;z-index:40;background:var(--ink);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:26px;color:#dfe6ef;transition:opacity .5s ease;
+  }
+  #sweep.hide{opacity:0;pointer-events:none}
+  .sweep-mark{
+    width:54px;height:54px;border-radius:13px;
+    background:linear-gradient(135deg,#2f7d5a,#1f8a5b);
+    display:grid;place-items:center;color:#fff;font-size:26px;
+    box-shadow:0 8px 30px rgba(31,138,91,.4);
+  }
+  .sweep-hello{font-family:'Spectral',serif;font-size:26px;font-weight:500;color:#fff}
+  .sweep-log{width:min(420px,84vw);display:flex;flex-direction:column;gap:11px}
+  .sweep-line{
+    display:flex;align-items:center;gap:12px;font-size:14px;color:#93a3ba;
+    opacity:0;transform:translateY(6px);transition:all .4s ease;
+  }
+  .sweep-line.show{opacity:1;transform:none}
+  .sweep-line .tick{color:var(--escudo);font-weight:700;width:16px;display:inline-block}
+  .sweep-line .spin{
+    width:14px;height:14px;border-radius:50%;
+    border:2px solid rgba(255,255,255,.2);border-top-color:#fff;
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .sweep-skip{position:absolute;bottom:26px;font-size:12px;color:#6d7d94;background:none;border:none;cursor:pointer;letter-spacing:.3px}
+  .sweep-skip:hover{color:#a9b8cc}
+
+  /* ---------- Contenido ---------- */
+  .wrap{max-width:1060px;margin:0 auto;padding:34px 28px 70px}
+  .hero{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-bottom:26px}
+  .greeting{font-family:'Spectral',serif;font-size:33px;font-weight:500;letter-spacing:-.4px;line-height:1.15}
+  .greeting .sub{display:block;font-family:'Inter';font-size:14.5px;font-weight:400;color:var(--muted);margin-top:8px;letter-spacing:0}
+  .date{font-size:13px;color:var(--muted-2);text-align:right;white-space:nowrap;text-transform:capitalize}
+
+  /* ---------- Tira de métricas ---------- */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:34px}
+  .stat{
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:16px 18px;position:relative;overflow:hidden;
+  }
+  .stat .n{font-family:'Spectral',serif;font-size:30px;font-weight:600;line-height:1}
+  .stat .l{font-size:12.5px;color:var(--muted);margin-top:6px}
+  .stat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line-strong)}
+  .stat.ok::before{background:var(--escudo)}
+  .stat.warn::before{background:var(--ambar)}
+  .stat.bus::before{background:var(--martillo)}
+
+  /* ---------- Secciones ---------- */
+  .section-head{display:flex;align-items:baseline;gap:12px;margin:0 0 14px}
+  .section-head h2{font-family:'Spectral',serif;font-size:19px;font-weight:600;letter-spacing:-.2px}
+  .section-head .count{font-size:12.5px;color:var(--muted-2);font-variant-numeric:tabular-nums}
+  .section + .section{margin-top:34px}
+
+  /* ---------- Fila de cédula ---------- */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .row{padding:18px 20px;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:none}
+  .row-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+  .row-main{min-width:0;flex:1}
+  .caratula{font-size:15.5px;font-weight:600;color:var(--ink);letter-spacing:-.1px}
+  .meta{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:7px;font-size:12.5px;color:var(--muted)}
+  .meta .cuij{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-2)}
+  .meta .sep{color:var(--line-strong)}
+  .tipo{
+    display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+    padding:3px 9px;border-radius:20px;white-space:nowrap;
+  }
+  .tipo .ic{font-size:12px}
+  .tipo.aud{background:var(--escudo-soft);color:#186b47}
+  .tipo.traslado{background:#e9edf6;color:#3a4a78}
+  .tipo.estandar{background:#eef1f5;color:#4a5768}
+  .tipo.honorarios{background:#f0ecf6;color:#5a4a78}
+  .tipo.bus{background:var(--lock-soft);color:var(--lock)}
+
+  .dest{margin-top:11px;font-size:12.5px;color:var(--muted)}
+  .dest b{color:var(--ink-2);font-weight:500}
+  .dest .chip{
+    display:inline-block;background:#f2f5f9;border:1px solid var(--line);
+    border-radius:6px;padding:2px 8px;margin:2px 5px 2px 0;font-size:11.5px;color:var(--ink-2);
+  }
+
+  /* ---------- Riel de estados ---------- */
+  .rail{display:flex;align-items:center;gap:0;margin-top:16px}
+  .node{display:flex;flex-direction:column;align-items:center;gap:6px;position:relative;flex:0 0 auto}
+  .node .bul{
+    width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+    background:#fff;border:2px solid var(--line-strong);color:var(--muted-2);
+    font-size:10px;font-weight:700;transition:all .35s ease;z-index:2;
+  }
+  .node .cap{font-size:10px;color:var(--muted-2);white-space:nowrap;letter-spacing:.1px}
+  .node.done .bul{background:var(--escudo);border-color:var(--escudo);color:#fff}
+  .node.done .cap{color:var(--ink-2)}
+  .node.gate .bul{background:var(--lock-soft);border-color:var(--lock);color:var(--lock)}
+  .node.gate.done .bul{background:var(--escudo);border-color:var(--escudo);color:#fff}
+  .node.gate .cap{color:var(--lock);font-weight:600}
+  .node.active .bul{border-color:var(--ink);color:var(--ink);box-shadow:0 0 0 4px rgba(24,35,56,.09)}
+  .link{height:2px;flex:1;background:var(--line);min-width:22px;position:relative;top:-9px}
+  .link.done{background:var(--escudo)}
+
+  .row-side{display:flex;flex-direction:column;align-items:flex-end;gap:10px;flex:0 0 auto}
+  .btn{
+    font-family:'Inter';font-size:13px;font-weight:600;border:none;border-radius:8px;
+    padding:9px 16px;cursor:pointer;transition:all .18s ease;white-space:nowrap;letter-spacing:.1px;
+  }
+  .btn.primary{background:var(--ink);color:#fff}
+  .btn.primary:hover{background:var(--ink-2)}
+  .btn.sign{background:var(--lock);color:#fff}
+  .btn.sign:hover{filter:brightness(1.08)}
+  .btn.upload{background:var(--escudo);color:#fff}
+  .btn.upload:hover{filter:brightness(1.06)}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line-strong)}
+  .btn.ghost:hover{background:#f5f7fa}
+  .btn:disabled{opacity:.55;cursor:default}
+  .done-tag{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--escudo)}
+
+  /* fila de atención */
+  .row.attn{background:linear-gradient(90deg,var(--rojo-soft),#fff 60%)}
+  .attn-note{
+    margin-top:12px;font-size:12.5px;color:#8a2f3d;background:#fff;
+    border:1px solid #eccdd2;border-radius:8px;padding:9px 12px;display:flex;gap:9px;align-items:flex-start;
+  }
+  .attn-note .ic{color:var(--rojo);font-weight:700}
+
+  /* ---------- Modales ---------- */
+  .scrim{position:fixed;inset:0;background:rgba(18,26,42,.55);z-index:50;display:none;align-items:center;justify-content:center;padding:20px}
+  .scrim.show{display:flex}
+  .modal{
+    background:#fff;border-radius:14px;width:min(520px,100%);max-height:90vh;overflow:auto;
+    box-shadow:0 24px 70px rgba(15,22,38,.35);animation:pop .22s ease;
+  }
+  @keyframes pop{from{transform:translateY(10px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+  .modal-head{padding:20px 22px 14px;border-bottom:1px solid var(--line)}
+  .modal-head h3{font-family:'Spectral',serif;font-size:19px;font-weight:600}
+  .modal-head p{font-size:12.5px;color:var(--muted);margin-top:4px}
+  .modal-body{padding:18px 22px}
+  .preview{
+    background:#f7f9fb;border:1px solid var(--line);border-radius:10px;padding:16px 18px;
+    font-size:12.5px;color:var(--ink-2);line-height:1.65;max-height:230px;overflow:auto;
+  }
+  .preview .ttl{text-align:center;font-weight:700;letter-spacing:1px;margin-bottom:10px;color:var(--ink)}
+  .preview .fld{margin:3px 0}
+  .preview .fld b{color:var(--ink)}
+  .gate-box{text-align:center;padding:6px 0 2px}
+  .gate-icon{font-size:30px;margin-bottom:6px}
+  .gate-box h4{font-size:15px;font-weight:600;margin-bottom:5px}
+  .gate-box p{font-size:12.5px;color:var(--muted);margin-bottom:16px}
+  .code-in{
+    font-family:'JetBrains Mono',monospace;font-size:18px;letter-spacing:6px;text-align:center;
+    border:1.5px solid var(--line-strong);border-radius:9px;padding:11px;width:200px;outline:none;
+  }
+  .code-in:focus{border-color:var(--ink)}
+  .modal-foot{padding:14px 22px 20px;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--line)}
+  .hint{font-size:11.5px;color:var(--muted-2);text-align:center;margin-top:12px}
+
+  /* toast */
+  .toast{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#fff;padding:12px 20px;border-radius:10px;font-size:13.5px;font-weight:500;
+    z-index:60;opacity:0;transition:all .3s ease;display:flex;align-items:center;gap:9px;box-shadow:0 10px 30px rgba(15,22,38,.3);
+    pointer-events:none;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast .ic{color:#6fe0a8}
+
+  .footnote{margin-top:38px;text-align:center;font-size:11.5px;color:var(--muted-2)}
+  .footnote b{color:var(--muted)}
+
+  @media (max-width:720px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .hero{flex-direction:column;align-items:flex-start;gap:8px}
+    .row-top{flex-direction:column}
+    .row-side{flex-direction:row;align-items:center;width:100%;justify-content:space-between}
+    .status .item span{display:none}
+    .rail{overflow-x:auto;padding-bottom:4px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+  }
+</style>
+</head>
+<body>
+
+<!-- Secuencia de barrido matutino -->
+<div id="sweep">
+  <div class="sweep-mark">§</div>
+  <div class="sweep-hello">Buenos días, Santiago.</div>
+  <div class="sweep-log" id="sweepLog">
+    <div class="sweep-line" data-final="✓ Sesión iniciada — perfil de Chrome"><span class="spin"></span><span>Conectando con SISFE…</span></div>
+    <div class="sweep-line" data-final="✓ 12 expedientes con novedades"><span class="spin"></span><span>Buscando novedades…</span></div>
+    <div class="sweep-line" data-final="✓ Decretos clasificados"><span class="spin"></span><span>Analizando decretos…</span></div>
+    <div class="sweep-line" data-final="✓ 8 cédulas listas para revisar"><span class="spin"></span><span>Generando cédulas…</span></div>
+  </div>
+  <button class="sweep-skip" onclick="finishSweep()">Saltar →</button>
+</div>
+
+<!-- Barra superior -->
+<div class="topbar">
+  <div class="brand">
+    <div class="mark">§</div>
+    <div>Asistente Jurídico<small>Estudio Segovia · Procuración</small></div>
+  </div>
+  <div class="status">
+    <div class="item"><span class="dot"></span><span>SISFE conectado</span></div>
+    <div class="item"><span class="dot"></span><span>Firma disponible</span></div>
+    <div class="item"><span class="dot warn"></span><span>Meta Jurídico · 2FA</span></div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="greeting">
+      Revisé 12 expedientes esta mañana.
+      <span class="sub">8 cédulas quedaron listas. Revisá, firmá y autorizá la subida cuando quieras.</span>
+    </div>
+    <div class="date" id="dateEl"></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="n">12</div><div class="l">Expedientes revisados</div></div>
+    <div class="stat ok"><div class="n">8</div><div class="l">Cédulas generadas</div></div>
+    <div class="stat warn"><div class="n">2</div><div class="l">Requieren atención</div></div>
+    <div class="stat bus"><div class="n">1</div><div class="l">Bus Federal (Ley 22.172)</div></div>
+  </div>
+
+  <!-- Listas -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Cédulas listas</h2>
+      <span class="count" id="listasCount">4 expedientes</span>
+    </div>
+    <div class="card" id="listas"></div>
+  </div>
+
+  <!-- Atención -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Requieren atención</h2>
+      <span class="count">2 expedientes</span>
+    </div>
+    <div class="card" id="atencion"></div>
+  </div>
+
+  <div class="footnote">
+    Prototipo de presentación · El asistente automatiza hasta el borde de cada acto irreversible y frena para que <b>vos autorices</b>: la <b>firma</b> y la <b>subida a Meta Jurídico</b> son siempre tuyas.
+  </div>
+</div>
+
+<!-- Modal genérico -->
+<div class="scrim" id="scrim">
+  <div class="modal" id="modal"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"><span class="ic">✓</span><span id="toastMsg"></span></div>
+
+<script>
+/* ---------------- Datos (carátulas reales del estudio) ---------------- */
+let cedulas = [
+  {
+    id:"gonzalez",
+    caratula:"GONZALEZ c/ ART EJEMPLO S/ ACCIDENTE",
+    tipo:"aud", tipoLabel:"Audiencia Art. 51 CPL", ic:"🛡",
+    cuij:"21-00000001-0", juzgado:"Laboral 3ª Nom. — Rosario",
+    juez:"Dra. Juez Demo",
+    dest:[{n:"ART Ejemplo S.A.", d:"Calle Falsa 123 — Rosario"}],
+    estado:"generada"
+  },
+  {
+    id:"ramirez",
+    caratula:"RAMIREZ c/ PROVINCIA DE SANTA FE S/ ACCIDENTE",
+    tipo:"traslado", tipoLabel:"Traslado de demanda", ic:"⚖",
+    cuij:"21-00000002-0", juzgado:"Laboral 5ª Nom. — Rosario",
+    juez:"Dra. Juez Demo",
+    dest:[
+      {n:"Sr. Gobernador de la Provincia de Santa Fe", d:"Domicilio oficial — Santa Fe"},
+      {n:"Fiscalía de Estado de la Provincia", d:"Domicilio oficial — Santa Fe"}
+    ],
+    nota:"Demandada = Provincia → dos cédulas (Gobernador y Fiscalía de Estado).",
+    estado:"generada"
+  },
+  {
+    id:"fernandez",
+    caratula:"FERNANDEZ c/ COMERCIAL EJEMPLO S/ COBRO DE PESOS",
+    tipo:"estandar", tipoLabel:"Cédula estándar", ic:"📄",
+    cuij:"21-00000003-0", juzgado:"Laboral 8ª Nom. — Rosario",
+    juez:"Dra. Juez Demo",
+    dest:[{n:"comercial ejemplo's Pizzas S.R.L.", d:"Domicilio constituido — Rosario"}],
+    estado:"generada"
+  },
+  {
+    id:"sanchez",
+    caratula:"SANCHEZ c/ ESTUDIO EJEMPLO S/ HONORARIOS",
+    tipo:"honorarios", tipoLabel:"Auto regulatorio", ic:"⚖",
+    cuij:"21-00000004-0", juzgado:"Laboral 10ª Nom. — Rosario",
+    juez:"Dra. Juez Demo",
+    dest:[
+      {n:"estudio ejemplo S.A.", d:"Domicilio constituido — Rosario"},
+      {n:"Caja Forense", d:"Domicilio constituido — Rosario"},
+      {n:"Caja de Seg. Social de Abogados", d:"Domicilio constituido — Rosario"}
+    ],
+    nota:"Auto regulatorio → se incluyen las Cajas (Forense y Seg. Social).",
+    estado:"generada"
+  }
+];
+
+let atencion = [
+  {
+    caratula:"PEREZ c/ EJEMPLO ART S/ EJECUCIÓN",
+    tipo:"bus", tipoLabel:"Bus Federal — Ley 22.172", ic:"🔒",
+    cuij:"21-00000005-0", juzgado:"Laboral 6ª Nom. — Rosario",
+    reason:"Notificación fuera de Santa Fe (liquidadores de ejemplo, CABA). El domicilio no está en SISFE — completá el destinatario a mano antes de firmar."
+  },
+  {
+    caratula:"RODRIGUEZ c/ PROVINCIA DE SANTA FE S/ ACCIDENTE",
+    tipo:"estandar", tipoLabel:"Revisión manual", ic:"⚠",
+    cuij:"21-00000006-0", juzgado:"Laboral 2ª Nom. — Rosario",
+    reason:"Dos decretos con la misma fecha en el expediente digital. El asistente no eligió solo — revisá cuál corresponde notificar."
+  }
+];
+
+/* ---------------- Riel de estados ---------------- */
+const STAGES = [
+  {key:"detectado", cap:"Detectado"},
+  {key:"generado",  cap:"Generado"},
+  {key:"firma",     cap:"Firma", gate:true, ic:"🔒"},
+  {key:"firmado",   cap:"Firmado"},
+  {key:"subida",    cap:"Subida", gate:true, ic:"🔒"},
+  {key:"presentado",cap:"Presentado"}
+];
+// hasta dónde llegó cada estado
+const REACHED = { generada:1, firmada:3, presentada:5 };
+
+function rail(estado){
+  const reached = REACHED[estado];
+  let html = '<div class="rail">';
+  STAGES.forEach((s,i)=>{
+    const done = i<=reached;
+    const active = i===reached+1 && !s.gate ? false : false;
+    let cls = "node";
+    if(s.gate) cls+=" gate";
+    if(done) cls+=" done";
+    const glyph = done ? "✓" : (s.gate ? (s.ic||"🔒") : (i+1));
+    html += `<div class="${cls}"><div class="bul">${glyph}</div><div class="cap">${s.cap}</div></div>`;
+    if(i<STAGES.length-1){
+      html += `<div class="link ${i<reached?'done':''}"></div>`;
+    }
+  });
+  html += '</div>';
+  return html;
+}
+
+/* ---------------- Render ---------------- */
+function tipoTag(c){
+  return `<span class="tipo ${c.tipo}"><span class="ic">${c.ic}</span>${c.tipoLabel}</span>`;
+}
+
+function sideFor(c){
+  if(c.estado==="generada")
+    return `<button class="btn primary" onclick="review('${c.id}')">Revisar y firmar</button>`;
+  if(c.estado==="firmada")
+    return `<button class="btn upload" onclick="upload('${c.id}')">Subir a Meta Jurídico</button>`;
+  return `<span class="done-tag">✓ Presentada</span>`;
+}
+
+function destBlock(c){
+  const chips = c.dest.map(d=>`<span class="chip">${d.n}</span>`).join("");
+  const plural = c.dest.length>1 ? `${c.dest.length} destinatarios` : "1 destinatario";
+  return `<div class="dest"><b>${plural}:</b> ${chips}</div>`;
+}
+
+function renderListas(){
+  const el = document.getElementById("listas");
+  el.innerHTML = cedulas.map(c=>`
+    <div class="row" id="row-${c.id}">
+      <div class="row-top">
+        <div class="row-main">
+          <div class="caratula">${c.caratula}</div>
+          <div class="meta">
+            <span class="cuij">CUIJ ${c.cuij}</span>
+            <span class="sep">·</span><span>${c.juzgado}</span>
+            <span class="sep">·</span><span>${c.juez}</span>
+          </div>
+          ${destBlock(c)}
+          ${c.nota?`<div class="dest" style="margin-top:8px;color:var(--muted-2)">↳ ${c.nota}</div>`:""}
+          ${rail(c.estado)}
+        </div>
+        <div class="row-side">
+          ${tipoTag(c)}
+          ${sideFor(c)}
+        </div>
+      </div>
+    </div>`).join("");
+}
+
+function renderAtencion(){
+  const el = document.getElementById("atencion");
+  el.innerHTML = atencion.map(c=>`
+    <div class="row attn">
+      <div class="row-top">
+        <div class="row-main">
+          <div class="caratula">${c.caratula}</div>
+          <div class="meta">
+            <span class="cuij">CUIJ ${c.cuij}</span>
+            <span class="sep">·</span><span>${c.juzgado}</span>
+          </div>
+          <div class="attn-note"><span class="ic">!</span><span>${c.reason}</span></div>
+        </div>
+        <div class="row-side">
+          ${tipoTag(c)}
+          <button class="btn ghost" onclick="toast('Se abriría el expediente en SISFE para completar a mano')">Resolver a mano</button>
+        </div>
+      </div>
+    </div>`).join("");
+}
+
+/* ---------------- Modales / puertas humanas ---------------- */
+const scrim = document.getElementById("scrim");
+const modal = document.getElementById("modal");
+function openModal(html){ modal.innerHTML=html; scrim.classList.add("show"); }
+function closeModal(){ scrim.classList.remove("show"); }
+scrim.addEventListener("click", e=>{ if(e.target===scrim) closeModal(); });
+
+function getCed(id){ return cedulas.find(c=>c.id===id); }
+
+// SERVER = true cuando el dashboard corre bajo servidor.py (localhost).
+// SERVER = false cuando se abre el HTML suelto (demo de presentación).
+let SERVER = false;
+
+/* ---------- Paso 1: revisar el PDF (igual en ambos modos) ---------- */
+function review(id){
+  const c = getCed(id);
+  const fldDest = (c.dest||[]).map(d=>`<div class="fld"><b>Sr./es:</b> ${d.n}</div><div class="fld"><b>Domicilio:</b> ${d.d}</div>`).join("");
+  openModal(`
+    <div class="modal-head">
+      <h3>Revisar cédula</h3>
+      <p>${c.caratula} · ${c.tipoLabel}</p>
+    </div>
+    <div class="modal-body">
+      <div class="preview">
+        <div class="ttl">CÉDULA DE NOTIFICACIÓN</div>
+        <div class="fld"><b>Juzgado:</b> ${c.juzgado}</div>
+        <div class="fld"><b>A cargo de:</b> ${c.juez||"—"}</div>
+        <div class="fld"><b>CUIJ:</b> ${c.cuij}</div>
+        <div style="height:8px"></div>
+        ${fldDest}
+        <div style="height:8px"></div>
+        <div class="fld">Hago saber a Ud. que en los autos de referencia se ha dictado el decreto que se notifica, quedando debidamente notificado/a del mismo…</div>
+      </div>
+      <p class="hint">Vista previa del PDF generado. Ya guardado en la carpeta del cliente.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal()">Cerrar</button>
+      <button class="btn sign" onclick="startFirma('${id}')">🔒 Firmar digitalmente</button>
+    </div>`);
+}
+
+/* ---------- Puerta de espera genérica (modo servidor) ---------- */
+// Muestra el cartel mientras Playwright trabaja, y cuando el script
+// frena en la firma/2FA muestra el botón "Ya está, continuar".
+function waitModal(msg, jobId, tipo, id){
+  const cont = jobId
+    ? `<button class="btn ${tipo==='firma'?'sign':'upload'}" onclick="continuar('${jobId}','${tipo}','${id}')">Ya está, continuar</button>`
+    : "";
+  openModal(`
+    <div class="modal-body">
+      <div class="gate-box">
+        <div class="gate-icon">${tipo==='firma'?'🔒':'🔐'}</div>
+        <h4>${tipo==='firma'?'Firma digital':'Subir a Meta Jurídico'}</h4>
+        <p>${msg.replace(/\n/g,'<br>')}</p>
+        ${!jobId?'<div class="spin" style="margin:8px auto"></div>':''}
+      </div>
+    </div>
+    ${jobId?`<div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cerrar</button>${cont}</div>`:''}`);
+}
+
+function continuar(jobId, tipo, id){
+  fetch('/api/continuar/'+jobId, {method:'POST'});
+  waitModal("Procesando… un momento.", null, tipo, id);
+  poll(jobId, id, tipo);          // reanudar el sondeo tras destrabar
+}
+
+async function poll(jobId, id, tipo){
+  try{
+    const st = await (await fetch('/api/estado/'+jobId)).json();
+    if(st.status==='corriendo'){
+      waitModal(tipo==='firma'
+        ? "Abriendo el portal de firma…\nMirá la ventana de Chrome."
+        : "Abriendo Meta Jurídico…\nMirá la ventana de Chrome.", null, tipo, id);
+      return setTimeout(()=>poll(jobId,id,tipo), 900);
+    }
+    if(st.status==='esperando'){
+      waitModal(st.message||"Completá el paso en la ventana de Chrome.", jobId, tipo, id);
+      return; // esperamos a que el usuario apriete "continuar"
+    }
+    if(st.status==='listo'){
+      const c = getCed(id);
+      if(tipo==='firma'){
+        const ruta = st.result?.ruta_firmada;
+        if(ruta){
+          c.estado='firmada'; c.ruta_firmada=ruta;
+          toast("✓ Cédula firmada — lista para subir");
+        } else {
+          toast("⚠ No se detectó el PDF firmado. Revisá la consola del servidor.");
+        }
+      } else {
+        const ok = st.result?.ok;
+        if(ok){ c.estado='presentada'; toast("✓ Presentada en Meta Jurídico"); }
+        else { toast("⚠ No se confirmó la presentación. Revisá la consola del servidor."); }
+      }
+      closeModal(); renderListas(); return;
+    }
+    if(st.status==='error'){ closeModal(); toast("⚠ "+(st.error||"Error en el proceso")); return; }
+    setTimeout(()=>poll(jobId,id,tipo), 900);
+  }catch(e){ closeModal(); toast("⚠ Se perdió la conexión con el servidor"); }
+}
+
+/* ---------- Firmar ---------- */
+async function startFirma(id){
+  const c = getCed(id);
+  if(!SERVER){ return signGateSim(id); }        // demo offline
+  closeModal();
+  try{
+    const r = await fetch('/api/firmar',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id_cedula:id, ruta_pdf:c.ruta_pdf})});
+    const {job_id} = await r.json();
+    poll(job_id, id, 'firma');
+  }catch(e){ toast("⚠ No pude contactar al servidor"); }
+}
+
+/* ---------- Subir ---------- */
+async function upload(id){
+  const c = getCed(id);
+  if(!SERVER){ return uploadSim(id); }           // demo offline
+  try{
+    const r = await fetch('/api/subir',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id_cedula:id, ruta_pdf:c.ruta_firmada, cuij:c.cuij, caratula:c.caratula})});
+    const {job_id} = await r.json();
+    poll(job_id, id, 'subida');
+  }catch(e){ toast("⚠ No pude contactar al servidor"); }
+}
+
+/* ---------- Simulaciones para la demo offline ---------- */
+function signGateSim(id){
+  openModal(`
+    <div class="modal-body"><div class="gate-box">
+      <div class="gate-icon">🔒</div><h4>Firma digital</h4>
+      <p>Este acto es tuyo e irreversible.<br>Ingresá tu contraseña de firma para continuar.</p>
+      <input class="code-in" type="password" id="signPass" value="1234" style="letter-spacing:8px">
+      <div class="hint">Demo — con el servidor, esto ocurre en la ventana real del portal.</div>
+    </div></div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn sign" onclick="const c=getCed('${id}');c.estado='firmada';closeModal();renderListas();toast('Cédula firmada — lista para subir')">Firmar</button>
+    </div>`);
+  setTimeout(()=>document.getElementById("signPass")?.focus(),50);
+}
+function uploadSim(id){
+  openModal(`
+    <div class="modal-body"><div class="gate-box">
+      <div class="gate-icon">🔐</div><h4>Subir a Meta Jurídico</h4>
+      <p>El asistente posicionó el expediente correcto.<br>Ingresá el código 2FA y confirmá la presentación.</p>
+      <input class="code-in" type="text" id="code2fa" maxlength="6" value="482913">
+      <div class="hint">Demo — con el servidor, el 2FA y la confirmación son en Meta Jurídico.</div>
+    </div></div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn upload" onclick="const c=getCed('${id}');c.estado='presentada';closeModal();renderListas();toast('Presentada en Meta Jurídico')">Confirmar y subir</button>
+    </div>`);
+  setTimeout(()=>document.getElementById("code2fa")?.focus(),50);
+}
+
+/* ---------------- Toast ---------------- */
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById("toast");
+  document.getElementById("toastMsg").textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove("show"), 3200);
+}
+
+/* ---------------- Fecha ---------------- */
+const d = new Date();
+document.getElementById("dateEl").textContent =
+  d.toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+
+/* ---------------- Secuencia de barrido ---------------- */
+const lines = document.querySelectorAll(".sweep-line");
+let step = 0;
+function nextLine(){
+  if(step>0){
+    const prev = lines[step-1];
+    prev.querySelector(".spin")?.replaceWith(Object.assign(document.createElement("span"),{className:"tick",textContent:"✓"}));
+    prev.querySelector("span:last-child").textContent = prev.dataset.final.replace("✓ ","");
+  }
+  if(step<lines.length){
+    lines[step].classList.add("show");
+    step++;
+    setTimeout(nextLine, 620);
+  } else {
+    setTimeout(finishSweep, 650);
+  }
+}
+function finishSweep(){
+  const s = document.getElementById("sweep");
+  s.classList.add("hide");
+  setTimeout(()=>s.style.display="none", 520);
+}
+
+// arranque: si hay servidor, uso las cédulas reales; si no, la demo.
+async function loadData(){
+  try{
+    const r = await fetch('/api/cedulas');
+    if(r.ok){
+      const j = await r.json();
+      if(j.cedulas && j.cedulas.length){
+        cedulas = j.cedulas.filter(c=>c.estado!=='atencion');
+        atencion = j.cedulas.filter(c=>c.estado==='atencion');
+        SERVER = true;
+      }
+    }
+  }catch(e){ /* sin servidor: queda la demo cargada arriba */ }
+  renderListas();
+  renderAtencion();
+  document.getElementById("listasCount").textContent = cedulas.length + " expedientes";
+}
+loadData();
+
+const reduce = window.matchMedia("(prefers-reduced-motion:reduce)").matches;
+if(reduce){ finishSweep(); }
+else { setTimeout(nextLine, 700); }
+</script>
+</body>
+</html>

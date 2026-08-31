@@ -1,0 +1,12 @@
+{
+  "caratula": "PRUEBA TECNICA c/ ENTIDAD DE PRUEBA S/ VERIFICACION SISTEMA",
+  "cuij": "21-00000000-0",
+  "radicado": "Juzg. 1ra. Inst. Laboral 3ra. Nom. SEC.UNICA",
+  "ciudad": "Rosario",
+  "fecha_decreto": "30 de Julio de 2026",
+  "texto_decreto": "Este es un decreto de prueba para verificar que el generador arma el PDF y que el circuito de firma abre el archivo correcto. Notifíquese.",
+  "tipo": "estandar",
+  "destinatarios": [
+    {"nombre": "Entidad de Prueba S.A.", "domicilio": "Calle Falsa 123 - Rosario"}
+  ]
+}

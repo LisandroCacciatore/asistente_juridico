@@ -1,0 +1,12 @@
+{
+  "caratula": "GONZALEZ DEMO C/ ART EJEMPLO SA S/ACCIDENTE LABORAL",
+  "cuij": "21-00000001-0",
+  "radicado": "Juzg. 1ra. Inst. Laboral 3ra. Nom. SEC.UNICA",
+  "ciudad": "Rosario",
+  "fecha_decreto": "6 de Agosto de 2026",
+  "texto_decreto": "DOCUMENTO DE PRUEBA — generado únicamente para verificar el circuito de firma y subida a Meta Jurídico. No representa un decreto real y NO debe presentarse. Notifíquese.",
+  "tipo": "estandar",
+  "destinatarios": [
+    {"nombre": "ART Ejemplo S.A.", "domicilio": "Calle Falsa 123 - Rosario"}
+  ]
+}

@@ -1,0 +1,131 @@
+<!-- ============================================================
+     BLOQUE: "Firmar todas las pendientes" (firma en lote)
+     ------------------------------------------------------------
+     Cómo agregarlo a tu asistente_juridico.html:
+
+     1) HTML: pegá el <button> de más abajo cerca del título
+        "Cédulas listas" (donde dice algo como
+        <div class="section-head"> ... <h2>Cédulas listas</h2> ...).
+        No tiene que ir en un lugar exacto: cualquier lugar visible
+        del panel funciona, es un botón suelto.
+
+     2) JS: pegá TODO el bloque <script> de abajo justo antes de
+        </body>, o junto a las otras funciones (buscá donde están
+        "function upload(" o "function startFirma(" y pegalo cerca).
+
+     Este bloque NO toca ninguna función que ya tengas: solo agrega
+     funciones nuevas con nombres propios (firmarTodasPendientes,
+     iniciarFirmaLote, pollLote, waitModalLote, continuarLote), así
+     que no debería chocar con nada de las mejoras que ya tiene tu
+     panel (tema oscuro, filtros, visor de PDF, etc.).
+     ============================================================ -->
+
+<!-- 1) EL BOTÓN (pegar donde quieras que se vea) -->
+<button class="btn primary" onclick="firmarTodasPendientes()">
+  🔒 Firmar todas las pendientes
+</button>
+
+
+<!-- 2) EL SCRIPT (pegar antes de </body>) -->
+<script>
+/* ---------- Firma en lote: varias cédulas, una sola ventana ---------- */
+
+async function firmarTodasPendientes(){
+  let data;
+  try{
+    data = await (await fetch('/api/cedulas')).json();
+  }catch(e){ toast("⚠ No pude contactar al servidor"); return; }
+
+  const pendientes = (data.cedulas||[]).filter(c => c.estado === 'generada' && c.ruta_pdf);
+  if(pendientes.length === 0){
+    toast("No hay cédulas pendientes de firma");
+    return;
+  }
+
+  const items = pendientes.map(c => ({id_cedula: c.id, ruta_pdf: c.ruta_pdf}));
+  const itemsJson = JSON.stringify(items).replace(/'/g, "&#39;");
+
+  openModal(`
+    <div class="modal-body">
+      <div class="gate-box">
+        <div class="gate-icon">🔒</div>
+        <h4>Firmar ${items.length} cédula${items.length>1?'s':''}</h4>
+        <p>Se abre FirmAr una sola vez.<br>
+           Te logueás una vez, y después ponés tu PIN y tocás FIRMAR<br>
+           para cada documento, sin cerrar la ventana.</p>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn sign" onclick='iniciarFirmaLote(${itemsJson})'>Empezar</button>
+    </div>`);
+}
+
+async function iniciarFirmaLote(items){
+  closeModal();
+  try{
+    const r = await fetch('/api/firmar_lote', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({items})
+    });
+    const {job_id} = await r.json();
+    pollLote(job_id, items.length);
+  }catch(e){ toast("⚠ No pude contactar al servidor"); }
+}
+
+function waitModalLote(msg, jobId, total){
+  const cont = jobId
+    ? `<button class="btn sign" onclick="continuarLote('${jobId}', ${total})">Ya está, continuar</button>`
+    : "";
+  openModal(`
+    <div class="modal-body">
+      <div class="gate-box">
+        <div class="gate-icon">🔒</div>
+        <h4>Firmando en lote</h4>
+        <p>${msg.replace(/\n/g,'<br>')}</p>
+        ${!jobId ? '<div class="spin" style="margin:8px auto"></div>' : ''}
+      </div>
+    </div>
+    ${jobId ? `<div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cerrar</button>${cont}</div>` : ''}`);
+}
+
+function continuarLote(jobId, total){
+  fetch('/api/continuar/'+jobId, {method:'POST'});
+  waitModalLote("Procesando… un momento.", null, total);
+  pollLote(jobId, total);
+}
+
+async function pollLote(jobId, total){
+  try{
+    const st = await (await fetch('/api/estado/'+jobId)).json();
+
+    if(st.status==='corriendo'){
+      waitModalLote("Abriendo FirmAr…\nMirá la ventana de Chrome.", null, total);
+      return setTimeout(()=>pollLote(jobId,total), 900);
+    }
+    if(st.status==='esperando'){
+      waitModalLote(st.message || "Completá el paso en la ventana de Chrome.", jobId, total);
+      return; // se retoma con continuarLote()
+    }
+    if(st.status==='listo'){
+      const resultados = st.result?.resultados || {};
+      const firmados = Object.values(resultados).filter(Boolean).length;
+      closeModal();
+      toast(`✓ ${firmados}/${total} cédula(s) firmada(s)`);
+      // Refresca el panel entero para que se vean los nuevos estados.
+      if (typeof loadData === 'function') loadData();
+      else location.reload();
+      return;
+    }
+    if(st.status==='error'){
+      closeModal();
+      toast("⚠ " + (st.error || "Error en el lote"));
+      return;
+    }
+    setTimeout(()=>pollLote(jobId,total), 900);
+  }catch(e){
+    closeModal();
+    toast("⚠ Se perdió la conexión con el servidor");
+  }
+}
+</script>
