@@ -6,6 +6,7 @@ log_acciones.jsonl
 cedulas_temp/
 ExpedientesDigitales/
 PDFs_decretos/
+ESTUDIO JURIDICO/
 
 # --- Sesiones de navegador (cookies de SISFE/FirmAr/MetaJurídico) ---
 chrome_profile_portales/
