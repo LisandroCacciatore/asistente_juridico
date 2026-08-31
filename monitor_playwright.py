@@ -154,16 +154,16 @@ def obtener_expedientes(page):
     page.wait_for_timeout(2500)
 
     # Filtro de "novedades últimos X días" — selector real capturado con
-    # codegen: hay que DESPLEGAR "Filtros de Búsqueda" primero (está
-    # colapsado por defecto), recién ahí el campo #diasNovedades es visible.
-    try:
-        page.get_by_text(re.compile("Filtros de Búsqueda", re.I)).first.click(timeout=5000)
-        page.wait_for_timeout(500)
-    except Exception:
-        pass  # puede que ya esté desplegado
-
+    # codegen: el campo #diasNovedades vive dentro de "Filtros de
+    # Búsqueda", que es un desplegable. Antes asumíamos que SIEMPRE
+    # arranca cerrado y le hacíamos clic para abrirlo — pero a veces ya
+    # está abierto (SISFE puede recordarlo por sesión/perfil), y ese
+    # clic lo CERRABA por error. Ahora se revisa el estado real primero.
     try:
         campo = page.locator("#diasNovedades")
+        if campo.count() == 0 or not campo.is_visible():
+            page.get_by_text(re.compile("Filtros de Búsqueda", re.I)).first.click(timeout=5000)
+            page.wait_for_timeout(500)
         campo.click(timeout=5000)
         campo.fill(DIAS_NOVEDADES)
         print(f"  ✓ Filtro: novedades últimos {DIAS_NOVEDADES} días")
