@@ -45,7 +45,10 @@ from expediente_utils import datos_del_juzgado
 from extraccion_decretos import es_cedula_ya_presentada, extraer_texto_decreto
 import cedulas
 import generar_cedula
-import estado
+import estado as estado_app  # nombre distinto: 'estado' ya se usa como variable
+                              # local (el diccionario de cargar_estado()) en
+                              # varias funciones de este archivo — con el mismo
+                              # nombre, tapaba al módulo y rompía agregar_pendiente.
 
 # --- Constantes SISFE -------------------------------------------
 SISFE_LOGIN = "https://sisfe.justiciasantafe.gov.ar/login-matriculado"
@@ -413,7 +416,7 @@ def procesar_expediente(page, exp, registro, estado):
             "tipo_sugerido": tipo_sugerido,
         }
         try:
-            estado.agregar_pendiente(pendiente)
+            estado_app.agregar_pendiente(pendiente)
             marcar_como_procesado(registro, cuij, dec["id"], [])
             print(f"    → Pendiente de clasificar: {dec['novedad'][:50]} (sugerido: {tipo_sugerido})")
         except Exception as e:
