@@ -318,11 +318,11 @@
 <div class="toast" id="toast"><span class="ic">✓</span><span id="toastMsg"></span></div>
 
 <script>
-/* ---------------- Datos (carátulas reales del estudio) ---------------- */
+/* ---------------- Datos DEMO (ficticios, solo para el modo sin servidor) ---------------- */
 let cedulas = [
   {
     id:"gonzalez",
-    caratula:"GONZALEZ c/ ART EJEMPLO S/ ACCIDENTE",
+    caratula:"GONZALEZ c/ ART EJEMPLO S/ ACCIDENTE LABORAL",
     tipo:"aud", tipoLabel:"Audiencia Art. 51 CPL", ic:"🛡",
     cuij:"21-00000001-0", juzgado:"Laboral 3ª Nom. — Rosario",
     juez:"Dra. Juez Demo",
@@ -331,13 +331,13 @@ let cedulas = [
   },
   {
     id:"ramirez",
-    caratula:"RAMIREZ c/ PROVINCIA DE SANTA FE S/ ACCIDENTE",
+    caratula:"RAMIREZ c/ PROVINCIA DE SANTA FE S/ DAÑOS",
     tipo:"traslado", tipoLabel:"Traslado de demanda", ic:"⚖",
     cuij:"21-00000002-0", juzgado:"Laboral 5ª Nom. — Rosario",
-    juez:"Dra. Juez Demo",
+    juez:"Dr. Juez Demo",
     dest:[
-      {n:"Sr. Gobernador de la Provincia de Santa Fe", d:"Domicilio oficial — Santa Fe"},
-      {n:"Fiscalía de Estado de la Provincia", d:"Domicilio oficial — Santa Fe"}
+      {n:"Sr. Gobernador de la Provincia de Santa Fe", d:"Domicilio oficial"},
+      {n:"Fiscalía de Estado de la Provincia", d:"Domicilio oficial"}
     ],
     nota:"Demandada = Provincia → dos cédulas (Gobernador y Fiscalía de Estado).",
     estado:"generada"
@@ -347,8 +347,8 @@ let cedulas = [
     caratula:"FERNANDEZ c/ COMERCIAL EJEMPLO S/ COBRO DE PESOS",
     tipo:"estandar", tipoLabel:"Cédula estándar", ic:"📄",
     cuij:"21-00000003-0", juzgado:"Laboral 8ª Nom. — Rosario",
-    juez:"Dra. Juez Demo",
-    dest:[{n:"comercial ejemplo's Pizzas S.R.L.", d:"Domicilio constituido — Rosario"}],
+    juez:"Dr. Juez Demo",
+    dest:[{n:"Comercial Ejemplo S.R.L.", d:"Domicilio constituido — Rosario"}],
     estado:"generada"
   },
   {
@@ -358,7 +358,7 @@ let cedulas = [
     cuij:"21-00000004-0", juzgado:"Laboral 10ª Nom. — Rosario",
     juez:"Dra. Juez Demo",
     dest:[
-      {n:"estudio ejemplo S.A.", d:"Domicilio constituido — Rosario"},
+      {n:"Estudio Ejemplo S.A.", d:"Domicilio constituido — Rosario"},
       {n:"Caja Forense", d:"Domicilio constituido — Rosario"},
       {n:"Caja de Seg. Social de Abogados", d:"Domicilio constituido — Rosario"}
     ],
@@ -369,13 +369,13 @@ let cedulas = [
 
 let atencion = [
   {
-    caratula:"PEREZ c/ EJEMPLO ART S/ EJECUCIÓN",
+    caratula:"PEREZ c/ ART EJEMPLO S/ EJECUCION",
     tipo:"bus", tipoLabel:"Bus Federal — Ley 22.172", ic:"🔒",
     cuij:"21-00000005-0", juzgado:"Laboral 6ª Nom. — Rosario",
-    reason:"Notificación fuera de Santa Fe (liquidadores de ejemplo, CABA). El domicilio no está en SISFE — completá el destinatario a mano antes de firmar."
+    reason:"Notificación fuera de Santa Fe. El domicilio no está en SISFE — completá el destinatario a mano antes de firmar."
   },
   {
-    caratula:"RODRIGUEZ c/ PROVINCIA DE SANTA FE S/ ACCIDENTE",
+    caratula:"RODRIGUEZ c/ MUNICIPALIDAD EJEMPLO S/ DAÑOS",
     tipo:"estandar", tipoLabel:"Revisión manual", ic:"⚠",
     cuij:"21-00000006-0", juzgado:"Laboral 2ª Nom. — Rosario",
     reason:"Dos decretos con la misma fecha en el expediente digital. El asistente no eligió solo — revisá cuál corresponde notificar."
@@ -414,38 +414,47 @@ function rail(estado){
 }
 
 /* ---------------- Render ---------------- */
+// Escapa texto antes de interpolar en HTML. Los datos (carátulas,
+// destinatarios, razones) vienen de SISFE/Meta — texto de terceros que
+// no debe poder inyectar HTML/JS en el dashboard.
+function esc(v){
+  return String(v ?? "").replace(/[&<>"']/g, ch => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  })[ch]);
+}
+
 function tipoTag(c){
-  return `<span class="tipo ${c.tipo}"><span class="ic">${c.ic}</span>${c.tipoLabel}</span>`;
+  return `<span class="tipo ${esc(c.tipo)}"><span class="ic">${esc(c.ic)}</span>${esc(c.tipoLabel)}</span>`;
 }
 
 function sideFor(c){
   if(c.estado==="generada")
-    return `<button class="btn primary" onclick="review('${c.id}')">Revisar y firmar</button>`;
+    return `<button class="btn primary" onclick="review('${esc(c.id)}')">Revisar y firmar</button>`;
   if(c.estado==="firmada")
-    return `<button class="btn upload" onclick="upload('${c.id}')">Subir a Meta Jurídico</button>`;
+    return `<button class="btn upload" onclick="upload('${esc(c.id)}')">Subir a Meta Jurídico</button>`;
   return `<span class="done-tag">✓ Presentada</span>`;
 }
 
 function destBlock(c){
-  const chips = c.dest.map(d=>`<span class="chip">${d.n}</span>`).join("");
-  const plural = c.dest.length>1 ? `${c.dest.length} destinatarios` : "1 destinatario";
+  const chips = (c.dest||[]).map(d=>`<span class="chip">${esc(d.n)}</span>`).join("");
+  const plural = (c.dest||[]).length>1 ? `${c.dest.length} destinatarios` : "1 destinatario";
   return `<div class="dest"><b>${plural}:</b> ${chips}</div>`;
 }
 
 function renderListas(){
   const el = document.getElementById("listas");
   el.innerHTML = cedulas.map(c=>`
-    <div class="row" id="row-${c.id}">
+    <div class="row" id="row-${esc(c.id)}">
       <div class="row-top">
         <div class="row-main">
-          <div class="caratula">${c.caratula}</div>
+          <div class="caratula">${esc(c.caratula)}</div>
           <div class="meta">
-            <span class="cuij">CUIJ ${c.cuij}</span>
-            <span class="sep">·</span><span>${c.juzgado}</span>
-            <span class="sep">·</span><span>${c.juez}</span>
+            <span class="cuij">CUIJ ${esc(c.cuij)}</span>
+            <span class="sep">·</span><span>${esc(c.juzgado)}</span>
+            <span class="sep">·</span><span>${esc(c.juez)}</span>
           </div>
           ${destBlock(c)}
-          ${c.nota?`<div class="dest" style="margin-top:8px;color:var(--muted-2)">↳ ${c.nota}</div>`:""}
+          ${c.nota?`<div class="dest" style="margin-top:8px;color:var(--muted-2)">↳ ${esc(c.nota)}</div>`:""}
           ${rail(c.estado)}
         </div>
         <div class="row-side">
@@ -462,12 +471,12 @@ function renderAtencion(){
     <div class="row attn">
       <div class="row-top">
         <div class="row-main">
-          <div class="caratula">${c.caratula}</div>
+          <div class="caratula">${esc(c.caratula)}</div>
           <div class="meta">
-            <span class="cuij">CUIJ ${c.cuij}</span>
-            <span class="sep">·</span><span>${c.juzgado}</span>
+            <span class="cuij">CUIJ ${esc(c.cuij)}</span>
+            <span class="sep">·</span><span>${esc(c.juzgado)}</span>
           </div>
-          <div class="attn-note"><span class="ic">!</span><span>${c.reason}</span></div>
+          <div class="attn-note"><span class="ic">!</span><span>${esc(c.reason)}</span></div>
         </div>
         <div class="row-side">
           ${tipoTag(c)}
@@ -493,18 +502,18 @@ let SERVER = false;
 /* ---------- Paso 1: revisar el PDF (igual en ambos modos) ---------- */
 function review(id){
   const c = getCed(id);
-  const fldDest = (c.dest||[]).map(d=>`<div class="fld"><b>Sr./es:</b> ${d.n}</div><div class="fld"><b>Domicilio:</b> ${d.d}</div>`).join("");
+  const fldDest = (c.dest||[]).map(d=>`<div class="fld"><b>Sr./es:</b> ${esc(d.n)}</div><div class="fld"><b>Domicilio:</b> ${esc(d.d)}</div>`).join("");
   openModal(`
     <div class="modal-head">
       <h3>Revisar cédula</h3>
-      <p>${c.caratula} · ${c.tipoLabel}</p>
+      <p>${esc(c.caratula)} · ${esc(c.tipoLabel)}</p>
     </div>
     <div class="modal-body">
       <div class="preview">
         <div class="ttl">CÉDULA DE NOTIFICACIÓN</div>
-        <div class="fld"><b>Juzgado:</b> ${c.juzgado}</div>
-        <div class="fld"><b>A cargo de:</b> ${c.juez||"—"}</div>
-        <div class="fld"><b>CUIJ:</b> ${c.cuij}</div>
+        <div class="fld"><b>Juzgado:</b> ${esc(c.juzgado)}</div>
+        <div class="fld"><b>A cargo de:</b> ${esc(c.juez||"—")}</div>
+        <div class="fld"><b>CUIJ:</b> ${esc(c.cuij)}</div>
         <div style="height:8px"></div>
         ${fldDest}
         <div style="height:8px"></div>

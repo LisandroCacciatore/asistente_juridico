@@ -17,6 +17,7 @@ import sys
 import uuid
 import threading
 import traceback
+from urllib.parse import urlsplit
 
 # Consola Windows a prueba de Unicode (ver nota en _navegador.py).
 for _flujo in (sys.stdout, sys.stderr):
@@ -25,8 +26,8 @@ for _flujo in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -37,6 +38,37 @@ import generar_cedula
 
 app = FastAPI(title="Asistente Jurídico — Estudio Segovia")
 BASE = os.path.dirname(os.path.abspath(__file__))
+
+
+@app.middleware("http")
+async def _proteger_csrf(request: Request, call_next):
+    """Anti-CSRF mínimo (Fase 0).
+
+    El dashboard corre en localhost y dispara acciones que tocan portales
+    (firmar, subir, continuar). Un sitio web malicioso abierto en el mismo
+    navegador podría mandar un <form> cross-site a http://localhost:8000
+    sin que CORS lo frene (los forms simples no hacen preflight).
+
+    Defensa: en requests con mutación (POST/PUT/PATCH/DELETE), si el
+    navegador manda el header Origin, su host debe coincidir con el Host
+    del request. Los requests sin Origin (curl, scripts locales, el propio
+    fetch same-origin cuando el servidor corre en otra IP) no se tocan:
+    el navegador SIEMPRE manda Origin en un POST cross-site.
+    """
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("origin")
+        if origin:
+            host = request.headers.get("host", "")
+            try:
+                origen_host = urlsplit(origin).netloc
+            except ValueError:
+                origen_host = ""
+            if origen_host and origen_host != host:
+                return JSONResponse(
+                    {"ok": False, "error": "Origen no permitido"},
+                    status_code=403,
+                )
+    return await call_next(request)
 
 # --- Registro de trabajos en curso -------------------------------
 # job_id -> {status, message, event, result, error, tipo, id_cedula}
