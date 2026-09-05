@@ -32,9 +32,20 @@ Civil 1-22, Familia 1-12 — compatible con config.JUZGADOS del formato
   (Anexo III rellenado y leído de vuelta). OJO: los formularios SRT se
   actualizan (Res. 5/2026) — validar vigencia con Santiago antes de uso
   real.
-- apertura-cuenta-judicial-banco-municipal: sin script (flujo de capturas +
-  borrador Gmail). Migrable como flujo; la navegación SISFE pasa al motor
-  Playwright del repo.
+- ~~apertura-cuenta-judicial-banco-municipal~~ → **MIGRADA a Playwright**
+  (2026-09): skills/apertura-cuenta-judicial-banco-municipal/ con SKILL.md +
+  scripts/apertura_cuenta_judicial.py (usa el perfil Chrome del monitor,
+  busca por CUIJ, 2 capturas, PDF con reportlab — test de armado PASS).
+  Selectores del buscador SISFE ⬅ VALIDAR en vivo. El borrador Gmail lo
+  arma la capa secretario (google-workspace) — nunca envía solo.
+
+## Resumen de la migración
+
+6/6 skills de Claude → repo. 4 con scripts ejecutables verificados
+(compilan + tests donde aplica), cedula-sisfe unificada al motor del repo,
+apertura-cuenta con flujo Playwright listo para validar en vivo. La
+dependencia "Claude in Chrome" quedó reemplazada por el Playwright del repo;
+el conector de Gmail por google-workspace (integración del secretario, Fase 1).
 
 ## Dependencia a reemplazar en la migración
 
