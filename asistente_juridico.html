@@ -286,6 +286,15 @@
     <div class="stat bus"><div class="n">1</div><div class="l">Bus Federal (Ley 22.172)</div></div>
   </div>
 
+  <!-- Pendientes de clasificar (los detecta el monitor; Santiago elige tipo) -->
+  <div class="section" id="pendientesSeccion" style="display:none">
+    <div class="section-head">
+      <h2>📋 Pendientes de clasificar</h2>
+      <span class="count" id="pendientesCount"></span>
+    </div>
+    <div class="card" id="pendientes"></div>
+  </div>
+
   <!-- Listas -->
   <div class="section">
     <div class="section-head">
@@ -302,6 +311,15 @@
       <span class="count">2 expedientes</span>
     </div>
     <div class="card" id="atencion"></div>
+  </div>
+
+  <!-- Actividad del secretario -->
+  <div class="section" id="actividadSeccion" style="display:none">
+    <div class="section-head">
+      <h2>Actividad del secretario</h2>
+      <span class="count">últimas acciones</span>
+    </div>
+    <div class="card" id="actividad"></div>
   </div>
 
   <div class="footnote">
@@ -484,6 +502,112 @@ function renderAtencion(){
         </div>
       </div>
     </div>`).join("");
+}
+
+/* ---------------- Pendientes de clasificar ---------------- */
+// Los pendientes los deja el monitor (cron del secretario): el texto del
+// decreto completo + un tipo_sugerido. Santiago confirma o cambia el tipo
+// con el texto a la vista — decisión humana, nunca automática.
+const TIPOS_CEDULA = [
+  {valor:"estandar",    label:"Cédula estándar"},
+  {valor:"aud51",       label:"Audiencia Art. 51 CPL"},
+  {valor:"bus_federal", label:"Bus Federal — Ley 22.172"},
+  {valor:"traslado",    label:"Traslado de demanda"},
+];
+let PENDIENTES = [];
+
+async function renderPendientes(){
+  try{
+    const r = await fetch('/api/cedulas');
+    if(!r.ok) return;
+    const j = await r.json();
+    PENDIENTES = j.pendientes || [];
+  }catch(e){ return; } // sin servidor (demo): no mostrar
+
+  const sec = document.getElementById("pendientesSeccion");
+  const cont = document.getElementById("pendientes");
+  if(!sec || !cont) return;
+  if(!PENDIENTES.length){ sec.style.display="none"; return; }
+  sec.style.display="";
+  document.getElementById("pendientesCount").textContent = PENDIENTES.length + (PENDIENTES.length===1?" pendiente":" pendientes");
+  cont.innerHTML = PENDIENTES.map(p=>`
+    <div class="row">
+      <div class="row-top">
+        <div class="row-main">
+          <div class="caratula">${esc(p.caratula||"(sin carátula)")}</div>
+          <div class="meta">
+            <span class="cuij">CUIJ ${esc(p.cuij||"—")}</span>
+            <span class="sep">·</span><span>${esc(p.novedad||"")}</span>
+            <span class="sep">·</span><span>${esc(p.fecha_decreto||"")}</span>
+          </div>
+          <div class="dest" style="margin-top:10px">
+            <div style="background:var(--paper);border-radius:8px;padding:10px 12px;
+                        font-size:12.5px;max-height:140px;overflow:auto;
+                        white-space:pre-wrap;color:var(--ink-2);line-height:1.55">
+              ${esc(p.texto_decreto||"")}
+            </div>
+          </div>
+        </div>
+        <div class="row-side">
+          <label style="font-size:12px;color:var(--muted);margin-bottom:4px">Tipo de cédula</label>
+          <select id="tipo-${esc(p.id)}" class="tipo-select"
+                  style="padding:8px 10px;border-radius:8px;border:1px solid var(--line-strong);
+                         font-family:'Inter';font-size:13px;color:var(--ink);background:#fff">
+            ${TIPOS_CEDULA.map(t=>`<option value="${t.valor}" ${t.valor===p.tipo_sugerido?"selected":""}>${t.label}</option>`).join("")}
+          </select>
+          <button class="btn primary" onclick="confirmarTipo('${esc(p.id)}')">Generar cédula</button>
+        </div>
+      </div>
+    </div>`).join("");
+}
+
+async function confirmarTipo(idPendiente){
+  const select = document.getElementById("tipo-"+idPendiente);
+  const tipo = select ? select.value : "estandar";
+  try{
+    const r = await fetch('/api/generar_desde_pendiente', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id_pendiente:idPendiente, tipo})
+    });
+    const data = await r.json();
+    if(data.ok){
+      toast("✓ Cédula generada — revisala en 'Cédulas listas'");
+      renderPendientes();
+      if(typeof loadData === "function") loadData();
+    } else {
+      toast("⚠ "+(data.error||"No se pudo generar"));
+    }
+  }catch(e){ toast("⚠ No pude contactar al servidor"); }
+}
+
+/* ---------------- Actividad del secretario ---------------- */
+async function renderActividad(){
+  let log;
+  try{
+    const r = await fetch('/api/log');
+    if(!r.ok) return;
+    log = await r.json();
+  }catch(e){ return; }
+
+  const sec = document.getElementById("actividadSeccion");
+  const cont = document.getElementById("actividad");
+  if(!sec || !cont) return;
+  if(!log || !log.length){ sec.style.display="none"; return; }
+  sec.style.display="";
+  cont.innerHTML = log.map(e=>{
+    const ic = ({generada:"📄", firmada:"✍️", presentada:"✅", eliminado_pdf:"🗑",
+                 pendiente_detectado:"📋", atencion:"⚠️"})[e.accion] || "·";
+    const cuando = (e.fecha_hora||"").replace("T"," ").slice(0,16);
+    return `<div class="row" style="display:flex;gap:12px;align-items:baseline;padding:10px 20px">
+      <span style="flex:0 0 auto">${ic}</span>
+      <span style="flex:1;min-width:0">
+        <span style="font-weight:600;font-size:13px">${esc(e.accion)}</span>
+        ${e.caratula?`<span style="color:var(--muted);font-size:12.5px"> — ${esc(e.caratula)}</span>`:""}
+        ${e.detalle?`<div style="color:var(--muted-2);font-size:11.5px;margin-top:2px">${esc(e.detalle)}</div>`:""}
+      </span>
+      <span style="flex:0 0 auto;font-size:11.5px;color:var(--muted-2);font-variant-numeric:tabular-nums">${esc(cuando)}</span>
+    </div>`;
+  }).join("");
 }
 
 /* ---------------- Modales / puertas humanas ---------------- */
@@ -695,6 +819,8 @@ async function loadData(){
   }catch(e){ /* sin servidor: queda la demo cargada arriba */ }
   renderListas();
   renderAtencion();
+  renderPendientes();
+  renderActividad();
   document.getElementById("listasCount").textContent = cedulas.length + " expedientes";
 }
 loadData();

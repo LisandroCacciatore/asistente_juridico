@@ -150,6 +150,12 @@ def api_cedulas():
     return estado.cargar()
 
 
+# --- Log de acciones (para la sección "Actividad") ----------------
+@app.get("/api/log")
+def api_log(limite: int = 30):
+    return estado.leer_log(limite=limite)
+
+
 # --- Confirmar el tipo de un pendiente y generar la cédula --------
 @app.post("/api/generar_desde_pendiente")
 def api_generar_desde_pendiente(d: DatosGenerarDesdePendiente):
