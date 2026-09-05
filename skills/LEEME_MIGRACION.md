@@ -17,10 +17,11 @@ Civil 1-22, Familia 1-12 — compatible con config.JUZGADOS del formato
 
 ## Incompletas (faltan referencias del export)
 
-- cedula-sisfe: faltan references/juzgados.md, modelo-aud51.md, modelo-comun.md,
-  modelo-ley22172.md, scripts/generar_cedula.py. → El repo YA tiene el
-  equivalente en cedulas.py + cedulas_pdf.py (mismos 3 tipos + reglas).
-  Decisión: unificar con el repo, no duplicar.
+- ~~cedula-sisfe~~ → **UNIFICADA al repo** (2026-09): las reglas que
+  faltaban se portaron a `cedula_desde_texto.py` (es_sentencia,
+  recortar_sentencia, extraer_caratula/cuij/fecha, nombre_archivo_santiago)
+  y la skill quedó documentada en skills/cedula-sisfe.md apuntando al motor
+  del repo (cedulas_pdf.py + Playwright). Ya no hay dos implementaciones.
 - cliente-art-nuevo: faltan references/poder-especial.md, relato-de-hechos.md,
   convenio-honorarios.md, formularios-srt.md, telegrama.md,
   scripts/fill_srt_form.py. → Material legal NO disponible en el repo.
