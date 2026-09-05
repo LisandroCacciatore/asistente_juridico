@@ -22,10 +22,16 @@ Civil 1-22, Familia 1-12 — compatible con config.JUZGADOS del formato
   recortar_sentencia, extraer_caratula/cuij/fecha, nombre_archivo_santiago)
   y la skill quedó documentada en skills/cedula-sisfe.md apuntando al motor
   del repo (cedulas_pdf.py + Playwright). Ya no hay dos implementaciones.
-- cliente-art-nuevo: faltan references/poder-especial.md, relato-de-hechos.md,
-  convenio-honorarios.md, formularios-srt.md, telegrama.md,
-  scripts/fill_srt_form.py. → Material legal NO disponible en el repo.
-  Pendiente: pedir a Claude/Santiago o reconstruir con Santiago.
+- ~~cliente-art-nuevo~~ → **COMPLETA** (2026-09): SKILL.md + 5 references
+  (poder-especial, relato-de-hechos, convenio-honorarios, formularios-srt,
+  telegrama) + scripts/fill_srt_form.py + **assets/ con los 3 Anexos SRT
+  oficiales descargados de argentina.gob.ar**. Verificación automática:
+  los 3 PDFs contienen exactamente los campos del FIELD_MAPS del script
+  (36/36, 37/37, 34/34) → el mapeo verificado visualmente por Claude es
+  compatible con los formularios oficiales vigentes. Test funcional PASS
+  (Anexo III rellenado y leído de vuelta). OJO: los formularios SRT se
+  actualizan (Res. 5/2026) — validar vigencia con Santiago antes de uso
+  real.
 - apertura-cuenta-judicial-banco-municipal: sin script (flujo de capturas +
   borrador Gmail). Migrable como flujo; la navegación SISFE pasa al motor
   Playwright del repo.
