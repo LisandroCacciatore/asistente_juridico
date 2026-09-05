@@ -1,0 +1,266 @@
+{
+  "LABORAL 1": {
+    "juez": "Barbara Serrat",
+    "cargo_juez": "JUEZA",
+    "secretario": "Ricardo Javier Sullivan",
+    "cargo_secretario": "SECRETARIO"
+  },
+  "LABORAL 2": {
+    "juez": "Fabián Nahuel Vega",
+    "cargo_juez": "JUEZ",
+    "secretario": "Ramiro Luna",
+    "cargo_secretario": "SECRETARIO"
+  },
+  "LABORAL 3": {
+    "juez": "María Silvia Albertti",
+    "cargo_juez": "JUEZA",
+    "secretario": "Analía Carla Gallucci",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "LABORAL 4": {
+    "juez": "Ricardo Gramegna",
+    "cargo_juez": "JUEZ",
+    "secretario": "Gustavo Andrés Jukic",
+    "cargo_secretario": "SECRETARIO"
+  },
+  "LABORAL 5": {
+    "juez": "Rina Graciela Brisighelli",
+    "cargo_juez": "JUEZA",
+    "secretario": "Lorena Betina Spizzirri",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "LABORAL 6": {
+    "juez": "Patricia Liliana Otegui",
+    "cargo_juez": "JUEZA",
+    "secretario": "Marina Elisa Arp",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "LABORAL 7": {
+    "juez": "Marcelo Agustín Enzo Gallucci",
+    "cargo_juez": "JUEZ",
+    "secretario": "María Teresa Haydee Caudana",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "LABORAL 8": {
+    "juez": "Silvana Laura Quagliatti",
+    "cargo_juez": "JUEZA",
+    "secretario": "Pedro Daniel Herrero",
+    "cargo_secretario": "SECRETARIO"
+  },
+  "LABORAL 9": {
+    "juez": "Gustavo Alberto Burgio",
+    "cargo_juez": "JUEZ",
+    "secretario": "Natalia Lorena Di Giorgio",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "LABORAL 10": {
+    "juez": "Paula Verónica Calace Vigo",
+    "cargo_juez": "JUEZA",
+    "secretario": "Paula Nydia Hechem",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 1": {
+    "juez": "Ricardo Alberto Ruiz",
+    "cargo_juez": "JUEZ",
+    "secretario": "Arturo Audano",
+    "cargo_secretario": "SECRETARIO"
+  },
+  "CIVIL 2": {
+    "juez": "Mónica Klebcar",
+    "cargo_juez": "JUEZA",
+    "secretario": "Marianela Godoy",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 3": {
+    "juez": "Ezequiel María Zabale",
+    "cargo_juez": "JUEZ",
+    "secretario": "Mayra Ibañez",
+    "cargo_secretario": "SECRETARIA (S)"
+  },
+  "CIVIL 4": {
+    "juez": "Nicolás Villanueva",
+    "cargo_juez": "JUEZ",
+    "secretario": "Daniela Andrea Jaime",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 5": {
+    "juez": "Lucrecia Mantello",
+    "cargo_juez": "JUEZA",
+    "secretario": "Silvina Leonor Rubulotta",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 6": {
+    "juez": "Fernando Alejandro Mécoli",
+    "cargo_juez": "JUEZ",
+    "secretario": "Sabrina Mercedes Rocci",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 7": {
+    "juez": "Marcelo Nolberto Quiroga",
+    "cargo_juez": "JUEZ",
+    "secretario": "Lorena Andrea Gonzalez",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 8": {
+    "juez": "Luciano Daniel Juarez",
+    "cargo_juez": "JUEZ",
+    "secretario": "María José Casas",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 9": {
+    "juez": "María Fabiana Genesio",
+    "cargo_juez": "JUEZA",
+    "secretario": "Verónica Amanda Accinelli",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 10": {
+    "juez": "Mauro Raul Bonato",
+    "cargo_juez": "JUEZ",
+    "secretario": "Marianela Maulion",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 11": {
+    "juez": "Luciano Daniel Carbajo",
+    "cargo_juez": "JUEZ",
+    "secretario": "Sergio Antonio González",
+    "cargo_secretario": "SECRETARIO"
+  },
+  "CIVIL 12": {
+    "juez": "Fabian Eduardo Daniel Bellizia",
+    "cargo_juez": "JUEZ",
+    "secretario": "Elina Gabriela Cerliani",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 13": {
+    "juez": "Verónica Gotlieb",
+    "cargo_juez": "JUEZA",
+    "secretario": "Lucas Menossi",
+    "cargo_secretario": "SECRETARIO"
+  },
+  "CIVIL 14": {
+    "juez": "Marcelo Carlos Mauricio Quaglia",
+    "cargo_juez": "JUEZ",
+    "secretario": "María Karina Arreche",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 15": {
+    "juez": "Sebastián José Rupil",
+    "cargo_juez": "JUEZ",
+    "secretario": "María Eugenia Sapei",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 16": {
+    "juez": "Sabrina Campbell",
+    "cargo_juez": "JUEZA",
+    "secretario": "Maria Sol Sedita",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 17": {
+    "juez": "María Silvia Beduino",
+    "cargo_juez": "JUEZA",
+    "secretario": "María Florencia Di Rienzo",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 18": {
+    "juez": "Susana Silvina Gueiler",
+    "cargo_juez": "JUEZA",
+    "secretario": "Patricia Andrea Beade",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 19": {
+    "juez": "Daniel Humberto González",
+    "cargo_juez": "JUEZ",
+    "secretario": "Gabriela María Kabichian",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 20": {
+    "juez": "Eduardo Horacio Arichuluaga",
+    "cargo_juez": "JUEZ",
+    "secretario": "Javier Matías Chena",
+    "cargo_secretario": "SECRETARIO"
+  },
+  "CIVIL 21": {
+    "juez": "Cecilia Andrea Camaño",
+    "cargo_juez": "JUEZA",
+    "secretario": "Ana Belén Curá",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "CIVIL 22": {
+    "juez": "Maximiliano Nelson Gustavo Cossari",
+    "cargo_juez": "JUEZ",
+    "secretario": "Gabriela Patricia Almará",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "FAMILIA 1": {
+    "juez": "María José Diana",
+    "cargo_juez": "JUEZA",
+    "secretario": "Dania Leonela Chiementin",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "FAMILIA 2": {
+    "juez": "Silvina Ileana Garcia",
+    "cargo_juez": "JUEZA",
+    "secretario": "Analía Daniela Perrulli",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "FAMILIA 3": {
+    "juez": "María José Campanella",
+    "cargo_juez": "JUEZA",
+    "secretario": "Sergio Luis Fuster",
+    "cargo_secretario": "SECRETARIO"
+  },
+  "FAMILIA 4": {
+    "juez": "Gustavo Adolfo Antelo",
+    "cargo_juez": "JUEZ",
+    "secretario": "Marco Pedraza",
+    "cargo_secretario": "SECRETARIO"
+  },
+  "FAMILIA 5": {
+    "juez": "Alicia Ana Galletto",
+    "cargo_juez": "JUEZA",
+    "secretario": "Ana Clara Rebola",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "FAMILIA 6": {
+    "juez": "Maria Paula Mangani",
+    "cargo_juez": "JUEZA",
+    "secretario": "María José Caviglia",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "FAMILIA 7": {
+    "juez": "Sabina Margarita Sansarricq",
+    "cargo_juez": "JUEZA",
+    "secretario": "Alejandra Claudia Wulfson",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "FAMILIA 8": {
+    "juez": "",
+    "cargo_juez": "JUEZ",
+    "secretario": "María Cecilia Naveira",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "FAMILIA 9": {
+    "juez": "Milca Mileva Bojanich",
+    "cargo_juez": "JUEZA",
+    "secretario": "Agustina Sueiras Munuce",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "FAMILIA 10": {
+    "juez": "Valeria Viviana Vittori",
+    "cargo_juez": "JUEZA",
+    "secretario": "Lara Belén Favro",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "FAMILIA 11": {
+    "juez": "Andrea Mariel Brunetti",
+    "cargo_juez": "JUEZA",
+    "secretario": "María Florencia Martínez Belli",
+    "cargo_secretario": "SECRETARIA"
+  },
+  "FAMILIA 12": {
+    "juez": "Gabriela Ester Topino",
+    "cargo_juez": "JUEZA",
+    "secretario": "María Silvia Zamanillo",
+    "cargo_secretario": "SECRETARIA"
+  }
+}
