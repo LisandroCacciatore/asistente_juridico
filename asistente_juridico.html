@@ -108,6 +108,7 @@
   .stat.ok::before{background:var(--escudo)}
   .stat.warn::before{background:var(--ambar)}
   .stat.bus::before{background:var(--martillo)}
+  .stat.attn::before{background:var(--rojo)}
 
   /* ---------- Secciones ---------- */
   .section-head{display:flex;align-items:baseline;gap:12px;margin:0 0 14px}
@@ -270,6 +271,91 @@
   .footnote{margin-top:38px;text-align:center;font-size:11.5px;color:var(--muted-2)}
   .footnote b{color:var(--muted)}
 
+  /* ---------- Panel de acciones (las skills del secretario) ---------- */
+  .actions{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .action{
+    font-family:'Inter';text-align:left;cursor:pointer;
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:15px 16px 13px;display:flex;flex-direction:column;gap:7px;
+    transition:transform .16s cubic-bezier(.23,1,.32,1),border-color .16s ease,box-shadow .16s ease;
+  }
+  .action:hover{border-color:var(--line-strong);box-shadow:0 6px 18px rgba(24,35,56,.07)}
+  .action:active{transform:scale(.985)}
+  .action .aic{font-size:19px;line-height:1}
+  .action .an{font-size:13.5px;font-weight:600;color:var(--ink);letter-spacing:-.1px}
+  .action .ad{font-size:12px;color:var(--muted);line-height:1.45;flex:1}
+  .action .ago{font-size:11.5px;font-weight:600;color:var(--ink-2);display:inline-flex;align-items:center;gap:5px}
+  .action .ago .arw{transition:transform .18s cubic-bezier(.23,1,.32,1)}
+  .action:hover .ago .arw{transform:translateX(3px)}
+  .actions-note{
+    margin-top:12px;font-size:11.5px;color:var(--muted-2);
+    display:flex;align-items:baseline;gap:7px;line-height:1.5;
+  }
+  .actions-note .ic{color:var(--muted)}
+  @media (max-width:900px){.actions{grid-template-columns:repeat(2,1fr)}}
+  @media (max-width:640px){.actions{grid-template-columns:1fr}}
+
+  /* campos dentro de los modales de acción */
+  .fld-in{
+    width:100%;font-family:'Inter';font-size:13px;color:var(--ink);
+    border:1px solid var(--line-strong);border-radius:8px;padding:9px 11px;
+    outline:none;background:#fff;resize:vertical;
+  }
+  .fld-in:focus{border-color:var(--ink)}
+  textarea.fld-in{line-height:1.5;min-height:120px;font-size:12.5px}
+  .fld-label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin:14px 0 6px}
+  .fld-label:first-child{margin-top:0}
+  .fld-help{font-size:11.5px;color:var(--muted-2);margin-top:5px;line-height:1.45}
+
+  /* ---------- Mail ---------- */
+  .mail-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;align-items:start}
+  @media (max-width:860px){.mail-grid{grid-template-columns:1fr}}
+  .mail-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .mail-card .hd{
+    padding:12px 16px;border-bottom:1px solid var(--line);
+    display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  }
+  .mail-card .hd h3{font-family:'Spectral',serif;font-size:15px;font-weight:600;letter-spacing:-.1px}
+  .mail-card .hd .tag{font-size:11px;color:var(--muted-2)}
+
+  .mrow{display:flex;gap:10px;align-items:flex-start;padding:11px 16px;border-bottom:1px solid var(--line)}
+  .mrow:last-child{border-bottom:none}
+  .mrow .udot{width:7px;height:7px;border-radius:50%;background:var(--escudo);margin-top:7px;flex:0 0 auto}
+  .mrow .udot.read{background:var(--line-strong)}
+  .mrow .mmain{flex:1;min-width:0}
+  .mrow .from{font-size:12px;color:var(--muted);display:flex;align-items:baseline;gap:7px;overflow-wrap:anywhere}
+  .mrow .from b{color:var(--ink-2);font-weight:600;font-size:12.5px}
+  .mrow .subj{font-size:13px;color:var(--ink);margin-top:2px}
+  .mrow.unread .subj{font-weight:600}
+  .mrow .snip{font-size:11.5px;color:var(--muted-2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mrow .when{font-size:11px;color:var(--muted-2);white-space:nowrap;font-variant-numeric:tabular-nums;flex:0 0 auto}
+
+  .draft{padding:13px 16px;border-bottom:1px solid var(--line)}
+  .draft:last-child{border-bottom:none}
+  .draft .to{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+  .draft .to b{color:var(--ink-2);font-weight:600}
+  .draft .as{font-size:13px;font-weight:600;color:var(--ink);margin-top:3px;letter-spacing:-.1px}
+  .draft .att{
+    display:inline-flex;align-items:center;gap:6px;margin-top:8px;
+    font-size:11.5px;color:var(--ink-2);background:var(--paper);
+    border:1px solid var(--line);border-radius:7px;padding:3px 9px;
+  }
+  .draft .drow{display:flex;align-items:center;gap:10px;margin-top:10px}
+  .btn.gmail{background:#fff;color:var(--ink);border:1px solid var(--line-strong);padding:7px 13px;font-size:12.5px}
+  .btn.gmail:hover{background:#f5f7fa}
+  .lockline{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted-2);margin-top:7px}
+  .lockline .ic{color:var(--lock)}
+  .mail-hint{
+    padding:11px 16px;border-top:1px solid var(--line);background:var(--paper);
+    font-size:11.5px;color:var(--muted);line-height:1.5;
+  }
+  .mail-hint b{color:var(--ink-2);font-weight:600}
+  .mail-empty{padding:16px;font-size:12.5px;color:var(--muted-2)}
+
+  /* filas presentadas (cerradas, atenuadas) */
+  .row.closed{background:#fafbfc}
+  .row.closed .caratula{color:var(--muted);font-weight:500}
+
   @media (max-width:720px){
     .stats{grid-template-columns:repeat(2,1fr)}
     .hero{flex-direction:column;align-items:flex-start;gap:8px}
@@ -291,9 +377,9 @@
   <div class="sweep-hello">Buenos días, Santiago.</div>
   <div class="sweep-log" id="sweepLog">
     <div class="sweep-line" data-final="✓ Sesión iniciada — perfil de Chrome"><span class="spin"></span><span>Conectando con SISFE…</span></div>
-    <div class="sweep-line" data-final="✓ 12 expedientes con novedades"><span class="spin"></span><span>Buscando novedades…</span></div>
+    <div class="sweep-line" data-final="✓ Expedientes con novedades"><span class="spin"></span><span>Buscando novedades…</span></div>
     <div class="sweep-line" data-final="✓ Decretos clasificados"><span class="spin"></span><span>Analizando decretos…</span></div>
-    <div class="sweep-line" data-final="✓ 8 cédulas listas para revisar"><span class="spin"></span><span>Generando cédulas…</span></div>
+    <div class="sweep-line" data-final="✓ Cédulas listas para revisar"><span class="spin"></span><span>Generando cédulas…</span></div>
   </div>
   <button class="sweep-skip" onclick="finishSweep()">Saltar →</button>
 </div>
@@ -314,17 +400,98 @@
 <div class="wrap">
   <div class="hero">
     <div class="greeting">
-      Revisé 12 expedientes esta mañana.
-      <span class="sub">8 cédulas quedaron listas. Revisá, firmá y autorizá la subida cuando quieras.</span>
+      <span id="heroTitulo">Revisando los expedientes de hoy…</span>
+      <span class="sub" id="heroSub"></span>
     </div>
     <div class="date" id="dateEl"></div>
   </div>
 
+  <!-- Métricas derivadas del estado real (nunca hardcodeadas) -->
   <div class="stats">
-    <div class="stat"><div class="n">12</div><div class="l">Expedientes revisados</div></div>
-    <div class="stat ok"><div class="n">8</div><div class="l">Cédulas generadas</div></div>
-    <div class="stat warn"><div class="n">2</div><div class="l">Requieren atención</div></div>
-    <div class="stat bus"><div class="n">1</div><div class="l">Bus Federal (Ley 22.172)</div></div>
+    <div class="stat ok"><div class="n" id="stFirmar">—</div><div class="l">Listas para firmar</div></div>
+    <div class="stat bus"><div class="n" id="stPresentar">—</div><div class="l">Listas para presentar</div></div>
+    <div class="stat warn"><div class="n" id="stPendientes">—</div><div class="l">Pendientes de clasificar</div></div>
+    <div class="stat attn"><div class="n" id="stAtencion">—</div><div class="l">Requieren atención</div></div>
+  </div>
+
+  <!-- Acciones del secretario (las skills migradas, a un clic) -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Acciones del secretario</h2>
+      <span class="count">corren en esta máquina</span>
+    </div>
+    <div class="actions">
+      <button class="action" onclick="accion('cedula')">
+        <span class="aic">📄</span>
+        <span class="an">Cédula desde texto</span>
+        <span class="ad">Pegás el texto de un decreto y te devuelve la cédula armada, lista para firmar.</span>
+        <span class="ago">Abrir <span class="arw">→</span></span>
+      </button>
+      <button class="action" onclick="accion('art')">
+        <span class="aic">🏥</span>
+        <span class="an">Alta de cliente ART</span>
+        <span class="ad">Poder especial, relato de hechos, convenio de honorarios, telegrama y formularios SRT.</span>
+        <span class="ago">Abrir <span class="arw">→</span></span>
+      </button>
+      <button class="action" onclick="accion('cuenta')">
+        <span class="aic">🏦</span>
+        <span class="an">Apertura de cuenta judicial</span>
+        <span class="ad">Banco Municipal: busca el expediente por CUIJ y arma el pedido con sus capturas.</span>
+        <span class="ago">Abrir <span class="arw">→</span></span>
+      </button>
+      <button class="action" onclick="accion('boletas')">
+        <span class="aic">⚖️</span>
+        <span class="an">Oficio por boletas impagas</span>
+        <span class="ad">Redacta los oficios al Colegio y a las Cajas por las boletas sin pagar del período.</span>
+        <span class="ago">Abrir <span class="arw">→</span></span>
+      </button>
+      <button class="action" onclick="accion('raeo')">
+        <span class="aic">📮</span>
+        <span class="an">Oficio RAEO</span>
+        <span class="ad">Arma el oficio al Registro de Accidentes y Enfermedades Ocupacionales y su escrito cargo.</span>
+        <span class="ago">Abrir <span class="arw">→</span></span>
+      </button>
+      <button class="action" onclick="accion('transferencia')">
+        <span class="aic">💰</span>
+        <span class="an">Transferencia de capital</span>
+        <span class="ad">Calcula y arma el oficio y el escrito de transferencia con los honorarios regulados.</span>
+        <span class="ago">Abrir <span class="arw">→</span></span>
+      </button>
+    </div>
+    <div class="actions-note">
+      <span class="ic">🔒</span>
+      <span>Cada acción corre en esta máquina y deja el resultado en la carpeta del cliente. Lo que se firma o se presenta en un portal, lo autorizás vos.</span>
+    </div>
+  </div>
+
+  <!-- Listas para firmar -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Listas para firmar</h2>
+      <span class="count" id="firmarCount"></span>
+      <span style="margin-left:auto" id="firmarLoteBox" hidden>
+        <button class="btn sign" style="padding:7px 13px;font-size:12.5px" onclick="firmarLote()">🔒 Firmar todas en una sola ventana</button>
+      </span>
+    </div>
+    <div class="card" id="firmar"></div>
+  </div>
+
+  <!-- Listas para presentar -->
+  <div class="section" id="presentarSeccion" style="display:none">
+    <div class="section-head">
+      <h2>Listas para presentar</h2>
+      <span class="count" id="presentarCount"></span>
+    </div>
+    <div class="card" id="presentar"></div>
+  </div>
+
+  <!-- Presentadas (cerradas, atenuadas) -->
+  <div class="section" id="presentadasSeccion" style="display:none">
+    <div class="section-head">
+      <h2>Presentadas</h2>
+      <span class="count" id="presentadasCount"></span>
+    </div>
+    <div class="card" id="presentadas"></div>
   </div>
 
   <!-- Pendientes de clasificar (los detecta el monitor; Santiago elige tipo) -->
@@ -336,15 +503,6 @@
     <div class="card" id="pendientes"></div>
   </div>
 
-  <!-- Listas -->
-  <div class="section">
-    <div class="section-head">
-      <h2>Cédulas listas</h2>
-      <span class="count" id="listasCount">4 expedientes</span>
-    </div>
-    <div class="card" id="listas"></div>
-  </div>
-
   <!-- Atención -->
   <div class="section">
     <div class="section-head">
@@ -352,6 +510,26 @@
       <span class="count">2 expedientes</span>
     </div>
     <div class="card" id="atencion"></div>
+  </div>
+
+  <!-- Mail (bandeja + borradores del secretario) -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Mail</h2>
+      <span class="count" id="mailCuenta"></span>
+    </div>
+    <div class="mail-grid">
+      <div class="mail-card">
+        <div class="hd"><h3>Bandeja</h3><span class="tag">lo que importa para el estudio</span></div>
+        <div id="mailBandeja"><div class="mail-empty">Cargando…</div></div>
+        <div class="mail-hint">El secretario <b>clasifica y prioriza</b>: no borra, no archiva y no responde nada por su cuenta.</div>
+      </div>
+      <div class="mail-card">
+        <div class="hd"><h3>Borradores listos</h3><span class="tag">los preparó el secretario</span></div>
+        <div id="mailBorradores"><div class="mail-empty">Cargando…</div></div>
+        <div class="mail-hint">El secretario <b>redacta y adjunta el PDF</b> en tu casilla. Nada sale sin que lo aprietes vos, y queda el rastro en Gmail.</div>
+      </div>
+    </div>
   </div>
 
   <!-- Actividad del secretario -->
@@ -543,17 +721,17 @@ function destBlock(c){
   return `<div class="dest"><b>${plural}:</b> ${chips}</div>`;
 }
 
-function renderListas(){
-  const el = document.getElementById("listas");
-  el.innerHTML = cedulas.map(c=>`
-    <div class="row" id="row-${esc(c.id)}">
+/* Una fila de cédula. `cerrada` = ya presentada (atenuada, sin acción). */
+function filaCedula(c, cerrada){
+  return `
+    <div class="row${cerrada?" closed":""}" id="row-${esc(c.id)}">
       <div class="row-top">
         <div class="row-main">
           <div class="caratula">${esc(c.caratula)}</div>
           <div class="meta">
             <span class="cuij">CUIJ ${esc(c.cuij)}</span>
             <span class="sep">·</span><span>${esc(c.juzgado)}</span>
-            <span class="sep">·</span><span>${esc(c.juez)}</span>
+            ${c.juez?`<span class="sep">·</span><span>${esc(c.juez)}</span>`:""}
           </div>
           ${destBlock(c)}
           ${c.nota?`<div class="dest" style="margin-top:8px;color:var(--muted-2)">↳ ${esc(c.nota)}</div>`:""}
@@ -564,8 +742,65 @@ function renderListas(){
           ${sideFor(c)}
         </div>
       </div>
-    </div>`).join("");
+    </div>`;
 }
+
+/* Una lista por acto pendiente: no es lo mismo "falta firmar" que "falta
+   subir". Mezclarlas obligaba a leer cada fila para saber qué hacer con ella. */
+function renderFilas(){
+  const firmar     = cedulas.filter(c=>c.estado==="generada");
+  const presentar  = cedulas.filter(c=>c.estado==="firmada");
+  const presentadas= cedulas.filter(c=>c.estado==="presentada");
+
+  document.getElementById("firmar").innerHTML = firmar.length
+    ? firmar.map(c=>filaCedula(c)).join("")
+    : `<div class="mail-empty">No hay cédulas esperando firma.</div>`;
+  document.getElementById("firmarCount").textContent =
+    firmar.length + (firmar.length===1?" expediente":" expedientes");
+  document.getElementById("firmarLoteBox").hidden = firmar.length < 2;
+
+  const secP = document.getElementById("presentarSeccion");
+  secP.style.display = presentar.length ? "" : "none";
+  document.getElementById("presentar").innerHTML = presentar.map(c=>filaCedula(c)).join("");
+  document.getElementById("presentarCount").textContent = presentar.length===1
+    ? "1 expediente — ya firmada" : presentar.length + " expedientes — ya firmadas";
+
+  const secD = document.getElementById("presentadasSeccion");
+  secD.style.display = presentadas.length ? "" : "none";
+  document.getElementById("presentadas").innerHTML = presentadas.map(c=>filaCedula(c,true)).join("");
+  document.getElementById("presentadasCount").textContent =
+    presentadas.length + (presentadas.length===1?" expediente":" expedientes");
+}
+
+/* El dashboard no hardcodea cifras: cada número sale del estado real. */
+function renderMetricas(){
+  const firmar    = cedulas.filter(c=>c.estado==="generada").length;
+  const presentar = cedulas.filter(c=>c.estado==="firmada").length;
+  const pend      = PENDIENTES.length;
+  const attn      = atencion.length;
+
+  document.getElementById("stFirmar").textContent = firmar;
+  document.getElementById("stPresentar").textContent = presentar;
+  document.getElementById("stPendientes").textContent = pend;
+  document.getElementById("stAtencion").textContent = attn;
+
+  const total = cedulas.length + attn;
+  document.getElementById("heroTitulo").textContent = total
+    ? `Revisé ${total} expediente${total===1?"":"s"} esta mañana.`
+    : "Todavía no hay expedientes con novedades.";
+
+  const partes = [];
+  if(firmar)    partes.push(`${firmar} espera${firmar===1?"":"n"} tu firma`);
+  if(presentar) partes.push(`${presentar} tu subida a Meta Jurídico`);
+  if(pend)      partes.push(`${pend} decreto${pend===1?"":"s"} para clasificar`);
+  if(attn)      partes.push(`${attn} requiere${attn===1?"":"n"} atención`);
+  document.getElementById("heroSub").textContent =
+    partes.length ? partes.join(", ").replace(/,([^,]*)$/, " y$1") + "." : "";
+}
+
+/* Compatibilidad: el resto del código llama a renderListas() después de
+   cada firma o subida. */
+function renderListas(){ renderFilas(); renderMetricas(); }
 
 function renderAtencion(){
   const el = document.getElementById("atencion");
@@ -607,6 +842,8 @@ async function renderPendientes(){
     const j = await r.json();
     PENDIENTES = j.pendientes || [];
   }catch(e){ return; } // sin servidor (demo): no mostrar
+
+  renderMetricas();   // el contador de pendientes es parte del estado real
 
   const sec = document.getElementById("pendientesSeccion");
   const cont = document.getElementById("pendientes");
@@ -774,6 +1011,11 @@ async function poll(jobId, id, tipo){
       return; // esperamos a que el usuario apriete "continuar"
     }
     if(st.status==='listo'){
+      if(id==='lote'){
+        closeModal(); toast("✓ Lote de firmas terminado");
+        loadData(); renderActividad();
+        return;
+      }
       const c = getCed(id);
       if(tipo==='firma'){
         const ruta = st.result?.ruta_firmada;
@@ -850,6 +1092,245 @@ function uploadSim(id){
   setTimeout(()=>document.getElementById("code2fa")?.focus(),50);
 }
 
+/* ---------------- Acciones del secretario (skills migradas) ---------------- */
+// Cada acción pide lo mínimo indispensable y el trabajo lo hace el
+// secretario. Motor "local": un script del repo, determinista. Motor
+// "secretario": hace falta interpretar un texto, así que lo resuelve
+// Hermes cargando la skill correspondiente.
+const ACCIONES = {
+  cedula:{ ic:"📄", titulo:"Cédula desde texto", motor:"local",
+    desc:"Pegá el decreto o la sentencia: el secretario arma la cédula y la deja lista para firmar.",
+    boton:"Generar cédula",
+    campos:[{k:"texto", tipo:"textarea", label:"Texto del decreto o sentencia",
+      ph:"Rosario, 3 de Septiembre de 2026.- Habiendo contestado la demandada, fíjase audiencia de trámite para el día 15 de Octubre de 2026 a las 09:30 hs. Notifíquese por cédula.",
+      help:"Copialo tal como está en el SISFE. Si es una sentencia, el secretario la recorta solo."}] },
+
+  art:{ ic:"🏥", titulo:"Alta de cliente ART", motor:"secretario", skill:"cliente-art-nuevo",
+    desc:"Contá el caso: el secretario arma el paquete inicial completo (poder, relato, convenio, telegrama y formularios SRT).",
+    boton:"Preparar el paquete",
+    campos:[{k:"texto", tipo:"textarea", label:"Datos del caso",
+      ph:"Cliente: Juan Pérez, DNI 30.123.456, domicilio … Accidente: 12/07/2026 en la empresa Ejemplo S.A. ART: Ejemplo ART. Lesión: lumbalgia post esfuerzo. Estudios: RM de columna…",
+      help:"Nombre y DNI, fecha y lugar del accidente, ART, lesiones y estudios. Cuanto más completo, mejor sale el relato."}] },
+
+  cuenta:{ ic:"🏦", titulo:"Apertura de cuenta judicial", motor:"local",
+    desc:"El secretario busca el expediente en el SISFE, toma las capturas y arma el pedido para el Banco Municipal.",
+    boton:"Buscar y armar",
+    campos:[{k:"cuij", label:"CUIJ del expediente", ph:"21-00000001-0", req:true},
+            {k:"caratula", label:"Carátula (opcional, para verificar)", ph:"GONZALEZ c/ ART EJEMPLO S/ ACCIDENTE LABORAL", req:false,
+             help:"Si la ponés, el secretario verifica contra el expediente y frena si no coincide. Necesita la sesión del SISFE abierta."}] },
+
+  boletas:{ ic:"⚖️", titulo:"Oficio por boletas impagas", motor:"secretario", skill:"oficio-incumplimiento-boletas",
+    desc:"Pegá el decreto que ordena oficiar: el secretario redacta los oficios al Colegio y a las Cajas.",
+    boton:"Redactar oficios",
+    campos:[{k:"texto", tipo:"textarea", label:"Texto del decreto",
+      ph:"Rosario, … Ofíciese al Colegio de Abogados y a las Cajas de Seguridad Social y Forense a los efectos de informar…",
+      help:"Si el decreto no dice \"Ofíciese\", el secretario usa el texto estándar y te avisa."}] },
+
+  raeo:{ ic:"📮", titulo:"Oficio RAEO", motor:"secretario", skill:"oficio-raeo",
+    desc:"Pegá la demanda o los datos del expediente y el secretario arma el oficio al RAEO con su escrito cargo.",
+    boton:"Armar oficio",
+    campos:[{k:"texto", tipo:"textarea", label:"Demanda o datos del expediente",
+      ph:"Pegá la demanda completa, o al menos: carátula, CUIJ, juzgado, ART, fecha del siniestro, diagnóstico y pretensión…",
+      help:"Si el expediente es del Laboral N°5, además arma el Word y el borrador de mail."}] },
+
+  transferencia:{ ic:"💰", titulo:"Transferencia de capital", motor:"secretario", skill:"transferencia-de-capital",
+    desc:"Pegá el informe de saldos y la constancia de CBU: el secretario arma el oficio y el escrito al juez.",
+    boton:"Armar escritos",
+    campos:[{k:"texto", tipo:"textarea", label:"Informe de saldos + constancia de CBU",
+      ph:"Informe de Saldos de Cuentas Judiciales — Banco Municipal de Rosario — Expte. … Saldo: $ … / CBU destino: 0000…",
+      help:"Pegá los dos textos juntos; el secretario separa la cuenta de origen de la de destino."}] },
+};
+
+function accion(id){
+  const a = ACCIONES[id];
+  if(!a) return;
+  const campos = a.campos.map(c=>{
+    const control = c.tipo==="textarea"
+      ? `<textarea class="fld-in" id="ai-${esc(c.k)}" placeholder="${esc(c.ph||"")}"></textarea>`
+      : `<input class="fld-in" id="ai-${esc(c.k)}" placeholder="${esc(c.ph||"")}">`;
+    return `<label class="fld-label">${esc(c.label)}</label>${control}`
+         + (c.help?`<div class="fld-help">${esc(c.help)}</div>`:"");
+  }).join("");
+  openModal(`
+    <div class="modal-head">
+      <h3>${a.ic} ${esc(a.titulo)}</h3>
+      <p>${esc(a.desc)}</p>
+    </div>
+    <div class="modal-body">${campos}</div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" onclick="ejecutarAccion('${esc(id)}')">${esc(a.boton||"Generar")}</button>
+    </div>`);
+  setTimeout(()=>document.getElementById("ai-"+a.campos[0].k)?.focus(), 60);
+}
+
+async function ejecutarAccion(id){
+  const a = ACCIONES[id];
+  const datos = {};
+  for(const c of a.campos){
+    const el = document.getElementById("ai-"+c.k);
+    const v = el ? el.value.trim() : "";
+    if(c.req && !v){ toast("⚠ Falta: "+c.label); el?.focus(); return; }
+    datos[c.k] = v;
+  }
+  if(!SERVER){
+    openModal(`<div class="modal-body"><div class="gate-box">
+        <div class="gate-icon">${a.ic}</div><h4>${esc(a.titulo)}</h4>
+        <p>Con el servidor encendido el secretario hace esto de verdad:</p>
+        <p style="color:var(--ink-2)">${esc(a.desc)}</p>
+        <div class="hint">Demo sin servidor — no se generó nada.</div>
+      </div></div>
+      <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
+    return;
+  }
+  try{
+    const r = await fetch("/api/skill/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({datos})});
+    const j = await r.json();
+    if(!j.job_id){ toast("⚠ "+(j.error||"No se pudo iniciar la acción")); return; }
+    pollAccion(j.job_id, a);
+  }catch(e){ toast("⚠ No pude contactar al servidor"); }
+}
+
+function pollAccion(jobId, a){
+  openModal(`<div class="modal-body"><div class="gate-box">
+      <div class="gate-icon">${a.ic}</div><h4>${esc(a.titulo)}</h4>
+      <p id="accMsg">Trabajando…</p>
+      <div class="spin" style="margin:10px auto;border-color:rgba(24,35,56,.2);border-top-color:var(--ink)"></div>
+    </div></div>`);
+  const tick = async ()=>{
+    let st;
+    try{ st = await (await fetch("/api/estado/"+jobId)).json(); }
+    catch(e){ closeModal(); toast("⚠ Se perdió la conexión con el servidor"); return; }
+
+    if(st.status==="corriendo"){
+      const m = document.getElementById("accMsg");
+      if(m && st.message) m.textContent = st.message;
+      return setTimeout(tick, 1200);
+    }
+    if(st.status==="esperando"){
+      openModal(`<div class="modal-body"><div class="gate-box">
+          <div class="gate-icon">🔐</div><h4>${esc(a.titulo)}</h4>
+          <p>${(st.message||"Completá el paso en la ventana de Chrome.").replace(/\n/g,"<br>")}</p>
+        </div></div>
+        <div class="modal-foot">
+          <button class="btn ghost" onclick="closeModal()">Cerrar</button>
+          <button class="btn primary" onclick="continuarAccion('${jobId}')">Ya está, continuar</button>
+        </div>`);
+      return;
+    }
+    if(st.status==="listo"){
+      closeModal();
+      toast("✓ "+(st.result?.mensaje || "Listo"));
+      loadData(); renderPendientes(); renderActividad();
+      return;
+    }
+    if(st.status==="error"){ closeModal(); toast("⚠ "+(st.error||"Error en la acción")); return; }
+    setTimeout(tick, 1200);
+  };
+  setTimeout(tick, 900);
+}
+
+function continuarAccion(jobId){
+  fetch("/api/continuar/"+jobId,{method:"POST"});
+  const m = document.getElementById("accMsg");
+  openModal(`<div class="modal-body"><div class="gate-box">
+      <div class="gate-icon">⏳</div><h4>Procesando…</h4>
+      <p id="accMsg">Retomando el trabajo.</p>
+    </div></div>`);
+  setTimeout(()=>pollAccion(jobId, {ic:"⏳", titulo:"Procesando…"}), 800);
+}
+
+/* ---------- Firmar el lote entero (una sola ventana de firma) ---------- */
+async function firmarLote(){
+  const items = cedulas.filter(c=>c.estado==="generada" && c.ruta_pdf);
+  if(!items.length){ toast("⚠ No hay cédulas con PDF para firmar"); return; }
+  if(!SERVER){
+    openModal(`<div class="modal-body"><div class="gate-box">
+        <div class="gate-icon">🔒</div><h4>Firmar ${items.length} cédulas</h4>
+        <p>Con el servidor encendido, el secretario abre una sola ventana de firma
+        y va poniendo cada documento.<br>La contraseña la escribís vos.</p>
+        <div class="hint">Demo sin servidor — no se firmó nada.</div>
+      </div></div>
+      <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
+    return;
+  }
+  try{
+    const r = await fetch("/api/firmar_lote",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({items: items.map(c=>({id_cedula:c.id, ruta_pdf:c.ruta_pdf}))})});
+    const {job_id} = await r.json();
+    poll(job_id, "lote", "firma");
+  }catch(e){ toast("⚠ No pude contactar al servidor"); }
+}
+
+/* ---------------- Mail (bandeja + borradores) ---------------- */
+function fechaCorta(s){
+  const d = new Date(s);
+  if(isNaN(d)) return String(s||"").slice(0,16);
+  const p = n=>String(n).padStart(2,"0");
+  return d.toDateString()===new Date().toDateString()
+    ? `hoy ${p(d.getHours())}:${p(d.getMinutes())}`
+    : `${p(d.getDate())}/${p(d.getMonth()+1)}`;
+}
+
+function filaMail(m){
+  const from = m.from || "";
+  const mm = from.match(/^(.*?)\s*<(.+)>$/);
+  const nombre = (mm ? mm[1] : from).replace(/^"|"$/g,"").trim() || "(sin remitente)";
+  const dir = mm ? mm[2] : "";
+  const unread = (m.labels||[]).includes("UNREAD");
+  return `<div class="mrow ${unread?"unread":""}">
+    <span class="udot ${unread?"":"read"}"></span>
+    <div class="mmain">
+      <div class="from"><b>${esc(nombre)}</b>${dir?` · ${esc(dir)}`:""}</div>
+      <div class="subj">${esc(m.subject||"(sin asunto)")}</div>
+      <div class="snip">${esc(m.snippet||"")}</div>
+    </div>
+    <span class="when">${esc(fechaCorta(m.date))}</span>
+  </div>`;
+}
+
+function filaBorrador(d){
+  const atts = d.adjuntos || [];
+  return `<div class="draft">
+    <div class="to">Para: <b>${esc(d.to||"(sin destinatario)")}</b></div>
+    <div class="as">${esc(d.subject||"(sin asunto)")}</div>
+    ${atts.map(a=>`<span class="att">📎 ${esc(a)}</span>`).join("")}
+    <div class="drow">
+      <button class="btn gmail" onclick="abrirGmail()">Abrir en Gmail</button>
+      <span style="font-size:11.5px;color:var(--muted-2)">${atts.length?"adjunto listo":"sin adjunto"}</span>
+    </div>
+    <div class="lockline"><span class="ic">🔒</span>El envío lo apretás vos.</div>
+  </div>`;
+}
+
+// Abre los borradores en Gmail. El secretario prepara; el envío es del abogado.
+function abrirGmail(){
+  window.open("https://mail.google.com/mail/u/0/#drafts","_blank");
+  toast("Elegí el borrador en Gmail y apretá Enviar");
+}
+
+async function renderMail(){
+  const contB = document.getElementById("mailBandeja");
+  const contD = document.getElementById("mailBorradores");
+  if(!contB || !contD) return;
+
+  try{
+    const j = await (await fetch("/api/mail/bandeja")).json();
+    document.getElementById("mailCuenta").textContent = j.cuenta || "";
+    if(j.error)              contB.innerHTML = `<div class="mail-empty">⚠ ${esc(j.error)}</div>`;
+    else if(!(j.mails||[]).length) contB.innerHTML = `<div class="mail-empty">Sin novedades en la bandeja.</div>`;
+    else                     contB.innerHTML = j.mails.map(filaMail).join("");
+  }catch(e){ contB.innerHTML = `<div class="mail-empty">Sin conexión con el servidor.</div>`; }
+
+  try{
+    const j = await (await fetch("/api/mail/borradores")).json();
+    if(j.error)                    contD.innerHTML = `<div class="mail-empty">⚠ ${esc(j.error)}</div>`;
+    else if(!(j.borradores||[]).length) contD.innerHTML = `<div class="mail-empty">No hay borradores preparados.</div>`;
+    else                           contD.innerHTML = j.borradores.map(filaBorrador).join("");
+  }catch(e){ contD.innerHTML = `<div class="mail-empty">Sin conexión con el servidor.</div>`; }
+}
+
 /* ---------------- Toast ---------------- */
 let toastTimer;
 function toast(msg){
@@ -905,7 +1386,7 @@ async function loadData(){
   renderAtencion();
   renderPendientes();
   renderActividad();
-  document.getElementById("listasCount").textContent = cedulas.length + " expedientes";
+  renderMail();
 }
 loadData();
 

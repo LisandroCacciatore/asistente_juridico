@@ -1,8 +1,9 @@
 // Genera rail_preview.html extrayendo el CSS/JS REALES del dashboard,
 // para verificar visualmente el riel corregido sin depender del servidor.
 const fs = require('fs');
+const path = require('path');
 
-const src = fs.readFileSync('../asistente_juridico.html', 'utf8').replace(/\r\n/g, '\n');
+const src = fs.readFileSync(path.join(__dirname, '..', 'asistente_juridico.html'), 'utf8').replace(/\r\n/g, '\n');
 
 function slice(startMarker, endMarker) {
   const a = src.indexOf(startMarker);
@@ -66,5 +67,5 @@ document.getElementById("demo").innerHTML = CASOS.map(c=>\`
 </script>
 </body></html>`;
 
-fs.writeFileSync('rail_preview.html', demo, 'utf8');
+fs.writeFileSync(path.join(__dirname, 'rail_preview.html'), demo, 'utf8');
 console.log('rail_preview.html generado (' + demo.length + ' bytes)');

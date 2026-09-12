@@ -138,12 +138,33 @@ def crear_borrador(to, subject, body, adjuntos=None):
     return {"id": draft.get("id"), "message_id": draft.get("message", {}).get("id")}
 
 
+def cuenta():
+    """Dirección de la casilla configurada (el dashboard la muestra)."""
+    svc = _servicio()
+    return svc.users().getProfile(userId="me").execute().get("emailAddress", "")
+
+
+def _adjuntos(msg):
+    """Nombres de archivo de los adjuntos de un mensaje."""
+    nombres = []
+
+    def walk(part):
+        fn = part.get("filename") or ""
+        if fn:
+            nombres.append(fn)
+        for sub in part.get("parts", []) or []:
+            walk(sub)
+
+    walk(msg.get("payload", {}))
+    return nombres
+
+
 def listar_borradores(max_resultados=10):
     svc = _servicio()
     res = svc.users().drafts().list(userId="me", maxResults=max_resultados).execute()
     salida = []
     for d in res.get("drafts", []):
-        m = svc.users().drafts().get(userId="me", id=d["id"], format="metadata").execute()
+        m = svc.users().drafts().get(userId="me", id=d["id"], format="full").execute()
         msg = m.get("message", {})
         salida.append({
             "draft_id": d["id"],
@@ -151,6 +172,7 @@ def listar_borradores(max_resultados=10):
             "to": _cabecera(msg, "To"),
             "subject": _cabecera(msg, "Subject"),
             "snippet": msg.get("snippet", ""),
+            "adjuntos": _adjuntos(msg),
         })
     return salida
 
@@ -175,6 +197,8 @@ if __name__ == "__main__":
     p = sub.add_parser("drafts")
     p.add_argument("--max", type=int, default=10)
 
+    sub.add_parser("cuenta")
+
     args = ap.parse_args()
     if args.cmd == "search":
         print(json.dumps(buscar(args.query, args.max), ensure_ascii=False, indent=2))
@@ -185,3 +209,5 @@ if __name__ == "__main__":
         print(json.dumps({"ok": True, **res}, ensure_ascii=False))
     elif args.cmd == "drafts":
         print(json.dumps(listar_borradores(args.max), ensure_ascii=False, indent=2))
+    elif args.cmd == "cuenta":
+        print(json.dumps({"cuenta": cuenta()}, ensure_ascii=False))

@@ -7,20 +7,22 @@ cedulas_temp/
 ExpedientesDigitales/
 PDFs_decretos/
 ESTUDIO JURIDICO/
-
 # --- Sesiones de navegador (cookies de SISFE/FirmAr/MetaJurídico) ---
 chrome_profile_portales/
 chrome_profile_sisfe/
-
-# --- Credenciales (por las dudas; config.py hoy no debería tenerlas) ---
+# --- Credenciales (por máquina) ---
 config.py
-
 # --- Basura de Python / entorno ---
 __pycache__/
 *.pyc
 .venv/
 venv/
-
 # --- Restos de otras herramientas ---
 node_modules/
 package-lock.json
+# --- prueba local ---
+prueba_adjunto.pdf
+# --- Skills expuestas a Hermes (las genera dev/exponer_skills_hermes.py desde skills/) ---
+.hermes/
+# --- Capturas de verificación (dev/shot.py) ---
+dev/*.png

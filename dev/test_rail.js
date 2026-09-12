@@ -1,7 +1,8 @@
 // Verificación numérica de rail(): extrae STAGES/REACHED/nextStepsFor/rail/esc
 // del dashboard real y comprueba el HTML que produce para cada estado.
 const fs = require('fs');
-const h = fs.readFileSync('../asistente_juridico.html', 'utf8').replace(/\r\n/g, '\n');
+const path = require('path');
+const h = fs.readFileSync(path.join(__dirname, '..', 'asistente_juridico.html'), 'utf8').replace(/\r\n/g, '\n');
 
 function slice(s, e) {
   const a = h.indexOf(s), b = h.indexOf(e, a);

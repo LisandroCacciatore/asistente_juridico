@@ -36,6 +36,8 @@ from firma import firmar, firmar_lote
 from meta_juridico import subir, ExpedienteNoEncontrado
 import estado
 import generar_cedula
+import acciones
+import mail_gmail
 
 app = FastAPI(title="Asistente Jurídico — Estudio Segovia")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -148,6 +150,9 @@ class DatosFirmaLote(BaseModel):
 class DatosGenerarDesdePendiente(BaseModel):
     id_pendiente: str
     tipo: str
+
+class DatosAccion(BaseModel):
+    datos: dict = {}
 
 
 # --- Dashboard ---------------------------------------------------
@@ -262,6 +267,57 @@ def api_continuar(job_id: str):
         job["event"].set()
         return {"ok": True}
     return {"ok": False}
+
+
+# --- Acciones del secretario (las skills del estudio) ------------
+# Motor local (scripts del repo) o motor "secretario" (Hermes con la
+# skill cargada). Corre en un job: el dashboard muestra el avance y
+# las puertas humanas se destraban desde ahí.
+@app.post("/api/skill/{accion}")
+def api_skill(accion: str, d: DatosAccion):
+    def trabajo(pausar):
+        return acciones.ejecutar(accion, d.datos or {}, pausar=pausar)
+
+    job_id = _lanzar("accion:" + accion, accion, trabajo)
+    return {"job_id": job_id}
+
+
+# --- Mail: bandeja y borradores ----------------------------------
+# El dashboard NUNCA envía: muestra la bandeja y los borradores que
+# preparó el secretario. El envío es un acto del abogado, en Gmail.
+CONSULTA_BANDEJA = "in:inbox -category:promotions -category:social newer_than:30d"
+
+
+def _error_mail(e):
+    """Traduce un fallo de Gmail a algo accionable para el abogado."""
+    t = str(e)
+    if "No hay token" in t:
+        return "Falta autorizar la casilla de Gmail en esta máquina."
+    if isinstance(e, FileNotFoundError):
+        return "Falta autorizar la casilla de Gmail en esta máquina."
+    if "invalid_grant" in t or "RefreshError" in type(e).__name__:
+        return "La sesión de Gmail venció: hay que volver a autorizar la casilla."
+    return "No pude leer la casilla: " + t[:180]
+
+
+@app.get("/api/mail/bandeja")
+def api_mail_bandeja(max: int = 8):
+    try:
+        return {"cuenta": mail_gmail.cuenta(),
+                "mails": mail_gmail.buscar(CONSULTA_BANDEJA, max)}
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": _error_mail(e)}
+
+
+@app.get("/api/mail/borradores")
+def api_mail_borradores(max: int = 8):
+    try:
+        return {"cuenta": mail_gmail.cuenta(),
+                "borradores": mail_gmail.listar_borradores(max)}
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": _error_mail(e)}
 
 
 if __name__ == "__main__":
