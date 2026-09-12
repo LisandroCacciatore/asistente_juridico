@@ -28,6 +28,7 @@ for _flujo in (sys.stdout, sys.stderr):
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
@@ -38,6 +39,18 @@ import generar_cedula
 
 app = FastAPI(title="Asistente Jurídico — Estudio Segovia")
 BASE = os.path.dirname(os.path.abspath(__file__))
+
+# CORS abierto SIN credentials: permite que el dashboard funcione también
+# embebido (webview/preview). El middleware anti-CSRF de abajo sigue
+# protegiendo las mutaciones: exige Origin == Host, y deja pasar los
+# requests sin Origin (scripts locales) y Origin "null" (webviews locales
+# de confianza). Un sitio externo que intente POSTear queda bloqueado.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.middleware("http")
