@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<title>Riel de estados — preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Spectral:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+    --ink:#182338;          /* azul tinta institucional */
+    --ink-2:#2a3a57;
+    --paper:#eef1f5;        /* gris frío / papel */
+    --surface:#ffffff;
+    --line:#dbe1ea;
+    --line-strong:#c3ccd9;
+    --muted:#6a7686;
+    --muted-2:#8b96a5;
+    --escudo:#1f8a5b;       /* verde escudo = trámite/listo */
+    --escudo-soft:#e6f4ec;
+    --martillo:#4a5a8a;     /* resolución */
+    --ambar:#c07d1a;        /* pendiente */
+    --ambar-soft:#fbf1de;
+    --rojo:#b0384a;         /* requiere atención / puerta humana */
+    --rojo-soft:#f8e8ea;
+    --lock:#8a5a2a;
+    --lock-soft:#f6ecdf;
+  }
+  body{font-family:'Inter',system-ui,sans-serif;background:#eef2f7;margin:0;padding:28px;color:var(--ink)}
+  h1{font-family:'Spectral',serif;font-size:22px;margin:0 0 4px}
+  .lead{font-size:13px;color:var(--muted);margin:0 0 22px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:18px}
+  .row{padding:18px 20px;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:none}
+  .caratula{font-size:15.5px;font-weight:600}
+  .meta{display:flex;gap:14px;margin-top:6px;font-size:12.5px;color:var(--muted)}
+  .cuij{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-2)}
+  .who{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--escudo);margin-bottom:8px}
+/* ---------- Riel de estados ---------- */
+  /* El riel va del centro del primer bulbo al centro del último: el track se
+     posiciona en % desde el JS (inset = 100/(2*n)), así escala con n etapas. */
+  .rail{position:relative;display:flex;align-items:flex-start;margin-top:20px}
+  .rail .track{
+    position:absolute;top:13px;transform:translateY(-50%);
+    height:3px;background:var(--line);border-radius:3px;overflow:hidden;
+  }
+  .rail .track .fill{
+    height:100%;
+    background:linear-gradient(90deg,var(--escudo),#2f9d6f);
+    border-radius:3px;transition:width .45s ease;
+  }
+  .node{
+    position:relative;z-index:2;flex:1;min-width:0;
+    display:flex;flex-direction:column;align-items:center;gap:8px;
+  }
+  .node .bul{
+    width:26px;height:26px;border-radius:50%;
+    display:grid;place-items:center;
+    background:#fff;border:2px solid var(--line-strong);
+    color:var(--muted-2);font-size:11px;font-weight:700;
+    transition:background .25s ease,border-color .25s ease,color .25s ease,box-shadow .25s ease;
+  }
+  .node .cap{font-size:10.5px;line-height:1.15;color:var(--muted-2);letter-spacing:.1px;text-align:center}
+  .node.done .bul{background:var(--escudo);border-color:var(--escudo);color:#fff}
+  .node.done .cap{color:var(--ink-2);font-weight:500}
+  .node.gate .bul{background:var(--lock-soft);border-color:var(--lock);color:var(--lock)}
+  .node.gate.done .bul{background:var(--escudo);border-color:var(--escudo);color:#fff}
+  .node.gate .cap{color:var(--lock);font-weight:600}
+  /* "current" = la próxima etapa a resolver. El anillo se hace con box-shadow
+     (no con un pseudo-elemento absolute): sin transform → sin problemas de
+     centrado ni de conflicto con la animación. */
+  .node.current .bul{box-shadow:0 0 0 4px rgba(24,35,56,.10);animation:ring-pulse 2.4s ease-out infinite}
+  @keyframes ring-pulse{
+    0%{box-shadow:0 0 0 0 rgba(24,35,56,.16)}
+    70%{box-shadow:0 0 0 9px rgba(24,35,56,0)}
+    100%{box-shadow:0 0 0 0 rgba(24,35,56,0)}
+  }
+
+  /* barra de avance */
+  .progress{margin-top:14px;display:flex;align-items:center;gap:10px}
+  .progress .pill{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;flex:0 0 auto}
+  .progress .bar{flex:1;height:5px;background:var(--line);border-radius:5px;overflow:hidden}
+  .progress .bar .fill{height:100%;background:linear-gradient(90deg,var(--escudo),#2f9d6f);border-radius:5px;transition:width .45s ease}
+  .progress .pct{font-size:11px;color:var(--muted-2);font-variant-numeric:tabular-nums;flex:0 0 auto}
+
+  /* próximos pasos */
+  .next-steps{
+    margin-top:12px;background:var(--paper);border:1px solid var(--line);
+    border-radius:9px;padding:9px 14px;display:flex;align-items:baseline;gap:12px;
+  }
+  .next-steps .ns-label{font-size:10.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;flex:0 0 auto;white-space:nowrap}
+  .next-steps .ns-list{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;flex:1;min-width:0}
+  .next-steps .ns-item{display:flex;align-items:baseline;gap:6px;font-size:12px;color:var(--ink-2);line-height:1.45}
+  .next-steps .ns-item .ic{font-size:11px;flex:0 0 auto;color:var(--muted-2)}
+  .next-steps .ns-done{color:var(--muted-2)}
+  .next-steps .ns-done .ic{color:var(--escudo)}
+</style></head>
+<body>
+  <h1>Riel de estados — verificación</h1>
+  <p class="lead">Renderizado con el CSS y el JS reales del dashboard. Tres estados: generada → firmada → presentada.</p>
+  <div class="card" id="demo"></div>
+<script>
+function esc(v){
+  return String(v ?? "").replace(/[&<>"']/g, ch => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  })[ch]);
+}
+/* ---------------- Riel de estados con avance + próximos pasos ---------------- */
+// 6 etapas del ciclo de una cédula. `gate` = puerta humana: requiere que el
+// abogado la ejecute a mano (firma con contraseña del portal / presentación 2FA).
+const STAGES = [
+  {key:"detectado", cap:"Detectado"},
+  {key:"generado",  cap:"Generado"},
+  {key:"firma",     cap:"Firma",  gate:true, ic:"🔒"},
+  {key:"firmado",   cap:"Firmado"},
+  {key:"subida",    cap:"Subida", gate:true, ic:"🔒"},
+  {key:"presentado",cap:"Presentado"}
+];
+// Índice de la última etapa cumplida, según el estado de la cédula.
+const REACHED = { generada:1, firmada:3, presentada:5 };
+
+// Lista de pasos: primero los por venir (con la aclaración de cada puerta),
+// después los ya cumplidos (atenuados, con ✓).
+function nextStepsFor(estado){
+  const r = REACHED[estado] ?? 0;
+  const pend = [], hechos = [];
+  STAGES.forEach((s,i)=>{
+    if(i<=r){
+      hechos.push({n:s.cap, done:true});
+    }else{
+      const sufijo = s.key==="firma"  ? "contraseña del portal"
+                   : s.key==="subida" ? "código 2FA" : "";
+      pend.push({n:(s.gate && sufijo) ? `${s.cap} — ${sufijo}` : s.cap, done:false});
+    }
+  });
+  return pend.concat(hechos);
+}
+
+function rail(estado){
+  const n = STAGES.length;
+  const reached = REACHED[estado] ?? 0;
+  // Relleno del riel: termina en el centro del último nodo cumplido.
+  const posPct = n>1 ? (reached/(n-1))*100 : 100;
+  // Barra de avance: fracción de etapas cumplidas.
+  const donePct = ((reached+1)/n)*100;
+  // Insets del track: del centro del primer bulbo al del último.
+  const inset = 100/(2*n);
+  const steps = nextStepsFor(estado);
+
+  let h = '<div class="rail">';
+  h += `<div class="track" style="left:${inset}%;right:${inset}%">`
+     + `<div class="fill" style="width:${posPct}%"></div></div>`;
+  STAGES.forEach((s,i)=>{
+    const done = i<=reached;
+    const current = i===reached+1;        // próxima etapa a resolver
+    let cls = "node";
+    if(s.gate) cls += " gate";
+    if(done)   cls += " done";
+    if(current)cls += " current";
+    const glyph = done ? "✓" : (s.gate ? (s.ic||"🔒") : (i+1));
+    h += `<div class="${cls}"><div class="bul">${glyph}</div>`
+       + `<div class="cap">${esc(s.cap)}</div></div>`;
+  });
+  h += '</div>';
+
+  h += `<div class="progress"><span class="pill">Avance</span>`
+     + `<div class="bar"><div class="fill" style="width:${donePct}%"></div></div>`
+     + `<span class="pct">${reached+1}/${n}</span></div>`;
+
+  if(steps.length){
+    h += '<div class="next-steps"><span class="ns-label">Próximos</span><div class="ns-list">';
+    steps.forEach(s=>{
+      h += `<span class="ns-item ${s.done?'ns-done':''}">`
+         + `<span class="ic">${s.done?'✓':'→'}</span>`
+         + `<span>${esc(s.n)}</span></span>`;
+    });
+    h += '</div></div>';
+  }
+  return h;
+}
+
+const CASOS = [
+  {estado:"generada",   caratula:"GONZALEZ c/ ART EJEMPLO S/ ACCIDENTE LABORAL", cuij:"21-00000001-0"},
+  {estado:"firmada",    caratula:"RAMIREZ c/ PROVINCIA DE SANTA FE S/ DAÑOS",    cuij:"21-00000002-0"},
+  {estado:"presentada", caratula:"FERNANDEZ c/ COMERCIAL EJEMPLO S/ COBRO DE PESOS", cuij:"21-00000003-0"}
+];
+
+document.getElementById("demo").innerHTML = CASOS.map(c=>`
+  <div class="row">
+    <div class="who">estado: ${c.estado}</div>
+    <div class="caratula">${esc(c.caratula)}</div>
+    <div class="meta"><span class="cuij">CUIJ ${esc(c.cuij)}</span></div>
+    ${rail(c.estado)}
+  </div>`).join("");
+</script>
+</body></html>
