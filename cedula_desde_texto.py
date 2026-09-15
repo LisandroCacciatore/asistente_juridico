@@ -147,7 +147,9 @@ def _limpiar_caratula(car):
     # quitar prefijos tipo "Y VISTOS:", "Estos autos caratulados", etc.
     car = re.sub(r'^.*?(?:caratulados?|autos)\s*[":]\s*', "", car, flags=re.I).strip()
     car = car.strip('"').strip()
+    car = re.sub(r"\s+", " ", car).strip()
     return car
+    
 
 
 def extraer_cuij(texto):
