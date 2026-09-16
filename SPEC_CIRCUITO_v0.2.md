@@ -96,3 +96,11 @@ juzgado, si es sentencia) para que confirme sobre datos concretos.
 
 Mientras un dato no esté, el código queda listo y **el campo se muestra vacío**
 (nunca con un valor inventado).
+
+---
+
+## 4. Fuera de alcance (decidido el 16/09/2026)
+
+| Tema | Por qué queda afuera |
+|---|---|
+| **Formularios SRT (Anexos I a IV)** | Santiago **usa la SRT directo desde Claude**. La skill `cliente-art-nuevo` ya tiene los 4 Anexos y el mapeo verificado (commit `a7da75e`), así que no falta nada — pero **no se sigue invirtiendo ahí**. Lo único que sigue valiendo es controlar que los formularios no queden sin vigencia. |

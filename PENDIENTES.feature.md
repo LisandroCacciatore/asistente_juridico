@@ -155,9 +155,20 @@ Feature: Vigencia de los formularios SRT (cliente-art-nuevo)
       (IF-2026-09572607-APN-SRT#MCH) — para los mismos trámites de las
       Resoluciones 179/15 y 298/17 que ya cubre esta skill
     Y el Anexo IV (reingreso, divergencia en el alta médica, divergencia
-      en las prestaciones) NO existe en "assets/" — falta directamente,
-      no es una duda de vigencia
+      en las prestaciones) tampoco estaba en "assets/" al escribir esto
+      — faltaba directamente, no era una duda de vigencia
+      (✅ agregado en a7da75e; ver la nota bajo el scenario)
 
+  # ✅ HECHA en a7da75e (16/09/2026). El Anexo IV está en assets/ con sus 27
+  # campos mapeados en FIELD_MAPS["IV"], verificado por geometría (el rect de
+  # cada campo contra la caja de cada texto) y después contra el render.
+  #
+  # ALCANCE CERRADO (16/09/2026): no se sigue invirtiendo acá. Santiago usa la
+  # SRT directo desde Claude, así que el formulario se resuelve fuera del repo.
+  # Lo que sigue valiendo es el control de vigencia (el scenario de abajo): si
+  # la SRT publica un formulario nuevo, hay que enterarse. El mapeo ya hecho no
+  # se toca "para mejorarlo" — se verificó, y cada campo tocado se vuelve a
+  # verificar contra el PDF oficial o no se toca.
   Scenario: Agregar el Anexo IV que falta
     Dado el formulario oficial "Anexo IV" (IF-2026-09572607-APN-SRT#MCH)
       publicado junto a la Resolución 5/2026 en la edición web del BORA
