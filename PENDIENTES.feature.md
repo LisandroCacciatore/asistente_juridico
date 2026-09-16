@@ -265,7 +265,10 @@ Feature: Las 4 skills del secretario (art, boletas, raeo, transferencia),
       matar el padre
 
 # ============================================================
-Feature: Suite de pruebas automatizada (no existe todavía)
+# ✅ HECHA en 0140f77: tests/ existe y corre (33/33 en 0,46 s, sin portal).
+#    Ver tests/README.md. Se deja el texto original abajo como registro de
+#    qué se pidió, pero NO hay que reimplementarla.
+Feature: Suite de pruebas automatizada (HECHA en 0140f77 — ver nota)
   Como quien mantenga este repo de acá en adelante
   Quiero un conjunto de pruebas que se puedan correr con un solo
   comando
@@ -273,8 +276,11 @@ Feature: Suite de pruebas automatizada (no existe todavía)
   rompió
 
   Background:
-    Dado que hoy el único archivo de prueba en todo el repo es
-      "dev/test_rail.js" (para el riel visual del dashboard)
+    Dado que al escribir esto (contra `beb7f72`) el único archivo de
+      prueba en todo el repo era "dev/test_rail.js" (riel visual del
+      dashboard)
+    Y en `0140f77` se agregó "tests/" con 33 pruebas que pasan sin
+      portal ni login (estado.py y cedula_desde_texto.py)
     Y toda la validación de "estado.py", "generar_cedula.py",
       "meta_juridico.py", "firma.py", el modo continuo, y las 4 skills
       del secretario se hizo con dummies ad-hoc durante sesiones de

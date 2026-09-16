@@ -209,7 +209,7 @@ previews y capturas.
 | `dev/test_rail.js` | Verificación numérica del riel. Es la única prueba que existía antes de `tests/`. |
 | `dev/shot.py` | Captura full-page (local o HTTP). |
 | `dev/datos_cedula_demo.json`, `dev/datos_raeo_demo.json` | Datos de prueba para las acciones. |
-| `dev/exponer_skills_hermes.py` | Mecanismo viejo para exponer skills a Hermes. Ver §7: ya no hace falta. |
+| ~~`dev/exponer_skills_hermes.py`~~ | Era el mecanismo viejo para exponer skills a Hermes. **Borrado** (ver §7). |
 
 ### Otros
 
@@ -398,16 +398,14 @@ En orden de impacto (`PENDIENTES.feature.md` prioriza los dos primeros):
 
 **[CÓDIGO]** Todo esto es verificable en el repo:
 
-1. **`dev/exponer_skills_hermes.py` quedó viejo.** Genera `.hermes/skills/`
-   para que Hermes tenga las skills instaladas, pero `acciones.py` ya no
-   depende de eso: pasa el procedimiento dentro del pedido. Candidato a
-   borrar (junto con `.hermes/`).
-2. **La última Feature de `PENDIENTES.feature.md` está desactualizada.**
-   Dice *"Suite de pruebas automatizada (no existe todavía)"* y que el
-   único archivo de prueba es `dev/test_rail.js`. Falso desde `0140f77`:
-   `tests/` existe con dos suites. La Feature sigue siendo útil por el
-   resto (separar pruebas sin portal de las con portal), pero ese
-   Background ya no aplica.
+1. ✅ **`dev/exponer_skills_hermes.py` — BORRADO.** Generaba `.hermes/skills/`
+   para que Hermes tuviera las skills instaladas, pero `acciones.py` ya no
+   depende de eso: pasa el procedimiento dentro del pedido. Queda la carpeta
+   `.hermes/` local (ignorada por git) por si alguien la regeneró a mano.
+2. ✅ **La Feature de tests de `PENDIENTES.feature.md` — CORREGIDA.** Decía
+   *"Suite de pruebas automatizada (no existe todavía)"* y que el único test
+   era `dev/test_rail.js`. Ahora está marcada como hecha en `0140f77`, con
+   el texto original conservado como registro.
 3. **Los juzgados están duplicados.** `skills/juzgados_rosario.json` (44) y
    `config.JUZGADOS` son la misma información, y **ningún código lee el
    JSON**: se mantiene a mano en `config.py`. Van a divergir.
