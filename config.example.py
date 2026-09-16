@@ -57,6 +57,11 @@ CLASIFICACION = {
 # --- Juzgados: juez/secretario por fuero y nominación ---------
 # Clave: f"{FUERO} {nominacion}" (ej: "LABORAL 3", "CIVIL 1", "FAMILIA 8").
 # Si un juzgado no está, la cédula sale con juez/secretario en blanco.
+#
+# DEJALO VACÍO si no necesitás pisar nada: los 44 juzgados de Rosario
+# (Laboral 1-10, Civil 1-22, Familia 1-12) se leen solos de
+# skills/juzgados_rosario.json. Lo que pongas acá tiene prioridad sobre el
+# JSON, así que usalo solo para corregir un juzgado puntual.
 JUZGADOS = {
     # "LABORAL 3": {
     #     "juez": "Nombre del Juez",

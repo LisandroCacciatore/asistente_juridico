@@ -34,7 +34,45 @@ ORDINALES = {
     "18va": "18", "18": "18",
     "19na": "19", "19va": "19", "19": "19",
     "20ma": "20", "20va": "20", "20": "20",
+    # Variantes que SISFE escribe de otras formas (vistas en expedientes
+    # reales de Civil/Familia). Si falta la del ordinal que usa el portal,
+    # el juzgado no se encuentra y la cédula sale sin juez ni secretario.
+    "11ma": "11", "11na": "11",
+    "12ma": "12", "12na": "12",
+    "13ma": "13", "13na": "13",
+    "14ma": "14", "14na": "14",
+    "15ma": "15", "15na": "15",
+    "16ma": "16", "16na": "16",
+    "17na": "17", "17ta": "17",
+    "18ma": "18", "18na": "18",
+    "19ma": "19", "19ta": "19",
+    "20na": "20", "20ta": "20",
 }
+
+
+def _juzgados():
+    """Juez y secretario por juzgado.
+
+    Los 44 juzgados de Rosario viven en skills/juzgados_rosario.json. Si
+    config.JUZGADOS trae datos, mandan esos (una máquina puede querer pisar
+    alguno); si está vacío, se lee el JSON. Antes había que copiar la lista a
+    mano en config.py y las dos copias se podían desincronizar.
+    """
+    import json
+    import os
+
+    from config import JUZGADOS as _de_config
+
+    if _de_config:
+        return _de_config
+    ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "skills", "juzgados_rosario.json")
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"    ⚠ No pude leer skills/juzgados_rosario.json ({e})")
+        return {}
 
 
 def datos_del_juzgado(texto_radicado):
@@ -45,7 +83,7 @@ def datos_del_juzgado(texto_radicado):
     Ej: 'Juzg. 1ra. Inst. Laboral 5ta. Nom. SEC.UNICA' -> LABORAL 5
     Devuelve (nominacion, juez, secretario, cargo_juez, cargo_secretario)
     """
-    from config import JUZGADOS
+    JUZGADOS = _juzgados()
 
     if not texto_radicado:
         return "", "", "", "JUEZ", "SECRETARIO"
@@ -75,7 +113,10 @@ def datos_del_juzgado(texto_radicado):
     else:
         # Familia usa otro formato: "N° 8" en vez de "8ª Nom." — confirmado
         # con casos reales ("Juzg.Unipersonal de Familia N° 8 - ROSARIO").
-        m2 = re.search(r'n[°º]\s*(\d+)', t)
+        # El \b del principio evita que "en 8 días" o "Unipersonal" cuenten
+        # como nominación; y el [°º]? opcional cubre el portal cuando escribe
+        # "N 8" sin el símbolo de grado.
+        m2 = re.search(r'\bn\s*[°º]?\s*(\d+)', t)
         if m2:
             nominacion = m2.group(1)
 
@@ -91,7 +132,7 @@ def datos_del_juzgado(texto_radicado):
         )
 
     if clave and fuero:
-        print(f"    ⚠ Juzgado '{clave}' no está en config.JUZGADOS — juez/secretario en blanco")
+        print(f"    ⚠ Juzgado '{clave}' no está en skills/juzgados_rosario.json — juez/secretario en blanco")
     return nominacion, "", "", "JUEZ", "SECRETARIO"
 
 

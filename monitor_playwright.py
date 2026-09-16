@@ -138,12 +138,36 @@ def login_sisfe(page):
 
     page.goto(SISFE_LOGIN)
     page.wait_for_timeout(1000)
+    # Los <select> se intentan por TEXTO visible y, si no, por el valor que
+    # teníamos anotado. Los valores "2"/"0" nunca se confirmaron contra el
+    # portal real (⬅ VALIDAR): si el texto no aparece, cae al valor; si
+    # tampoco, avisa y se completa a mano sin romper la corrida.
+    for selector, textos, valor_previo in [
+        ("#circunscripcion", ["ROSARIO", "Rosario"], "2"),
+        ("#colegio", ["ABOGADOS", "Abogados"], "0"),
+    ]:
+        campo = page.locator(selector)
+        elegido = ""
+        for texto in textos:
+            try:
+                campo.select_option(label=re.compile(rf"^\s*{texto}\s*$", re.I), timeout=2000)
+                elegido = texto
+                break
+            except Exception:
+                continue
+        if not elegido:
+            try:
+                campo.select_option(valor_previo, timeout=2000)
+                elegido = f"valor {valor_previo} (sin confirmar)"
+            except Exception:
+                print(f"  ⚠ No pude elegir {selector} — completalo a mano")
+        if elegido:
+            print(f"  ✓ {selector} = {elegido}")
+
     try:
-        page.locator("#circunscripcion").select_option("2")   # Rosario ⬅ VALIDAR valor
-        page.locator("#colegio").select_option("0")           # Abogados ⬅ VALIDAR valor
         page.locator("#matricula").fill(SISFE_USUARIO)
     except Exception:
-        print("  ⚠ No pude precargar los campos de login — completá a mano.")
+        print("  ⚠ No pude precargar la matrícula — completala a mano.")
 
     pausa("Ingresá tu CONTRASEÑA de SISFE, resolvé el reCAPTCHA y hacé clic en INGRESAR.")
 
