@@ -313,12 +313,17 @@ def notificar_sisfe(datos, pausar=None):
             "Esa cédula no tiene PDF firmado: firmala primero (el SISFE "
             "recibe la cédula firmada, no el borrador)."
         )
+    if not os.path.isfile(ruta):
+        raise AccionError(f"No encuentro el PDF firmado en el disco: {ruta}")
     if not cuij:
         raise AccionError(
             "La cédula no tiene CUIJ, y sin CUIJ no se puede encontrar el "
             "expediente en el SISFE."
         )
 
+    # La pausa va recién acá: avisa que se va a abrir una ventana. Si algo de
+    # lo de arriba falla, no tiene sentido hacerte apretar «continuar» para
+    # después contarte que el archivo no estaba.
     if pausar:
         pausar("Se va a abrir el SISFE con el perfil de Chrome del estudio.\n"
                "Si te pide iniciar sesión, hacelo en la ventana y después "

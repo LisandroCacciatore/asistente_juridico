@@ -134,6 +134,27 @@ def test_sin_cuij_no_arranca(monkeypatch, tmp_path):
     assert "CUIJ" in str(e.value)
 
 
+def test_si_el_firmado_no_esta_en_el_disco_lo_dice_sin_pedir_ningun_paso(monkeypatch, tmp_path):
+    """Un `ruta_firmada` que apunta a un archivo que ya no está.
+
+    Se corta ANTES de la pausa: avisar "se va a abrir el SISFE" y hacer
+    apretar «continuar» para después contar que el archivo no estaba es
+    hacer perder el tiempo.
+    """
+    id_cedula, firmada = _cedula_firmada(tmp_path)
+    os.remove(firmada)
+    llamadas = _subida_falsa(monkeypatch, _resultado_ok())
+    pausas = []
+
+    with pytest.raises(acciones.AccionError) as e:
+        acciones.ejecutar("notificar_sisfe", {"id_cedula": id_cedula},
+                          pausar=lambda m: pausas.append(m))
+
+    assert "No encuentro el PDF firmado" in str(e.value)
+    assert pausas == []                      # ningún paso humano pedido
+    assert "ruta_pdf" not in llamadas        # y no se abrió ningún portal
+
+
 # ============================================================
 #  Un fallo del portal no marca nada
 # ============================================================

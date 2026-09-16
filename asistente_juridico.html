@@ -400,7 +400,7 @@
   <div class="status">
     <div class="item"><span class="dot"></span><span>SISFE conectado</span></div>
     <div class="item"><span class="dot"></span><span>Firma disponible</span></div>
-    <div class="item"><span class="dot warn"></span><span>Meta Jurídico · 2FA</span></div>
+    <div class="item"><span class="dot warn"></span><span>SISFE · login</span></div>
   </div>
 </div>
 
@@ -460,7 +460,7 @@
   <!-- Listas para presentar -->
   <div class="section" id="presentarSeccion" style="display:none">
     <div class="section-head">
-      <h2>Listas para presentar</h2>
+      <h2>Firmadas — para subir al SISFE</h2>
       <span class="count" id="presentarCount"></span>
     </div>
     <div class="card" id="presentar"></div>
@@ -523,7 +523,7 @@
   </div>
 
   <div class="footnote">
-    Prototipo de presentación · El asistente automatiza hasta el borde de cada acto irreversible y frena para que <b>vos autorices</b>: la <b>firma</b> y la <b>subida a Meta Jurídico</b> son siempre tuyas.
+    Prototipo de presentación · El asistente automatiza hasta el borde de cada acto irreversible y frena para que <b>vos autorices</b>: la <b>firma</b> y el <b>NOTIFICAR en el SISFE</b> son siempre tuyos.
   </div>
 </div>
 
@@ -691,8 +691,14 @@ function tipoTag(c){
 function sideFor(c){
   if(c.estado==="generada")
     return `<button class="btn primary" onclick="review('${esc(c.id)}')">Revisar y firmar</button>`;
-  if(c.estado==="firmada")
-    return `<button class="btn upload" onclick="upload('${esc(c.id)}')">Subir a Meta Jurídico</button>`;
+  if(c.estado==="firmada"){
+    // Cargada en el SISFE pero sin notificar: la cédula NO se cierra sola.
+    // La fila pide confirmar que apretaste NOTIFICAR en el portal.
+    if(c.sisfe_cargada)
+      return `<div class="dest" style="color:var(--muted-2)">En el SISFE, esperando tu NOTIFICAR</div>
+              <button class="btn upload" onclick="confirmarNotificada('${esc(c.id)}')">Ya la notifiqué</button>`;
+    return `<button class="btn upload" onclick="upload('${esc(c.id)}')">Subir al SISFE</button>`;
+  }
   return `<span class="done-tag">✓ Presentada</span>`;
 }
 
@@ -772,7 +778,7 @@ function renderMetricas(){
 
   const partes = [];
   if(firmar)    partes.push(`${firmar} espera${firmar===1?"":"n"} tu firma`);
-  if(presentar) partes.push(`${presentar} tu subida a Meta Jurídico`);
+  if(presentar) partes.push(`${presentar} tu subida al SISFE`);
   if(pend)      partes.push(`${pend} decreto${pend===1?"":"s"} para clasificar`);
   if(attn)      partes.push(`${attn} requiere${attn===1?"":"n"} atención`);
   document.getElementById("heroSub").textContent =
@@ -966,7 +972,7 @@ function waitModal(msg, jobId, tipo, id){
     <div class="modal-body">
       <div class="gate-box">
         <div class="gate-icon">${tipo==='firma'?'🔒':'🔐'}</div>
-        <h4>${tipo==='firma'?'Firma digital':'Subir a Meta Jurídico'}</h4>
+        <h4>${tipo==='firma'?'Firma digital':'Subir al SISFE'}</h4>
         <p>${msg.replace(/\n/g,'<br>')}</p>
         ${!jobId?'<div class="spin" style="margin:8px auto"></div>':''}
       </div>
@@ -986,7 +992,7 @@ async function poll(jobId, id, tipo){
     if(st.status==='corriendo'){
       waitModal(tipo==='firma'
         ? "Abriendo el portal de firma…\nMirá la ventana de Chrome."
-        : "Abriendo Meta Jurídico…\nMirá la ventana de Chrome.", null, tipo, id);
+        : "Abriendo el SISFE…\nMirá la ventana de Chrome.", null, tipo, id);
       return setTimeout(()=>poll(jobId,id,tipo), 900);
     }
     if(st.status==='esperando'){
@@ -1008,10 +1014,18 @@ async function poll(jobId, id, tipo){
         } else {
           toast("⚠ No se detectó el PDF firmado. Revisá la consola del servidor.");
         }
-      } else {
+      } else if(tipo==='notificada'){
         const ok = st.result?.ok;
-        if(ok){ c.estado='presentada'; toast("✓ Presentada en Meta Jurídico"); }
-        else { toast("⚠ No se confirmó la presentación. Revisá la consola del servidor."); }
+        if(ok){ c.estado='presentada'; delete c.sisfe_cargada; toast("✓ Cédula cerrada: notificada en el SISFE"); }
+        else { toast("⚠ No pude cerrar la cédula. Revisá la consola del servidor."); }
+      } else {
+        // Subida al SISFE: la cédula NO se cierra. Queda cargada, esperando
+        // que vos aprietes NOTIFICAR en el portal.
+        if(st.result?.ok){
+          c.sisfe_cargada = true;
+          toast("✓ Cargada en el SISFE — falta que aprietes NOTIFICAR");
+          (st.result.avisos||[]).forEach(a=>console.warn("SISFE:", a));
+        } else { toast("⚠ No quedó cargada. Revisá la consola del servidor."); }
       }
       closeModal(); renderListas(); return;
     }
@@ -1033,15 +1047,33 @@ async function startFirma(id){
   }catch(e){ toast("⚠ No pude contactar al servidor"); }
 }
 
-/* ---------- Subir ---------- */
+/* ---------- Subir al SISFE ----------
+   Meta Jurídico salió del circuito (spec D1): la cédula firmada va directo
+   al SISFE. Acá el panel manda sólo el id: el PDF firmado, el CUIJ y la
+   carátula los resuelve el servidor desde estado.json, así no hay forma de
+   que el navegador mande un dato distinto al de la cédula. */
 async function upload(id){
-  const c = getCed(id);
   if(!SERVER){ return uploadSim(id); }           // demo offline
   try{
-    const r = await fetch('/api/subir',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id_cedula:id, ruta_pdf:c.ruta_firmada, cuij:c.cuij, caratula:c.caratula})});
+    const r = await fetch('/api/skill/notificar_sisfe',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({datos:{id_cedula:id}})});
     const {job_id} = await r.json();
     poll(job_id, id, 'subida');
+  }catch(e){ toast("⚠ No pude contactar al servidor"); }
+}
+
+/* El abogado apretó NOTIFICAR en el portal y lo confirma acá: recién ahí
+   la cédula queda presentada y el servidor borra los PDF locales. */
+async function confirmarNotificada(id){
+  if(!SERVER){
+    const c=getCed(id); c.estado='presentada'; delete c.sisfe_cargada;
+    renderListas(); toast("✓ Notificada (demo)"); return;
+  }
+  try{
+    const r = await fetch('/api/skill/marcar_notificada',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({datos:{id_cedula:id}})});
+    const {job_id} = await r.json();
+    poll(job_id, id, 'notificada');
   }catch(e){ toast("⚠ No pude contactar al servidor"); }
 }
 
@@ -1063,14 +1095,14 @@ function signGateSim(id){
 function uploadSim(id){
   openModal(`
     <div class="modal-body"><div class="gate-box">
-      <div class="gate-icon">🔐</div><h4>Subir a Meta Jurídico</h4>
-      <p>El asistente posicionó el expediente correcto.<br>Ingresá el código 2FA y confirmá la presentación.</p>
+      <div class="gate-icon">🔐</div><h4>Subir al SISFE</h4>
+      <p>El asistente buscó el expediente por CUIJ, escribió la descripción y adjuntó la cédula firmada.<br>Ingresá tu contraseña y el reCAPTCHA, y apretá vos NOTIFICAR.</p>
       <input class="code-in" type="text" id="code2fa" maxlength="6" value="482913">
-      <div class="hint">Demo — con el servidor, el 2FA y la confirmación son en Meta Jurídico.</div>
+      <div class="hint">Demo — con el servidor, el login y el NOTIFICAR son en el SISFE.</div>
     </div></div>
     <div class="modal-foot">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn upload" onclick="const c=getCed('${id}');c.estado='presentada';closeModal();renderListas();toast('Presentada en Meta Jurídico')">Confirmar y subir</button>
+      <button class="btn upload" onclick="const c=getCed('${id}');c.sisfe_cargada=true;closeModal();renderListas();toast('Cargada en el SISFE — falta apretar NOTIFICAR')">Cargar la cédula</button>
     </div>`);
   setTimeout(()=>document.getElementById("code2fa")?.focus(),50);
 }
