@@ -14,7 +14,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 from cedulas_pdf import (  # noqa: E402
-    _autoridad, _autoridad_51, _es_juridica, _fuero, _fuero_simple,
+    _autoridad, _autoridad_51, _distrito, _fuero, _fuero_simple,
     generar_pdf_estandar, generar_pdf_audiencia_51,
 )
 from cedula_desde_texto import extraer_ciudad, extraer_fuero  # noqa: E402
@@ -70,30 +70,57 @@ def test_autoridad_no_inventa_lo_que_falta():
     assert _autoridad({"juez": "   "}) == ""
 
 
-def test_autoridad_51_mantiene_su_redaccion():
-    txt = _autoridad_51({"juez": "Ana Pérez", "secretario": "Luis Gómez"})
-    assert txt == "la/el DRA./DR. ANA PÉREZ (JUEZ), SECRETARIO de la/el DRA./DR. LUIS GÓMEZ"
+def test_autoridad_51_usa_el_modelo_del_sisfe():
+    """El portal pone el cargo entre paréntesis y NO escribe 'Dr./Dra.'."""
+    txt = _autoridad_51({"juez": "Silvana Laura Quagliatti",
+                         "secretario": "Pedro Daniel Herrero"})
+    assert txt == ("SILVANA LAURA QUAGLIATTI (JUEZ/A), "
+                   "PEDRO DANIEL HERRERO (SECRETARIO / PROSECRETARIO)")
+    assert "DR./DRA." not in txt
 
 
-# ---------------------------------------------------------------- jurídica
-@pytest.mark.parametrize("nombre", [
-    "ART EJEMPLO S.A.", "COMERCIAL EJEMPLO S.R.L.", "MUNICIPALIDAD DE ROSARIO",
-    "CAJA FORENSE ROSARIO", "BANCO MUNICIPAL", "FISCO DE LA PROVINCIA",
-])
-def test_detecta_persona_juridica(nombre):
-    assert _es_juridica({"destinatario_nombre": nombre}) is True
+def test_autoridad_51_solo_juez():
+    assert _autoridad_51({"juez": "Ana Pérez"}) == "ANA PÉREZ (JUEZ/A)"
 
 
-@pytest.mark.parametrize("nombre", ["Juan Pérez", "MARIA GOMEZ", "RODRIGUEZ, ANA"])
-def test_detecta_persona_fisica(nombre):
-    assert _es_juridica({"destinatario_nombre": nombre}) is False
+def test_autoridad_51_el_prosecretario_ocupa_el_segundo_casillero():
+    """El portal tiene dos casilleros: juez, y 'SECRETARIO / PROSECRETARIO'."""
+    txt = _autoridad_51({"juez": "Ana Pérez", "prosecretario": "Marta Díaz"})
+    assert txt == "ANA PÉREZ (JUEZ/A), MARTA DÍAZ (SECRETARIO / PROSECRETARIO)"
 
 
-def test_flag_explicito_gana_sobre_la_heuristica():
-    assert _es_juridica({"destinatario_nombre": "Juan Pérez",
-                         "destinatario_es_juridica": True}) is True
-    assert _es_juridica({"destinatario_nombre": "ART EJEMPLO S.A.",
-                         "destinatario_es_juridica": False}) is False
+def test_autoridad_51_sin_nombres_devuelve_vacio():
+    assert _autoridad_51({}) == ""
+    assert _autoridad_51({"juez": "   "}) == ""
+
+
+def test_autoridad_51_no_pierde_al_prosecretario_si_hay_secretario():
+    """El portal tiene dos casilleros; nosotros no tiramos un dato del expediente."""
+    txt = _autoridad_51({"juez": "Ana Pérez", "secretario": "Luis Gómez",
+                         "prosecretario": "Marta Díaz"})
+    assert txt == ("ANA PÉREZ (JUEZ/A), LUIS GÓMEZ (SECRETARIO / PROSECRETARIO), "
+                   "MARTA DÍAZ (PROSECRETARIO)")
+
+
+# ------------------------------------------- domicilio y distrito judicial
+def test_distrito_de_las_ciudades_verificadas():
+    assert _distrito({"ciudad": "Rosario"}) == "2"
+    assert _distrito({"ciudad": "ROSARIO"}) == "2"
+    assert _distrito({"ciudad": "Santa Fe"}) == "1"
+
+
+def test_distrito_no_se_inventa_para_otra_ciudad():
+    """Rafaela no está verificado: mejor sin el tramo que con un número inventado.
+
+    Distrito judicial no es lo mismo que circunscripción, y la provincia los
+    numera de forma no secuencial (San Jorge es el Nº 11).
+    """
+    assert _distrito({"ciudad": "Rafaela"}) == ""
+    assert _distrito({"ciudad": "Venado Tuerto"}) == ""
+
+
+def test_distrito_explicito_gana_sobre_la_tabla():
+    assert _distrito({"ciudad": "Rafaela", "distrito": "5"}) == "5"
 
 
 # ---------------------------------------------------------------- PDF real
@@ -144,8 +171,23 @@ def test_pdf_estandar_fuero_civil(tmp_path, base):
     assert "EN LO LABORAL" not in texto
 
 
-def test_pdf_juridica_no_imprime_domicilio(tmp_path, base):
-    base["destinatario_nombre"] = "ART EJEMPLO S.A."
+def test_pdf_imprime_el_domicilio_tambien_en_persona_juridica(tmp_path, base):
+    """Una cédula real del SISFE imprime el domicilio de una S.R.L. (16/09/2026).
+
+    Antes se suprimía por ser persona jurídica. En el Art. 51 ese domicilio no
+    es decorativo: el artículo manda citar a las partes "en el real".
+    """
+    base["destinatario_nombre"] = "CHICHILO'S PIZZAS SRL"
+    base["destinatario_domicilio"] = "CATAMARCA Nº 2501 DE LA CIUDAD ROSARIO"
+    ruta = tmp_path / "c.pdf"
+    generar_pdf_estandar(base, str(ruta))
+    texto = _texto(ruta)
+    assert "Domicilio" in texto
+    assert "CATAMARCA" in texto
+
+
+def test_pdf_sin_domicilio_no_inventa_la_linea(tmp_path, base):
+    del base["destinatario_domicilio"]
     ruta = tmp_path / "c.pdf"
     generar_pdf_estandar(base, str(ruta))
     assert "Domicilio" not in _texto(ruta)
@@ -196,3 +238,110 @@ def test_extraer_ciudad(texto, esperado):
 ])
 def test_extraer_fuero(texto, esperado):
     assert extraer_fuero(texto) == esperado
+
+
+# ============================================================
+#  Modelo del SISFE para el Art. 51 (16/09/2026)
+# ------------------------------------------------------------
+#  Comparado contra una cédula real del portal: Juzgado en lo Laboral Nº 8
+#  de Rosario, "PALOMEQUE YAIR MILTON C/ CHICHILO'S PIZZAS SRL", 07/04/2026.
+#  Los datos de acá abajo son los de ese caso.
+# ============================================================
+def _plano(ruta):
+    """Texto del PDF con los espacios normalizados (para comparar frases)."""
+    return " ".join(_texto(ruta).split())
+
+
+@pytest.fixture
+def caso51():
+    return {
+        "nominacion": "8", "ciudad": "Rosario", "fuero": "LABORAL",
+        "caratula": "PALOMEQUE YAIR MILTON C/ CHICHILO'S PIZZAS SRL S/ COBRO DE PESOS",
+        "cuij": "21-04267528-5",
+        "juez": "Silvana Laura Quagliatti", "secretario": "Pedro Daniel Herrero",
+        "fecha_decreto": "07/04/2026",
+        "texto_decreto": "Téngase al compareciente por presentado. Notifíquese por cédula.",
+        "destinatario_nombre": "CHICHILO'S PIZZAS SRL",
+        "destinatario_domicilio": "CATAMARCA Nº 2501 DE LA CIUDAD ROSARIO",
+        "fecha_audiencia": "29/05/2026", "hora_audiencia": "09:45",
+    }
+
+
+def test_c51_encabezado_como_el_portal(tmp_path, caso51):
+    ruta = tmp_path / "c51.pdf"
+    generar_pdf_audiencia_51(caso51, str(ruta))
+    texto = _plano(ruta)
+    assert "CÉDULA" in texto
+    assert "JUZGADO EN LO LABORAL Nº 8 DISTRITO JUDICIAL NRO. 2 - ROSARIO" in texto
+
+
+def test_c51_sin_distrito_verificado_no_lo_inventa(tmp_path, caso51):
+    caso51["ciudad"] = "Rafaela"
+    ruta = tmp_path / "c51.pdf"
+    generar_pdf_audiencia_51(caso51, str(ruta))
+    texto = _plano(ruta)
+    assert "RAFAELA" in texto
+    assert "DISTRITO JUDICIAL" not in texto
+
+
+def test_c51_destinatario_domicilio_y_autoridad(tmp_path, caso51):
+    """'Señor:' (no 'Señor/a:'), el domicilio de la S.R.L. y el cargo entre paréntesis."""
+    ruta = tmp_path / "c51.pdf"
+    generar_pdf_audiencia_51(caso51, str(ruta))
+    texto = _plano(ruta)
+    assert "Señor: CHICHILO'S PIZZAS SRL" in texto
+    assert "CATAMARCA" in texto
+    assert "QUAGLIATTI (JUEZ/A)" in texto
+    assert "HERRERO (SECRETARIO / PROSECRETARIO)" in texto
+    assert "DR./DRA." not in texto
+    assert "Señor/a" not in texto
+
+
+def test_c51_la_caratula_va_dentro_de_la_frase(tmp_path, caso51):
+    """El portal no usa líneas 'Por:' / 'Contra:' / 'Sobre:' / 'Expte N°'."""
+    ruta = tmp_path / "c51.pdf"
+    generar_pdf_audiencia_51(caso51, str(ruta))
+    texto = _plano(ruta)
+    for etiqueta in ("Por:", "Contra:", "Sobre:", "Expte"):
+        assert etiqueta not in texto
+    assert "dentro de los autos caratulados" in texto
+    assert "21-04267528-5" in texto
+
+
+def test_c51_el_cierre_va_al_final(tmp_path, caso51):
+    """El portal transcribe primero y cierra después, con una frase corta."""
+    ruta = tmp_path / "c51.pdf"
+    generar_pdf_audiencia_51(caso51, str(ruta))
+    texto = _plano(ruta)
+    cierre = "En consecuencia queda usted debidamente notificado del decreto que antecede"
+    assert cierre in texto
+    assert "29/05/2026" in texto and "09:45" in texto
+    assert texto.index(cierre) > texto.index("ARTICULO 66")
+
+
+def test_c51_transcribe_51_52_y_66_pero_no_71(tmp_path, caso51):
+    """El decreto ordena transcribir los arts. 51, 52 y 66. El 71 no va."""
+    ruta = tmp_path / "c51.pdf"
+    generar_pdf_audiencia_51(caso51, str(ruta))
+    texto = _plano(ruta)
+    assert "ARTICULO 51" in texto
+    assert "ARTÍCULO 52" in texto
+    assert "ARTICULO 66" in texto
+    assert "ARTICULO 71" not in texto
+
+
+def test_c51_sin_bloque_de_firma(tmp_path, caso51):
+    """El portal no imprime 'Firma y sello': la cédula se firma digitalmente."""
+    ruta = tmp_path / "c51.pdf"
+    generar_pdf_audiencia_51(caso51, str(ruta))
+    texto = _plano(ruta)
+    assert "Firma y sello" not in texto
+    assert "Sin más, lo saludo" not in texto
+
+
+def test_c51_no_imprime_la_fecha_arriba(tmp_path, caso51):
+    """El portal no pone la fecha suelta arriba: va dentro del decreto."""
+    ruta = tmp_path / "c51.pdf"
+    generar_pdf_audiencia_51(caso51, str(ruta))
+    encabezado = _plano(ruta).split("Hago saber")[0]
+    assert "07/04/2026" not in encabezado

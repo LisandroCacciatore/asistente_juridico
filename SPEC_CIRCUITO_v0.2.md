@@ -36,8 +36,26 @@ cambia, se cambia acá primero.
       ni queda una coma colgando). *(hecho — `_autoridad()`)*
 - [x] La **ciudad** del juzgado se puede fijar explícitamente (Rosario, Rafaela, …)
       y se usa en el encabezado. *(hecho — `extraer_ciudad()` + campo `ciudad`)*
-- [x] Destinatario **persona jurídica** → el domicilio **no** se imprime (va por SISFE).
-      Persona física → se imprime. *(hecho — `_es_juridica()`, con flag para forzarlo)*
+- [x] ~~Destinatario **persona jurídica** → el domicilio **no** se imprime (va por SISFE).~~
+      **CORREGIDO el 16/09/2026 contra una cédula real del SISFE:** el domicilio se
+      imprime **siempre que lo tengamos**, sea persona física o jurídica — la muestra
+      real imprime el de una S.R.L., y en el Art. 51 ese domicilio no es decorativo
+      (el artículo manda citar a las partes *"en el real, además del procesal"*). Lo
+      que sigue prohibido es **inventarlo**: si no está, no se imprime. Se eliminó
+      `_es_juridica()` y el flag `destinatario_es_juridica`.
+- [x] **La cédula de Audiencia Art. 51 sigue el modelo del SISFE** (16/09/2026),
+      copiado de una cédula real del portal (Juzgado en lo Laboral Nº 8, Rosario,
+      expediente PALOMEQUE C/ CHICHILO'S PIZZAS SRL, 07/04/2026): encabezado `CÉDULA`
+      + `JUZGADO EN LO LABORAL Nº 8 DISTRITO JUDICIAL NRO. 2 - ROSARIO`, `Señor:` con
+      el destinatario y su domicilio, la autoridad con el cargo entre paréntesis y sin
+      `Dr./Dra.`, la carátula y el CUIJ **dentro de la frase**, `Se ha dictado lo
+      siguiente:` seguido del decreto **sin comillas**, la transcripción de los arts.
+      **51, 52 y 66** (se sacó el 71: el decreto manda transcribir esos tres y el
+      portal transcribe esos tres) y el cierre corto **al final**, centrado. Sin bloque
+      de firma (se firma digitalmente, como en el portal).
+      ⚠️ Diferencia conocida y deliberada: si el expediente tiene secretario **y**
+      prosecretario distintos, el portal tiene dos casilleros y muestra uno; nosotros
+      agregamos el tercero con su propio cargo para no perder el dato.
 - [x] **El fuero del encabezado ya no está escrito a mano.** Estaba fijo en
       "EN LO LABORAL" en la plantilla, así que una cédula de Civil o Comercial
       salía con el fuero equivocado. *(hallazgo + arreglo de esta fase)*
@@ -92,6 +110,7 @@ juzgado, si es sentencia) para que confirme sobre datos concretos.
 |---|---|---|
 | **Nombres de prosecretarios por juzgado** | Fase 1 | Santiago (o los decretos reales) |
 | **Una cédula de peritos real** | Fase 1 | Santiago — **ya pedida** el 16/09/2026 |
+| **Números de distrito judicial de las otras ciudades** | Encabezado de las cédulas | Sólo **Rosario (2)** y **Santa Fe (1)** están verificados. Distrito judicial ≠ circunscripción (los numeran de forma no secuencial: San Jorge es el Nº 11), así que los demás se sacan de una cédula real, no se deducen |
 | **¿FirmAr y SISFE comparten claves?** | Fase 7 | Santiago |
 | **Tipos de expediente de Meta Jurídico** | Fase 5 | la pantalla del portal |
 | **Lista real de partes de SISFE** | Fase 6 | la pantalla del portal |
