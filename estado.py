@@ -18,6 +18,8 @@
 
 import os
 import json
+import getpass
+import platform
 import threading
 import datetime
 
@@ -70,13 +72,41 @@ def _ahora():
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
+def _quien():
+    """Quién hizo la acción y desde qué máquina.
+
+    Decisión D11 del SPEC: el log tiene que decir *quién* hizo cada cosa, no
+    solo qué se hizo. Hoy la identidad disponible es la de Windows (la sesión
+    con la que corre el servidor). Cuando cada persona del estudio tenga su
+    cuenta y su perfil de Chrome (Fase 10, multiagente) va a seguir siendo
+    este mismo campo: el usuario de la sesión que disparó la acción.
+
+    No usa `whoami` ni depende de que el proceso tenga consola: getpass y
+    platform funcionan igual corriendo como servicio.
+    """
+    try:
+        usuario = getpass.getuser()
+    except Exception:
+        usuario = os.environ.get("USERNAME") or os.environ.get("USER") or "?"
+    try:
+        maquina = platform.node()
+    except Exception:
+        maquina = ""
+    return usuario, maquina
+
+
 # --- Log de acciones (append-only, sobrevive a los archivos) ------
 def registrar_log(accion, id_cedula, caratula="", cuij="", detalle=""):
     """
     Agrega una línea al log de acciones. No se pisa nunca — cada llamada
     suma una entrada nueva. `accion` típicas: "generada", "firmada",
     "presentada", "eliminado_pdf", "error_eliminar_pdf".
+
+    Cada entrada queda sellada con el usuario de Windows y la máquina
+    (D11). Si el estudio tiene una sola persona, alcanza con la máquina
+    para saber de dónde salió; con varias, el usuario distingue quién.
     """
+    usuario, maquina = _quien()
     entrada = {
         "fecha_hora": _ahora(),
         "accion": accion,
@@ -84,6 +114,8 @@ def registrar_log(accion, id_cedula, caratula="", cuij="", detalle=""):
         "caratula": caratula,
         "cuij": cuij,
         "detalle": detalle,
+        "usuario": usuario,
+        "maquina": maquina,
     }
     with _lock:
         with open(ARCHIVO_LOG, "a", encoding="utf-8") as f:
@@ -92,11 +124,20 @@ def registrar_log(accion, id_cedula, caratula="", cuij="", detalle=""):
 
 
 def leer_log(limite=None):
-    """Devuelve las entradas del log, más recientes primero."""
+    """Devuelve las entradas del log, más recientes primero.
+
+    Las entradas viejas (escritas antes de D11) no tienen `usuario` ni
+    `maquina`. Se completan vacías acá y no en el que lee: así ningún
+    consumidor — el dashboard, un informe, una auditoría — tiene que
+    acordarse de que el campo puede faltar.
+    """
     if not os.path.isfile(ARCHIVO_LOG):
         return []
     with open(ARCHIVO_LOG, encoding="utf-8") as f:
         lineas = [json.loads(l) for l in f if l.strip()]
+    for e in lineas:
+        e.setdefault("usuario", "")
+        e.setdefault("maquina", "")
     lineas.reverse()
     return lineas[:limite] if limite else lineas
 

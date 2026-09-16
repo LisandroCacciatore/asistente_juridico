@@ -74,6 +74,74 @@ def _demandado_de_caratula(caratula):
     return m.group(1).strip() if m else ""
 
 
+def _destinatarios_de_datos(datos, caratula):
+    """A quién va la cédula, según lo que se tildó en el panel (D8).
+
+    Si el panel mandó la lista, se respeta tal cual (es la decisión del
+    abogado). Si no vino nada —una corrida por consola, la skill vieja—
+    se mantiene el comportamiento de siempre: la parte demandada.
+    """
+    elegidos = datos.get("destinatarios")
+    if isinstance(elegidos, list):
+        limpios = []
+        for d in elegidos:
+            if isinstance(d, dict):
+                nombre = (d.get("nombre") or "").strip()
+                domicilio = (d.get("domicilio") or "").strip()
+            else:
+                nombre, domicilio = str(d).strip(), ""
+            if nombre:
+                limpios.append({"nombre": nombre, "domicilio": domicilio})
+        if limpios:
+            return limpios
+    return [{"nombre": _demandado_de_caratula(caratula), "domicilio": "Domicilio constituido"}]
+
+
+def detectar_destinatarios(datos, pausar=None):
+    """Lee el decreto pegado y dice a quién habría que notificar.
+
+    Es el paso previo que pide D8: mostrar la lista para que el abogado
+    confirme ANTES de que exista un PDF. No genera nada, no registra
+    nada y no toca ningún portal — es sólo lectura del texto.
+
+    Devuelve también lo que se interpretó (carátula, CUIJ, fuero,
+    ciudad) para que la confirmación sea sobre datos concretos y no
+    sobre un "confiá en mí".
+    """
+    from cedula_desde_texto import (
+        es_sentencia, extraer_caratula, extraer_cuij, extraer_juzgado,
+        extraer_ciudad, extraer_fuero, extraer_destinatarios,
+    )
+
+    texto = (datos.get("texto") or "").strip()
+    if len(texto) < 40:
+        raise AccionError("Pegá el decreto completo: encabezado, fecha y parte resolutiva.")
+
+    caratula = extraer_caratula(texto)
+    detectados = extraer_destinatarios(texto, caratula) if caratula else []
+
+    # Domicilio común por defecto: el que el repo venía imprimiendo. Cada
+    # fila lo puede pisar desde el panel, y vacío = no se imprime.
+    dom = (datos.get("domicilio") or "Domicilio constituido").strip()
+    for d in detectados:
+        d["domicilio"] = dom
+
+    return {
+        "ok": True,
+        "caratula": caratula,
+        "cuij": extraer_cuij(texto),
+        "juzgado": extraer_juzgado(texto),
+        "fuero": extraer_fuero(texto) or "LABORAL",
+        "ciudad": extraer_ciudad(texto) or "ROSARIO",
+        "es_sentencia": es_sentencia(texto),
+        "destinatarios": detectados,
+        "aviso": "" if caratula else (
+            "No pude leer la carátula del encabezado. Sin carátula la cédula sale sin "
+            "el «autos caratulados»: revisá el texto o escribí la carátula a mano."
+        ),
+    }
+
+
 def cedula(datos, pausar=None):
     """Cédula a partir del texto pegado. Motor del repo, sin IA."""
     from cedula_desde_texto import (
@@ -99,7 +167,7 @@ def cedula(datos, pausar=None):
     cuij = extraer_cuij(texto)
     fecha = extraer_fecha_decreto(texto)
     juzgado = extraer_juzgado(texto)
-    dest = (datos.get("destinatario") or "").strip() or _demandado_de_caratula(caratula)
+    destinatarios = _destinatarios_de_datos(datos, caratula)
 
     entrada = {
         "caratula": caratula,
@@ -108,7 +176,7 @@ def cedula(datos, pausar=None):
         "texto_decreto": recortado,
         "juzgado": juzgado,
         "tipo": "auto",                     # lo deducen las reglas del repo
-        "destinatarios": [{"nombre": dest, "domicilio": "Domicilio constituido"}],
+        "destinatarios": destinatarios,
     }
 
     # Ciudad y fuero solo si se detectaron: si se pasaran vacíos, la plantilla
@@ -124,13 +192,20 @@ def cedula(datos, pausar=None):
         raise AccionError("El generador no devolvió ninguna cédula.")
 
     primera = registradas[0]
+    cuantas = len(registradas)
+    etiqueta = primera.get("tipoLabel", "Cédula")
+    mensaje = (
+        f"{etiqueta} generada — revisala en «Listas para firmar»" if cuantas == 1
+        else f"{cuantas} cédulas generadas — revisalas en «Listas para firmar»"
+    )
     return {
         "ok": True,
-        "mensaje": f"{primera.get('tipoLabel', 'Cédula')} generada — revisala en «Listas para firmar»",
+        "mensaje": mensaje,
         "generadas": [r.get("id") for r in registradas],
         "caratula": caratula,
         "cuij": cuij,
-        "destinatario": dest,
+        "destinatario": destinatarios[0]["nombre"],
+        "destinatarios": [d["nombre"] for d in destinatarios],
         "recortada": es_sent,
         "archivos": [r.get("ruta_pdf") for r in registradas],
     }
@@ -286,6 +361,8 @@ def secretario(accion, datos, pausar=None):
 
 def ejecutar(accion, datos, pausar=None):
     """Corre una acción del panel y devuelve su resultado."""
+    if accion == "destinatarios":
+        return detectar_destinatarios(datos, pausar)
     if accion == "cedula":
         return cedula(datos, pausar)
     if accion == "cuenta":

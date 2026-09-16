@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Asistente Jurídico — Estudio Segovia</title>
+<!-- Ícono de la pestaña: la misma «§» del encabezado, embebida para que no
+     dependa de un archivo (y para que el navegador no pida un favicon.ico
+     que el servidor no tiene). -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23182338'/><text x='16' y='23' font-size='20' font-family='Georgia,serif' fill='%23c9a227' text-anchor='middle'>§</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -255,7 +259,10 @@
     border:1.5px solid var(--line-strong);border-radius:9px;padding:11px;width:200px;outline:none;
   }
   .code-in:focus{border-color:var(--ink)}
-  .modal-foot{padding:14px 22px 20px;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--line)}
+  /* El pie queda pegado abajo: con una lista larga de destinatarios, el
+     botón de generar no se puede ir fuera de la pantalla. */
+  .modal-foot{padding:14px 22px 20px;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--line);
+    position:sticky;bottom:0;background:#fff}
   .hint{font-size:11.5px;color:var(--muted-2);text-align:center;margin-top:12px}
 
   /* toast */
@@ -427,40 +434,14 @@
         <span class="ad">Pegás el texto de un decreto y te devuelve la cédula armada, lista para firmar.</span>
         <span class="ago">Abrir <span class="arw">→</span></span>
       </button>
-      <button class="action" onclick="accion('art')">
-        <span class="aic">🏥</span>
-        <span class="an">Alta de cliente ART</span>
-        <span class="ad">Poder especial, relato de hechos, convenio de honorarios, telegrama y formularios SRT.</span>
-        <span class="ago">Abrir <span class="arw">→</span></span>
-      </button>
-      <button class="action" onclick="accion('cuenta')">
-        <span class="aic">🏦</span>
-        <span class="an">Apertura de cuenta judicial</span>
-        <span class="ad">Banco Municipal: busca el expediente por CUIJ y arma el pedido con sus capturas.</span>
-        <span class="ago">Abrir <span class="arw">→</span></span>
-      </button>
-      <button class="action" onclick="accion('boletas')">
-        <span class="aic">⚖️</span>
-        <span class="an">Oficio por boletas impagas</span>
-        <span class="ad">Redacta los oficios al Colegio y a las Cajas por las boletas sin pagar del período.</span>
-        <span class="ago">Abrir <span class="arw">→</span></span>
-      </button>
-      <button class="action" onclick="accion('raeo')">
-        <span class="aic">📮</span>
-        <span class="an">Oficio RAEO</span>
-        <span class="ad">Arma el oficio al Registro de Accidentes y Enfermedades Ocupacionales y su escrito cargo.</span>
-        <span class="ago">Abrir <span class="arw">→</span></span>
-      </button>
-      <button class="action" onclick="accion('transferencia')">
-        <span class="aic">💰</span>
-        <span class="an">Transferencia de capital</span>
-        <span class="ad">Calcula y arma el oficio y el escrito de transferencia con los honorarios regulados.</span>
-        <span class="ago">Abrir <span class="arw">→</span></span>
-      </button>
     </div>
     <div class="actions-note">
       <span class="ic">🔒</span>
       <span>Cada acción corre en esta máquina y deja el resultado en la carpeta del cliente. Lo que se firma o se presenta en un portal, lo autorizás vos.</span>
+    </div>
+    <div class="actions-note">
+      <span class="ic">📁</span>
+      <span><b>Alta de cliente ART, oficios por boletas, oficio RAEO y transferencia de capital</b> no están acá a propósito: se corren desde la carpeta de documentación del cliente, con el expediente a la vista. Las cuatro siguen funcionando igual.</span>
     </div>
   </div>
 
@@ -925,6 +906,7 @@ async function renderActividad(){
         <span style="font-weight:600;font-size:13px">${esc(e.accion)}</span>
         ${e.caratula?`<span style="color:var(--muted);font-size:12.5px"> — ${esc(e.caratula)}</span>`:""}
         ${e.detalle?`<div style="color:var(--muted-2);font-size:11.5px;margin-top:2px">${esc(e.detalle)}</div>`:""}
+        ${(e.usuario||e.maquina)?`<div style="color:var(--muted-2);font-size:11px;margin-top:2px">👤 ${esc(e.usuario||"?")}${e.maquina?` · 🖥 ${esc(e.maquina)}`:""}</div>`:""}
       </span>
       <span style="flex:0 0 auto;font-size:11.5px;color:var(--muted-2);font-variant-numeric:tabular-nums">${esc(cuando)}</span>
     </div>`;
@@ -1097,13 +1079,18 @@ function uploadSim(id){
 // secretario. Motor "local": un script del repo, determinista. Motor
 // "secretario": hace falta interpretar un texto, así que lo resuelve
 // Hermes cargando la skill correspondiente.
+// Acciones del panel. Desde D14 (SPEC v0.2) el panel muestra solo
+// "Cédula desde texto": las otras se corren desde la carpeta de
+// documentación del cliente, con el expediente a la vista. Se dejan acá
+// porque el endpoint /api/skill/<id> sigue vivo — la skill no se borró,
+// solo se le cambió la puerta de entrada.
 const ACCIONES = {
   cedula:{ ic:"📄", titulo:"Cédula desde texto", motor:"local",
     desc:"Pegá el decreto o la sentencia: el secretario arma la cédula y la deja lista para firmar.",
     boton:"Generar cédula",
     campos:[{k:"texto", tipo:"textarea", label:"Texto del decreto o sentencia",
       ph:"Rosario, 3 de Septiembre de 2026.- Habiendo contestado la demandada, fíjase audiencia de trámite para el día 15 de Octubre de 2026 a las 09:30 hs. Notifíquese por cédula.",
-      help:"Copialo tal como está en el SISFE. Si es una sentencia, el secretario la recorta solo."}] },
+      help:"Copialo tal como está en el SISFE. Si es una sentencia, el secretario la recorta solo. Antes de generar te muestro a quién se le notifica, para que destildes lo que no vaya."}] },
 
   art:{ ic:"🏥", titulo:"Alta de cliente ART", motor:"secretario", skill:"cliente-art-nuevo",
     desc:"Contá el caso: el secretario arma el paquete inicial completo (poder, relato, convenio, telegrama y formularios SRT).",
@@ -1183,12 +1170,163 @@ async function ejecutarAccion(id){
       <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
     return;
   }
+  // La cédula tiene un paso previo (D8): antes de generar, el abogado ve a
+  // quién se le notifica y destilda. Las demás acciones van derecho.
+  if(id==="cedula"){ return revisarDestinatarios(datos, a); }
   try{
     const r = await fetch("/api/skill/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({datos})});
     const j = await r.json();
     if(!j.job_id){ toast("⚠ "+(j.error||"No se pudo iniciar la acción")); return; }
     pollAccion(j.job_id, a);
+  }catch(e){ toast("⚠ No pude contactar al servidor"); }
+}
+
+/* ---------- Destinatarios: confirmar antes de generar (D8) ----------
+   Antes, pegar el decreto generaba la cédula directo para la parte
+   demandada, sin preguntar. Ahora primero se lee el texto, se muestra a
+   quién habría que notificar (todos tildados) y el abogado destilda.
+   Una cédula y una firma por destinatario. */
+let DESTS = [];        // [{nombre, domicilio, rol, origen, on}]
+let DESTS_CTX = null;  // {datos, a, j} de la corrida en curso
+
+async function revisarDestinatarios(datos, a){
+  openModal(`<div class="modal-body"><div class="gate-box">
+      <div class="gate-icon">${a.ic}</div><h4>${esc(a.titulo)}</h4>
+      <p>Leyendo el decreto…</p>
+      <div class="spin" style="margin:10px auto;border-color:rgba(24,35,56,.2);border-top-color:var(--ink)"></div>
+    </div></div>`);
+
+  let j;
+  try{
+    const r = await fetch("/api/destinatarios",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({texto:datos.texto})});
+    j = await r.json();
+  }catch(e){ closeModal(); toast("⚠ No pude contactar al servidor"); return; }
+
+  if(!j.ok){
+    openModal(`
+      <div class="modal-head"><h3>${a.ic} ${esc(a.titulo)}</h3><p>Antes de generar hay que arreglar esto</p></div>
+      <div class="modal-body"><div class="gate-box">
+        <div class="gate-icon">⚠</div><h4>No pude leer el texto</h4>
+        <p>${esc(j.error||"")}</p>
+      </div></div>
+      <div class="modal-foot">
+        <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+        <button class="btn primary" onclick="volverAlTexto()">Volver al texto</button>
+      </div>`);
+    return;
+  }
+
+  DESTS_CTX = {datos, a, j};
+  DESTS = (j.destinatarios||[]).map(d=>({...d, on:true}));
+  renderConfirmDest();
+}
+
+// Vuelve al textarea con lo que ya estaba pegado: perder un decreto
+// largo por un error de tipeo es imperdonable.
+function volverAlTexto(){
+  const previo = (DESTS_CTX && DESTS_CTX.datos && DESTS_CTX.datos.texto) || "";
+  accion("cedula");
+  setTimeout(()=>{
+    const el = document.getElementById("ai-texto");
+    if(el){ el.value = previo; el.focus(); }
+  }, 60);
+}
+
+function renderConfirmDest(){
+  const ctx = DESTS_CTX; if(!ctx) return;
+  const j = ctx.j || {};
+
+  const dato = (k,v) => `<div class="fld"><b>${esc(k)}:</b> ${esc(v||"—")}</div>`;
+  const interpretado = [
+    dato("Carátula", j.caratula || "no la pude leer"),
+    dato("CUIJ", j.cuij),
+    dato("Fuero", j.fuero),
+    dato("Ciudad", j.ciudad),
+    dato("Juzgado", j.juzgado),
+    dato("Es sentencia", j.es_sentencia ? "sí — se recorta y se cita la parte resolutiva" : "no"),
+  ].join("");
+
+  // El rol ya dice de dónde salió cada nombre ("de la carátula" / "lo manda
+  // notificar el decreto"): repetirlo al lado era ruido.
+  const filas = DESTS.map((d,i)=>`
+    <div style="display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-top:1px solid var(--line)">
+      <input type="checkbox" id="dx-${i}" ${d.on?"checked":""} onchange="toggleDest(${i},this.checked)"
+             style="margin-top:9px;width:16px;height:16px;flex:0 0 auto;accent-color:var(--ink)">
+      <div style="flex:1;min-width:0">
+        <input class="fld-in" id="dn-${i}" value="${esc(d.nombre||"")}" placeholder="Nombre o razón social"
+               style="width:100%;padding:8px 10px;font-size:13px" oninput="editDest(${i},'nombre',this.value)">
+        <div class="fld-help">${esc(d.rol||"")}</div>
+        <input class="fld-in" id="dd-${i}" value="${esc(d.domicilio||"")}" placeholder="Domicilio (vacío: no se imprime)"
+               style="width:100%;padding:8px 10px;font-size:12.5px;margin-top:6px"
+               oninput="editDest(${i},'domicilio',this.value)">
+      </div>
+      <button class="btn ghost" style="padding:6px 10px;flex:0 0 auto" onclick="quitarDest(${i})"
+              title="Sacarlo de la lista">✕</button>
+    </div>`).join("");
+
+  openModal(`
+    <div class="modal-head">
+      <h3>${ctx.a.ic} A quién se le notifica</h3>
+      <p>Esto es lo que leí del decreto. Destildá lo que no vaya: sale <b>una cédula por cada destinatario tildado</b>.</p>
+    </div>
+    <div class="modal-body">
+      ${j.aviso?`<div class="gate-box" style="margin-bottom:14px">
+        <div class="gate-icon">⚠</div><h4>Ojo con la carátula</h4><p>${esc(j.aviso)}</p></div>`:""}
+      <div class="preview">
+        <div class="ttl">LO QUE INTERPRETÉ</div>
+        ${interpretado}
+      </div>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:16px">
+        <b style="font-size:13px">Destinatarios</b>
+        <span class="fld-help" id="destCuenta" style="margin:0"></span>
+      </div>
+      <div id="destLista">${DESTS.length?filas:
+        `<div class="fld-help" style="padding:12px 0;border-top:1px solid var(--line)">No detecté ningún destinatario. Agregalo a mano.</div>`}</div>
+      <button class="btn ghost" style="margin-top:10px;padding:7px 12px;font-size:12.5px" onclick="agregarDest()">+ Agregar destinatario</button>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="volverAlTexto()">Volver al texto</button>
+      <button class="btn primary" id="destBtnGen" onclick="confirmarDestinatarios()"></button>
+    </div>`);
+  actualizarCuentaDest();
+}
+
+function actualizarCuentaDest(){
+  const marcados = DESTS.filter(d=>d.on).length;
+  const c = document.getElementById("destCuenta");
+  if(c) c.textContent = `${marcados} de ${DESTS.length} tildado${marcados===1?"":"s"}`;
+  const b = document.getElementById("destBtnGen");
+  if(b){
+    b.textContent = marcados ? `Generar ${marcados} cédula${marcados===1?"":"s"}` : "Generar";
+    b.disabled = !marcados;
+  }
+}
+
+// Tildar y escribir actualizan el modelo SIN redibujar la lista: redibujar
+// en cada tecla haría perder el foco en medio de un nombre.
+function toggleDest(i,on){ if(DESTS[i]){ DESTS[i].on = on; actualizarCuentaDest(); } }
+function editDest(i,campo,valor){ if(DESTS[i]) DESTS[i][campo] = valor; }
+function quitarDest(i){ DESTS.splice(i,1); renderConfirmDest(); }
+function agregarDest(){
+  DESTS.push({nombre:"", domicilio:"Domicilio constituido", rol:"Agregado a mano", origen:"", on:true});
+  renderConfirmDest();
+  setTimeout(()=>document.getElementById("dn-"+(DESTS.length-1))?.focus(), 40);
+}
+
+async function confirmarDestinatarios(){
+  const ctx = DESTS_CTX; if(!ctx) return;
+  const elegidos = DESTS.filter(d=>d.on && (d.nombre||"").trim())
+                       .map(d=>({nombre:d.nombre.trim(), domicilio:(d.domicilio||"").trim()}));
+  if(!elegidos.length){ toast("⚠ Tildá al menos un destinatario"); return; }
+  const datos = Object.assign({}, ctx.datos, {destinatarios: elegidos});
+  try{
+    const r = await fetch("/api/skill/cedula",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({datos})});
+    const j = await r.json();
+    if(!j.job_id){ toast("⚠ "+(j.error||"No se pudo iniciar la acción")); return; }
+    pollAccion(j.job_id, ctx.a);
   }catch(e){ toast("⚠ No pude contactar al servidor"); }
 }
 

@@ -154,6 +154,10 @@ class DatosGenerarDesdePendiente(BaseModel):
 class DatosAccion(BaseModel):
     datos: dict = {}
 
+class DatosDestinatarios(BaseModel):
+    texto: str = ""
+    domicilio: str | None = None
+
 
 # --- Dashboard ---------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
@@ -243,6 +247,22 @@ def api_subir(d: DatosSubida):
         return {"ok": ok}
     job_id = _lanzar("subida", d.id_cedula, trabajo)
     return {"job_id": job_id}
+
+
+# --- Destinatarios de una cédula (paso previo, sin generar nada) ---
+# El panel pide esto ANTES de generar: lee el decreto pegado y devuelve
+# a quién habría que notificar, para que el abogado destilde lo que no
+# va (D8). Es sólo parseo de texto: no hay job, no hay portal, no hay
+# archivos. Si el texto no alcanza, el panel muestra el motivo.
+@app.post("/api/destinatarios")
+def api_destinatarios(d: DatosDestinatarios):
+    try:
+        return acciones.ejecutar("destinatarios", {"texto": d.texto, "domicilio": d.domicilio or ""})
+    except acciones.AccionError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        traceback.print_exc()
+        return {"ok": False, "error": "No pude leer el texto: " + str(e)[:200]}
 
 
 # --- Estado de un trabajo (el dashboard lo consulta) -------------

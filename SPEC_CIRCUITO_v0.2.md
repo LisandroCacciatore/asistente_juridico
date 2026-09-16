@@ -50,17 +50,27 @@ cambia, se cambia acá primero.
       cambia algo más que el encabezado.
 
 ### Fase 2 — Destinatarios (sin portal)
-- [ ] Antes de generar, el dashboard lista los destinatarios detectados, **todos tildados**.
-- [ ] Se genera **una cédula por destinatario tildado**, y ninguna por los destildados.
+- [x] Antes de generar, el dashboard lista los destinatarios detectados, **todos tildados**.
+      *(hecho — paso previo `POST /api/destinatarios`: no genera ni registra nada)*
+- [x] Se genera **una cédula por destinatario tildado**, y ninguna por los destildados.
+      *(hecho — el motor ya recorría `destinatarios`; ahora la lista la decide el abogado)*
+
+**De dónde sale la lista** (y de dónde NO): la parte **demandada** y la **actora** de la
+carátula, más los nombres que el decreto manda notificar (*"notifíquese a la Dra. X"*).
+Lo que no esté en esos dos lugares **no se inventa**: queda vacío y el abogado lo agrega
+a mano en la misma pantalla. Se muestra **qué interpretó** (carátula, CUIJ, fuero, ciudad,
+juzgado, si es sentencia) para que confirme sobre datos concretos.
 
 ### Fase 3 — Panel (sin portal)
-- [ ] Se eliminan las 5 tarjetas; queda **Cédula desde texto**.
-- [ ] Las skills siguen en `skills/` y siguen siendo invocables.
-- [ ] `INTERVALO_MINUTOS = 10` y el dashboard sigue refrescando cada 60 s.
+- [x] Se eliminan las 5 tarjetas; queda **Cédula desde texto**.
+- [x] Las skills siguen en `skills/` y siguen siendo invocables
+      (`/api/skill/<accion>` sigue vivo; el panel explica dónde se corren ahora).
+- [x] `INTERVALO_MINUTOS = 10` y el dashboard sigue refrescando cada 60 s.
 
 ### Fase 4 — Log con usuario y máquina (sin portal)
-- [ ] Cada entrada de `log_acciones.jsonl` lleva **usuario** y **máquina**.
-- [ ] Las entradas viejas (sin esos campos) se siguen leyendo sin romper el dashboard.
+- [x] Cada entrada de `log_acciones.jsonl` lleva **usuario** y **máquina**.
+- [x] Las entradas viejas (sin esos campos) se siguen leyendo sin romper el dashboard
+      (se completan vacías al leer, así ningún consumidor tiene que acordarse).
 
 ### Fases 5 a 7 — con portal (una sola tanda, con Santiago)
 - [ ] Meta Jurídico: crear contacto + expediente si no existe, **con confirmación previa**.

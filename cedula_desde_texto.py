@@ -187,6 +187,106 @@ def extraer_juzgado(texto):
     return ""
 
 
+# ============================================================
+#  2.b Partes del expediente y destinatarios de la cédula
+# ============================================================
+#  Hasta ahora la cédula salía siempre para la parte demandada de la
+#  carátula, sin preguntar. La decisión D8 pide lo contrario: mostrar la
+#  lista de destinatarios ANTES de generar y dejar que el abogado
+#  destilde. Eso obliga a responder "a quién hay que notificar", y la
+#  respuesta sale de dos lados, en este orden:
+#
+#    1. la carátula → demandado/a y actor/a (las dos partes del juicio);
+#    2. el decreto  → los nombres que el juez manda notificar
+#                     ("notifíquese a la Dra. X", "cítese a X").
+#
+#  Lo que NO se hace acá: inventar destinatarios. Si el decreto no nombra
+#  a nadie más, la lista trae las partes de la carátula y el abogado
+#  agrega a mano el que falte. Un destinatario de más se destilda con un
+#  clic; uno inventado se firma y se notifica mal.
+# ============================================================
+
+# Verbo del decreto + "a/al/a la" (con (?i:) adentro para que el verbo no
+# distinga mayúsculas, pero las clases de nombre SÍ las distingan: si no,
+# el patrón se comería cualquier palabra siguiente).
+_RE_MANDA_NOTIFICAR = re.compile(
+    r"(?i:\b(?:notif[íi]quese|c[íi]tese|empl[áa]cese|h[áa]gase\s+saber)\s+"
+    r"(?:a|al|a\s+la)\s+)"
+    r"((?:(?:Dr|Dra|Sr|Sra|Se[ñn]or|Se[ñn]ora)\.?\s+)?"
+    r"(?:[A-ZÁÉÍÓÚÑ][^\s,;.\n]*(?:\s+[A-ZÁÉÍÓÚÑ][^\s,;.\n]*){0,4}))"
+)
+
+# Frases que NO son un nombre: si el candidato dice alguna, se descarta.
+_NO_ES_PERSONA = re.compile(
+    r"\b(?:las?\s+partes?|la\s+actora|el\s+actor|la\s+demandada|el\s+demandado|"
+    r"los?\s+autos|el\s+expediente|quien\s+corresponda|los?\s+peritos?|"
+    r"las?\s+letrad[oa]s?|los?\s+letrados?|los?\s+testigos?|el\s+ministerio|"
+    r"la\s+fiscal[íi]a|los?\s+presentes?|las?\s+cajas?)\b",
+    re.I,
+)
+
+
+def _limpiar_parte(t):
+    """Saca de un tramo de carátula lo que no es el nombre.
+
+    No se recorta el punto final: en «SEGUROS EJEMPLO S.A.» ese punto es
+    parte del nombre, no puntuación de la frase. Sí se recortan espacios
+    y separadores sueltos.
+    """
+    t = re.sub(r'^.*?(?:caratulados?|autos)\s*[":]\s*', "", t or "", flags=re.I)
+    t = re.sub(r"\s+", " ", t).strip(" ,;:-")
+    return t
+
+
+def extraer_partes(caratula):
+    """Partes de una carátula «ACTOR c/ DEMANDADO s/ OBJETO».
+
+    Devuelve {"actor", "demandado", "objeto"}. Lo que no pueda separar
+    queda vacío: nunca se completa con algo inventado.
+    """
+    partes = {"actor": "", "demandado": "", "objeto": ""}
+    if not caratula:
+        return partes
+    tramos = re.split(r"\s+[Ss]/\s+", caratula, maxsplit=1)
+    cuerpo = tramos[0]
+    partes["objeto"] = _limpiar_parte(tramos[1]) if len(tramos) > 1 else ""
+    lados = re.split(r"\s+[Cc]/\s+", cuerpo, maxsplit=1)
+    if len(lados) == 2:
+        partes["actor"] = _limpiar_parte(lados[0])
+        partes["demandado"] = _limpiar_parte(lados[1])
+    return partes
+
+
+def extraer_destinatarios(texto, caratula=None):
+    """A quién habría que notificar, en orden de importancia.
+
+    Devuelve [{"nombre", "rol", "origen"}], sin repetidos. El primero es
+    el que el repo venía usando por defecto (la parte demandada), así el
+    panel puede mostrarlo tildado como siempre.
+    """
+    caratula = caratula or extraer_caratula(texto)
+    partes = extraer_partes(caratula)
+    salida, vistos = [], set()
+
+    def sumar(nombre, rol, origen):
+        # El punto final no se recorta (ver _limpiar_parte): la clase de
+        # caracteres del patrón del decreto ya lo excluye, así que el único
+        # punto que llega acá es el de una sigla, y ese se respeta.
+        nombre = re.sub(r"\s+", " ", (nombre or "").strip(" ,;:-"))
+        clave = nombre.upper()
+        if len(nombre) < 3 or clave in vistos or _NO_ES_PERSONA.search(nombre):
+            return
+        vistos.add(clave)
+        salida.append({"nombre": nombre, "rol": rol, "origen": origen})
+
+    sumar(partes["demandado"], "Demandado/a (de la carátula)", "caratula")
+    sumar(partes["actor"], "Actor/a (de la carátula)", "caratula")
+
+    for m in _RE_MANDA_NOTIFICAR.finditer(texto or ""):
+        sumar(m.group(1), "Lo manda notificar el decreto", "decreto")
+    return salida
+
+
 # Ciudades con juzgados en Santa Fe (para no confundir la ciudad con
 # cualquier otra palabra del decreto).
 CIUDADES_SF = [

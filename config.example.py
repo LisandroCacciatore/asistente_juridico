@@ -28,7 +28,7 @@ ARCHIVO_ESTADO = _os.path.join(_CARPETA_BASE, "estado_expedientes.json")
 CARPETA_EXP_DIGITAL = _os.path.join(_CARPETA_BASE, "ExpedientesDigitales")
 
 # --- Modo continuo del monitor (monitor_playwright.py) --------
-INTERVALO_MINUTOS = 30
+INTERVALO_MINUTOS = 10
 HORARIO_INICIO = "08:00"
 HORARIO_FIN = "18:00"
 DIAS_HABILES = [0, 1, 2, 3, 4]   # lunes a viernes (datetime.weekday)
