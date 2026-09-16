@@ -14,8 +14,8 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 from cedulas_pdf import (  # noqa: E402
-    _autoridad, _autoridad_51, _distrito, _fuero, _fuero_simple,
-    generar_pdf_estandar, generar_pdf_audiencia_51,
+    _autoridad, _fuero, _fuero_simple, _juzgado_cuerpo, _juzgado_encabezado,
+    generar_pdf_estandar, generar_pdf_audiencia_51, generar_pdf_peritos,
 )
 from cedula_desde_texto import extraer_ciudad, extraer_fuero  # noqa: E402
 
@@ -70,57 +70,48 @@ def test_autoridad_no_inventa_lo_que_falta():
     assert _autoridad({"juez": "   "}) == ""
 
 
-def test_autoridad_51_usa_el_modelo_del_sisfe():
-    """El portal pone el cargo entre paréntesis y NO escribe 'Dr./Dra.'."""
-    txt = _autoridad_51({"juez": "Silvana Laura Quagliatti",
-                         "secretario": "Pedro Daniel Herrero"})
-    assert txt == ("SILVANA LAURA QUAGLIATTI (JUEZ/A), "
-                   "PEDRO DANIEL HERRERO (SECRETARIO / PROSECRETARIO)")
-    assert "DR./DRA." not in txt
+# --------------------------------------------- cómo se nombra el juzgado
+def test_encabezado_del_juzgado_con_nominacion():
+    """Así lo escribe el portal en la común (5ª/10ª Nom. de Rosario)."""
+    txt = _juzgado_encabezado({"nominacion": "5", "ciudad": "Rosario"})
+    assert txt == ("JUZGADO DE PRIMERA INSTANCIA DE DISTRITO EN LO LABORAL "
+                   "DE LA 5 NOMINACIÓN DE ROSARIO")
 
 
-def test_autoridad_51_solo_juez():
-    assert _autoridad_51({"juez": "Ana Pérez"}) == "ANA PÉREZ (JUEZ/A)"
+def test_encabezado_del_juzgado_sin_nominacion():
+    """Reconquista tiene un solo juzgado del trabajo: 'DE LA LOCALIDAD DE …'."""
+    txt = _juzgado_encabezado({"ciudad": "Reconquista"})
+    assert txt == ("JUZGADO DE PRIMERA INSTANCIA DE DISTRITO EN LO LABORAL "
+                   "DE LA LOCALIDAD DE RECONQUISTA")
 
 
-def test_autoridad_51_el_prosecretario_ocupa_el_segundo_casillero():
-    """El portal tiene dos casilleros: juez, y 'SECRETARIO / PROSECRETARIO'."""
-    txt = _autoridad_51({"juez": "Ana Pérez", "prosecretario": "Marta Díaz"})
-    assert txt == "ANA PÉREZ (JUEZ/A), MARTA DÍAZ (SECRETARIO / PROSECRETARIO)"
+def test_encabezado_del_juzgado_de_otro_fuero():
+    txt = _juzgado_encabezado({"nominacion": "12", "ciudad": "Rafaela", "fuero": "CIVIL"})
+    assert txt == ("JUZGADO DE PRIMERA INSTANCIA DE DISTRITO EN LO CIVIL "
+                   "DE LA 12 NOMINACIÓN DE RAFAELA")
 
 
-def test_autoridad_51_sin_nombres_devuelve_vacio():
-    assert _autoridad_51({}) == ""
-    assert _autoridad_51({"juez": "   "}) == ""
+def test_el_nombre_cargado_del_juzgado_gana():
+    """Si el expediente trae el nombre del juzgado, se usa tal cual.
 
-
-def test_autoridad_51_no_pierde_al_prosecretario_si_hay_secretario():
-    """El portal tiene dos casilleros; nosotros no tiramos un dato del expediente."""
-    txt = _autoridad_51({"juez": "Ana Pérez", "secretario": "Luis Gómez",
-                         "prosecretario": "Marta Díaz"})
-    assert txt == ("ANA PÉREZ (JUEZ/A), LUIS GÓMEZ (SECRETARIO / PROSECRETARIO), "
-                   "MARTA DÍAZ (PROSECRETARIO)")
-
-
-# ------------------------------------------- domicilio y distrito judicial
-def test_distrito_de_las_ciudades_verificadas():
-    assert _distrito({"ciudad": "Rosario"}) == "2"
-    assert _distrito({"ciudad": "ROSARIO"}) == "2"
-    assert _distrito({"ciudad": "Santa Fe"}) == "1"
-
-
-def test_distrito_no_se_inventa_para_otra_ciudad():
-    """Rafaela no está verificado: mejor sin el tramo que con un número inventado.
-
-    Distrito judicial no es lo mismo que circunscripción, y la provincia los
-    numera de forma no secuencial (San Jorge es el Nº 11).
+    El Juzgado Laboral Nº 8 se nombra distinto ('JUZGADO EN LO LABORAL Nº 8
+    DISTRITO JUDICIAL NRO. 2 - ROSARIO') y ese número de distrito no se deduce
+    de la ciudad: distrito judicial no es la circunscripción y la provincia
+    los numera sin orden (San Jorge es el Nº 11).
     """
-    assert _distrito({"ciudad": "Rafaela"}) == ""
-    assert _distrito({"ciudad": "Venado Tuerto"}) == ""
+    datos = {"juzgado_header": "JUZGADO EN LO LABORAL Nº 8 DISTRITO JUDICIAL NRO. 2 - ROSARIO"}
+    assert _juzgado_encabezado(datos) == (
+        "JUZGADO EN LO LABORAL Nº 8 DISTRITO JUDICIAL NRO. 2 - ROSARIO")
+    assert _juzgado_cuerpo(datos) == (
+        "JUZGADO EN LO LABORAL Nº 8 DISTRITO JUDICIAL NRO. 2 - ROSARIO")
 
 
-def test_distrito_explicito_gana_sobre_la_tabla():
-    assert _distrito({"ciudad": "Rafaela", "distrito": "5"}) == "5"
+def test_en_la_frase_el_juzgado_va_con_la_ciudad():
+    """Dentro de la frase el portal agrega 'LA CIUDAD DE'."""
+    assert _juzgado_cuerpo({"nominacion": "10", "ciudad": "Rosario"}) == (
+        "JUZGADO LABORAL DE LA 10 NOMINACIÓN DE LA CIUDAD DE ROSARIO")
+    assert _juzgado_cuerpo({"ciudad": "Reconquista"}) == (
+        "JUZGADO LABORAL DE LA LOCALIDAD DE RECONQUISTA")
 
 
 # ---------------------------------------------------------------- PDF real
@@ -205,7 +196,7 @@ def test_pdf_sin_destinatario_no_imprime_la_linea(tmp_path, base):
     ruta = tmp_path / "c.pdf"
     generar_pdf_estandar(base, str(ruta))
     texto = _texto(ruta)
-    assert "Señor/a" not in texto
+    assert "Señor" not in texto
     assert "Domicilio" not in texto
 
 
@@ -267,81 +258,112 @@ def caso51():
     }
 
 
-def test_c51_encabezado_como_el_portal(tmp_path, caso51):
+def test_c51_es_la_comun_mas_los_articulos(tmp_path, caso51):
+    """Santiago (16/09/2026): la del Art. 51 es la común + los arts. 51, 52 y 66."""
     ruta = tmp_path / "c51.pdf"
     generar_pdf_audiencia_51(caso51, str(ruta))
     texto = _plano(ruta)
-    assert "CÉDULA" in texto
-    assert "JUZGADO EN LO LABORAL Nº 8 DISTRITO JUDICIAL NRO. 2 - ROSARIO" in texto
-
-
-def test_c51_sin_distrito_verificado_no_lo_inventa(tmp_path, caso51):
-    caso51["ciudad"] = "Rafaela"
-    ruta = tmp_path / "c51.pdf"
-    generar_pdf_audiencia_51(caso51, str(ruta))
-    texto = _plano(ruta)
-    assert "RAFAELA" in texto
-    assert "DISTRITO JUDICIAL" not in texto
-
-
-def test_c51_destinatario_domicilio_y_autoridad(tmp_path, caso51):
-    """'Señor:' (no 'Señor/a:'), el domicilio de la S.R.L. y el cargo entre paréntesis."""
-    ruta = tmp_path / "c51.pdf"
-    generar_pdf_audiencia_51(caso51, str(ruta))
-    texto = _plano(ruta)
+    # el encabezado, el destinatario y la frase son los de la común
+    assert ("JUZGADO DE PRIMERA INSTANCIA DE DISTRITO EN LO LABORAL "
+            "DE LA 8 NOMINACIÓN DE ROSARIO") in texto
     assert "Señor: CHICHILO'S PIZZAS SRL" in texto
-    assert "CATAMARCA" in texto
-    assert "QUAGLIATTI (JUEZ/A)" in texto
-    assert "HERRERO (SECRETARIO / PROSECRETARIO)" in texto
-    assert "DR./DRA." not in texto
-    assert "Señor/a" not in texto
-
-
-def test_c51_la_caratula_va_dentro_de_la_frase(tmp_path, caso51):
-    """El portal no usa líneas 'Por:' / 'Contra:' / 'Sobre:' / 'Expte N°'."""
-    ruta = tmp_path / "c51.pdf"
-    generar_pdf_audiencia_51(caso51, str(ruta))
-    texto = _plano(ruta)
-    for etiqueta in ("Por:", "Contra:", "Sobre:", "Expte"):
-        assert etiqueta not in texto
+    assert "Domicilio: CATAMARCA" in texto
     assert "dentro de los autos caratulados" in texto
-    assert "21-04267528-5" in texto
-
-
-def test_c51_el_cierre_va_al_final(tmp_path, caso51):
-    """El portal transcribe primero y cierra después, con una frase corta."""
-    ruta = tmp_path / "c51.pdf"
-    generar_pdf_audiencia_51(caso51, str(ruta))
-    texto = _plano(ruta)
-    cierre = "En consecuencia queda usted debidamente notificado del decreto que antecede"
-    assert cierre in texto
-    assert "29/05/2026" in texto and "09:45" in texto
-    assert texto.index(cierre) > texto.index("ARTICULO 66")
-
-
-def test_c51_transcribe_51_52_y_66_pero_no_71(tmp_path, caso51):
-    """El decreto ordena transcribir los arts. 51, 52 y 66. El 71 no va."""
-    ruta = tmp_path / "c51.pdf"
-    generar_pdf_audiencia_51(caso51, str(ruta))
-    texto = _plano(ruta)
+    assert "se ha dictado lo siguiente" in texto
+    # lo que agrega es la transcripción de los tres artículos y nada más
     assert "ARTICULO 51" in texto
     assert "ARTÍCULO 52" in texto
     assert "ARTICULO 66" in texto
     assert "ARTICULO 71" not in texto
+    # y el cierre va al final
+    assert texto.index("ARTICULO 66") < texto.index("En consecuencia")
+
+
+def test_c51_el_nombre_cargado_del_juzgado_manda(tmp_path, caso51):
+    """Para un juzgado que se nombra distinto, el nombre viene en el dato."""
+    caso51["juzgado_header"] = "JUZGADO EN LO LABORAL Nº 8 DISTRITO JUDICIAL NRO. 2 - ROSARIO"
+    ruta = tmp_path / "c51.pdf"
+    generar_pdf_audiencia_51(caso51, str(ruta))
+    texto = _plano(ruta)
+    assert "JUZGADO EN LO LABORAL Nº 8 DISTRITO JUDICIAL NRO. 2 - ROSARIO" in texto
+    assert "DE LA 8 NOMINACIÓN" not in texto
 
 
 def test_c51_sin_bloque_de_firma(tmp_path, caso51):
-    """El portal no imprime 'Firma y sello': la cédula se firma digitalmente."""
+    """Las cédulas reales no traen 'Firma y sello': se firman digitalmente."""
     ruta = tmp_path / "c51.pdf"
     generar_pdf_audiencia_51(caso51, str(ruta))
     texto = _plano(ruta)
     assert "Firma y sello" not in texto
     assert "Sin más, lo saludo" not in texto
+    assert "Saluda Atte" not in texto
 
 
-def test_c51_no_imprime_la_fecha_arriba(tmp_path, caso51):
-    """El portal no pone la fecha suelta arriba: va dentro del decreto."""
+def test_c51_no_imprime_la_fecha_arriba_ni_la_duplica(tmp_path, caso51):
+    """La fecha va dentro del decreto, una sola vez."""
     ruta = tmp_path / "c51.pdf"
     generar_pdf_audiencia_51(caso51, str(ruta))
-    encabezado = _plano(ruta).split("Hago saber")[0]
-    assert "07/04/2026" not in encabezado
+    texto = _plano(ruta)
+    assert texto.count("07/04/2026") == 1
+    assert "07/04/2026" not in texto.split("Hago saber")[0]
+
+
+# ============================================================
+#  Cédula de peritos: la común + los arts. 78 y 79 (16/09/2026)
+# ------------------------------------------------------------
+#  Comparada contra una cédula real del SISFE: designación del perito
+#  MUÑOZ MARCELO ALFREDO (Juzgado de Primera Instancia de Distrito en lo
+#  Laboral de la Localidad de Reconquista, "FERRERO C/ PREVENCION ART SA").
+# ============================================================
+@pytest.fixture
+def caso_perito():
+    return {
+        "nominacion": "", "ciudad": "Reconquista", "fuero": "LABORAL",
+        "caratula": "FERRERO HECTOR ALFREDO C/ PREVENCION ART SA S/ ENFERMEDAD PROFESIONAL",
+        "cuij": "21-16746052-3", "fecha_decreto": "",
+        "juez": "Jorgelina Yedro", "secretario": "Leonardo Cristófoli",
+        "texto_decreto": ("En la ciudad de Reconquista, siendo dia y hora de audiencia, "
+                          "resulta sorteado el profesional MUÑOZ MARCELO ALFREDO. "
+                          "Todo por ante mi que doy fe.-"),
+        "destinatario_nombre": "MUÑOZ MARCELO ALFREDO",
+        "destinatario_domicilio": "Olessio N° 1577 - Reconquista",
+    }
+
+
+def test_peritos_encabezado_de_localidad(tmp_path, caso_perito):
+    """Reconquista no numera su juzgado: 'DE LA LOCALIDAD DE RECONQUISTA'."""
+    ruta = tmp_path / "per.pdf"
+    generar_pdf_peritos(caso_perito, str(ruta))
+    texto = _plano(ruta)
+    assert ("JUZGADO DE PRIMERA INSTANCIA DE DISTRITO EN LO LABORAL "
+            "DE LA LOCALIDAD DE RECONQUISTA") in texto
+    assert "Señor: MUÑOZ MARCELO ALFREDO" in texto
+    assert "Domicilio: Olessio N° 1577 - Reconquista" in texto
+
+
+def test_peritos_agrega_la_intimacion_y_los_arts_78_y_79(tmp_path, caso_perito):
+    ruta = tmp_path / "per.pdf"
+    generar_pdf_peritos(caso_perito, str(ruta))
+    texto = _plano(ruta)
+    assert "Se hace saber a Ud. su designación y se lo/la intima a ACEPTAR EL CARGO" in texto
+    assert "se transcriben los artículos 78 y 79" in texto
+    assert "ARTÍCULO 78. (Aceptación)" in texto
+    assert "ARTÍCULO 79. (Plazo)" in texto
+
+
+def test_peritos_no_lleva_los_articulos_del_51(tmp_path, caso_perito):
+    """Los arts. 51, 52 y 66 son de la cédula de audiencia, no de la de peritos."""
+    ruta = tmp_path / "per.pdf"
+    generar_pdf_peritos(caso_perito, str(ruta))
+    texto = _plano(ruta)
+    assert "ARTICULO 51" not in texto
+    assert "ARTICULO 66" not in texto
+
+
+def test_peritos_cierra_como_la_comun(tmp_path, caso_perito):
+    ruta = tmp_path / "per.pdf"
+    generar_pdf_peritos(caso_perito, str(ruta))
+    texto = _plano(ruta)
+    assert texto.rstrip().endswith(
+        "En consecuencia queda usted debidamente notificado del decreto que antecede.")
+    assert "Firma y sello" not in texto

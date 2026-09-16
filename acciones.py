@@ -110,19 +110,44 @@ def detectar_destinatarios(datos, pausar=None):
     """
     from cedula_desde_texto import (
         es_sentencia, extraer_caratula, extraer_cuij, extraer_juzgado,
-        extraer_ciudad, extraer_fuero, extraer_destinatarios,
+        extraer_ciudad, extraer_fuero, extraer_destinatarios, extraer_peritos,
     )
+    from cedulas import es_designacion_perito
 
     texto = (datos.get("texto") or "").strip()
     if len(texto) < 40:
         raise AccionError("Pegá el decreto completo: encabezado, fecha y parte resolutiva.")
 
     caratula = extraer_caratula(texto)
-    detectados = extraer_destinatarios(texto, caratula) if caratula else []
 
     # Domicilio común por defecto: el que el repo venía imprimiendo. Cada
     # fila lo puede pisar desde el panel, y vacío = no se imprime.
     dom = (datos.get("domicilio") or "Domicilio constituido").strip()
+
+    # La cédula de peritos va AL PERITO (así lo dice el acta del sorteo), no a
+    # las partes de la carátula: si se ofrecieran las partes, el abogado
+    # generaría una cédula a nombre de quien no corresponde.
+    if es_designacion_perito(texto):
+        peritos = [dict(p, rol="Perito designado (acta del sorteo)", origen="acta",
+                        domicilio=p.get("domicilio") or dom)
+                   for p in extraer_peritos(texto)]
+        return {
+            "ok": True,
+            "caratula": caratula,
+            "cuij": extraer_cuij(texto),
+            "juzgado": extraer_juzgado(texto),
+            "fuero": extraer_fuero(texto) or "LABORAL",
+            "ciudad": extraer_ciudad(texto) or "ROSARIO",
+            "es_sentencia": es_sentencia(texto),
+            "tipo": "peritos",
+            "destinatarios": peritos,
+            "aviso": "" if peritos else (
+                "Es una designación de perito, pero no pude separar los nombres del "
+                "acta. Escribilos a mano abajo."
+            ),
+        }
+
+    detectados = extraer_destinatarios(texto, caratula) if caratula else []
     for d in detectados:
         d["domicilio"] = dom
 

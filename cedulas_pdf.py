@@ -10,7 +10,7 @@ from reportlab.lib.enums import TA_JUSTIFY, TA_CENTER, TA_LEFT
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 
-from cedulas import ARTICULOS_AUD_51
+from cedulas import ARTICULOS_AUD_51, ARTICULOS_PERITOS, PERITOS_INTIMACION
 
 
 # --- Estilos: cuerpo justificado, títulos centrados ---
@@ -38,10 +38,11 @@ ESTILO_FIRMA = ParagraphStyle(
     "firma", fontName="Helvetica", fontSize=10,
     alignment=TA_CENTER, spaceAfter=2, leading=13,
 )
-# Cierre del modelo del SISFE para el Art. 51: centrado y en negrita.
+# Cierre de la cédula: en negrita y alineado a la izquierda, como en las
+# cédulas reales del SISFE (la común, la de peritos y la del Art. 51).
 ESTILO_CIERRE = ParagraphStyle(
     "cierre", fontName="Helvetica-Bold", fontSize=10,
-    alignment=TA_CENTER, spaceAfter=6, leading=14,
+    alignment=TA_LEFT, spaceBefore=6, spaceAfter=6, leading=14,
 )
 
 
@@ -116,42 +117,43 @@ def _autoridad(datos, prefijo="del/la"):
     return txt
 
 
-def _autoridad_51(datos):
-    """Autoridad con la redacción del modelo del SISFE (Art. 51).
+# --- Cómo se nombra el juzgado --------------------------------------------
+# Los juzgados no se nombran todos igual: el SISFE copia el nombre que cada uno
+# tiene cargado. Sobre cédulas reales aparecen dos formas:
+#
+#   'JUZGADO DE PRIMERA INSTANCIA DE DISTRITO EN LO LABORAL DE LA 5
+#    NOMINACIÓN DE ROSARIO'   — la 5ª/10ª Nom. de Rosario y Reconquista
+#   'JUZGADO EN LO LABORAL Nº 8 DISTRITO JUDICIAL NRO. 2 - ROSARIO'
+#                             — el Juzgado Laboral Nº 8 (la forma vieja)
+#
+# Por eso: si el expediente trae el nombre cargado (datos["juzgado_header"]) se
+# usa TAL CUAL, y si no se compone la primera forma, que es la del común.
+# El 'DISTRITO JUDICIAL NRO. N' NO se deduce de la ciudad: distrito judicial no
+# es la circunscripción y la provincia los numera sin orden (San Jorge es el
+# Nº 11). Cuando un juzgado use esa forma, el nombre viene en el dato.
+def _juzgado_encabezado(datos):
+    """Nombre del juzgado para el encabezado, en mayúsculas."""
+    propio = str(datos.get("juzgado_header") or "").strip()
+    if propio:
+        return _esc(propio).upper()
+    nom = str(datos.get("nominacion") or "").strip()
+    ciudad = _esc(datos.get("ciudad", "Rosario")).upper()
+    # Reconquista tiene un solo juzgado del trabajo y no se numera: el portal
+    # escribe 'DE LA LOCALIDAD DE RECONQUISTA' (verificado en una cédula real).
+    cuerpo = f"LA {nom} NOMINACIÓN DE {ciudad}" if nom else f"LA LOCALIDAD DE {ciudad}"
+    return f"JUZGADO DE PRIMERA INSTANCIA DE DISTRITO {_fuero(datos)} DE {cuerpo}"
 
-    El portal escribe el cargo ENTRE PARÉNTESIS después del nombre y sin
-    'Dr./Dra.' adelante:
 
-        a cargo de SILVANA LAURA QUAGLIATTI (JUEZ/A), PEDRO DANIEL HERRERO
-        (SECRETARIO / PROSECRETARIO)
-
-    Verificado contra una cédula real del SISFE (Juzgado en lo Laboral Nº 8,
-    Rosario, 07/04/2026). Las dos etiquetas son FIJAS: son parte de la
-    plantilla del portal, no un dato del expediente — por eso no se usan
-    cargo_juez / cargo_secretario acá. El portal tiene DOS casilleros: el juez
-    y, en el segundo, el secretario o el prosecretario; por eso la etiqueta
-    dice 'SECRETARIO / PROSECRETARIO' sin distinguir cuál de los dos es.
-
-    Solo con los datos que existen: si falta un nombre, ese tramo no se
-    imprime. Devuelve '' si no hay ninguno.
-    """
-    juez = (datos.get("juez") or "").strip().upper()
-    sec = (datos.get("secretario") or "").strip().upper()
-    pros = (datos.get("prosecretario") or "").strip().upper()
-
-    partes = []
-    if juez:
-        partes.append(f"{juez} (JUEZ/A)")
-    segundo = sec or pros
-    if segundo:
-        partes.append(f"{segundo} (SECRETARIO / PROSECRETARIO)")
-    # Si además hay un prosecretario distinto del secretario, no se pierde: va
-    # con su propio cargo. El portal tiene DOS casilleros, así que en la
-    # práctica no muestra los tres nombres; acá preferimos no tirar un dato del
-    # expediente a copiar la plantilla al pie de la letra.
-    if sec and pros:
-        partes.append(f"{pros} (PROSECRETARIO)")
-    return ", ".join(partes)
+def _juzgado_cuerpo(datos):
+    """Igual, pero como se lo nombra dentro de la frase ('... ante el ...')."""
+    propio = str(datos.get("juzgado_header") or "").strip()
+    if propio:
+        return _esc(propio).upper()
+    nom = str(datos.get("nominacion") or "").strip()
+    ciudad = _esc(datos.get("ciudad", "Rosario")).upper()
+    cuerpo = (f"LA {nom} NOMINACIÓN DE LA CIUDAD DE {ciudad}" if nom
+              else f"LA LOCALIDAD DE {ciudad}")
+    return f"JUZGADO {_fuero_simple(datos)} DE {cuerpo}"
 
 
 # --- Cuándo se imprime el domicilio ---------------------------------------
@@ -161,162 +163,145 @@ def _autoridad_51(datos):
 # mostró lo contrario: imprime el domicilio de una S.R.L. (Juzgado en lo
 # Laboral Nº 8, Rosario, 07/04/2026). Y en el Art. 51 no es decorativo — ese
 # artículo manda citar a las partes "en el real, además del procesal".
-# Lo que sigue prohibido es inventarlo: si no está, no se imprime (mirá los
-# `if domicilio and destinatario` de cada plantilla).
+# Lo que sigue prohibido es inventarlo: si no está, no se imprime.
 
 
-# --- Distrito judicial: el número que el SISFE imprime en el encabezado ----
-# ("JUZGADO EN LO LABORAL Nº 8 DISTRITO JUDICIAL NRO. 2 - ROSARIO").
-# OJO: distrito judicial NO es lo mismo que circunscripción, y la provincia
-# numera los distritos de forma no secuencial (San Jorge es el Nº 11), así que
-# acá van SOLO los números verificados:
-#   - ROSARIO  = 2, leído en una cédula real del SISFE (07/04/2026).
-#   - SANTA FE = 1, del Consejo de la Magistratura: "Distrito Judicial Nº 1
-#     Santa Fe" (santafe.gov.ar).
-# Para cualquier otra ciudad el número NO se adivina: se pasa explícito en
-# datos["distrito"] y, si no está, el encabezado sale sin ese tramo.
-_DISTRITOS = {"ROSARIO": "2", "SANTA FE": "1"}
+def _decreto_con_fecha(datos):
+    """El texto del decreto tal como va en la cédula.
+
+    En las cédulas reales el decreto arranca con su propia fecha ('Rosario, 10
+    de Septiembre de 2025- Por presentado…'), porque así se copia del SISFE.
+    Si el texto pegado ya la trae, no se le agrega nada (si no, saldría dos
+    veces); si no la trae, se le adelanta ciudad y fecha para que la cédula no
+    salga sin fecha.
+    """
+    texto = (datos.get("texto_decreto") or "").strip()
+    fecha = _esc(datos.get("fecha_decreto", ""))
+    if not fecha or re.match(r"^[A-Za-zÁÉÍÓÚÑáéíóúñ\.\s]{3,40},\s*\d", texto):
+        return texto
+    return f"{_esc(datos.get('ciudad', 'Rosario')).upper()}, {fecha} {texto}"
 
 
-def _distrito(datos):
-    """Número de distrito judicial, o '' si no está verificado."""
-    explicito = str(datos.get("distrito") or "").strip()
-    if explicito:
-        return explicito
-    ciudad = str(datos.get("ciudad") or "Rosario").strip().upper()
-    return _DISTRITOS.get(ciudad, "")
+def _cuerpo_comun(datos):
+    """Lo que comparten TODAS las cédulas.
 
-
-def _bloque_firma():
-    return [
-        Spacer(1, 24),
-        Paragraph("_______________________________", ESTILO_FIRMA),
-        Paragraph("Firma y sello", ESTILO_FIRMA),
-    ]
-
-
-def generar_pdf_estandar(datos, ruta):
-    """Cédula estándar (modelo Racca/Arriola) en PDF."""
-    nom = _esc(datos.get("nominacion") or "____")
-    ciudad = _esc(datos.get("ciudad", "Rosario")).upper()
+    La común, la de audiencia del Art. 51 y la de peritos son el MISMO
+    documento: las otras dos son la común más un bloque de transcripciones (lo
+    definió Santiago el 16/09/2026, y se ve en las cédulas reales del SISFE).
+    Acá se arma una sola vez lo que no cambia: el encabezado, el destinatario,
+    el domicilio y la frase del 'Hago saber' con la carátula y el CUIJ adentro.
+    """
     autoridad = _autoridad(datos)
 
     elementos = [
         Paragraph("CÉDULA", ESTILO_TITULO),
-        Paragraph(
-            f"JUZGADO DE PRIMERA INSTANCIA DE DISTRITO {_fuero(datos)} "
-            f"DE LA {nom} NOMINACIÓN DE {ciudad}",
-            ESTILO_ENCABEZADO,
-        ),
+        Paragraph(_juzgado_encabezado(datos), ESTILO_ENCABEZADO),
     ]
 
-    # El destinatario y el domicilio solo se imprimen si hay dato. El domicilio
-    # va también en las personas jurídicas: se imprime si lo tenemos, nunca se
-    # inventa (ver la nota de arriba).
-    destinatario = _esc(datos.get("destinatario_nombre", "")).upper()
-    if destinatario:
-        elementos.append(Paragraph(f"<b>Señor/a:</b> {destinatario}", ESTILO_CAMPO))
-    domicilio = _esc(datos.get("destinatario_domicilio", ""))
-    if domicilio and destinatario:
-        elementos.append(Paragraph(f"<b>Domicilio:</b> {domicilio}", ESTILO_CAMPO))
-
-    elementos.append(Spacer(1, 10))
-    elementos.append(Paragraph(
-            f"Hago saber a Ud. que en el juicio seguido ante el JUZGADO "
-            f"{_fuero_simple(datos)} DE LA "
-            f"{nom} NOMINACIÓN DE LA CIUDAD DE {ciudad}"
-            + (f", a cargo {autoridad}" if autoridad else "")
-            + f", dentro de los autos caratulados: "
-            f"&ldquo;{_esc(datos.get('caratula',''))}&rdquo; CUIJ {_esc(datos.get('cuij',''))} "
-            f"se ha dictado lo siguiente: {ciudad}, {_esc(datos.get('fecha_decreto',''))} "
-            f"{_esc(datos.get('texto_decreto',''))}",
-            ESTILO_CUERPO,
-        ))
-    elementos.append(Spacer(1, 8))
-    elementos.append(Paragraph(
-        "<b>En consecuencia queda usted debidamente notificado/a del decreto que antecede.</b>",
-        ESTILO_CUERPO,
-    ))
-    elementos += _bloque_firma()
-    _doc(ruta).build(elementos)
-    return ruta
-
-
-def generar_pdf_audiencia_51(datos, ruta):
-    """Cédula de audiencia Art. 51 CPL, con transcripción de los artículos.
-
-    Sigue el modelo del SISFE (verificado contra una cédula real del Juzgado
-    en lo Laboral Nº 8 de Rosario, del 07/04/2026):
-
-      - Encabezado centrado: 'CÉDULA' y el tribunal como lo escribe el portal.
-      - 'Señor:' con el destinatario, y el domicilio siempre que lo tengamos.
-      - La autoridad con el cargo entre paréntesis y sin 'Dr./Dra.'.
-      - La carátula y el CUIJ van dentro de la frase, no en líneas aparte.
-      - 'Se ha dictado lo siguiente:' seguido del decreto, sin comillas.
-      - Primero las transcripciones y AL FINAL el cierre, centrado y en negrita.
-      - Sin bloque de firma: se firma digitalmente, como en el portal.
-    """
-    nom = _esc(datos.get("nominacion") or "____")
-    ciudad = _esc(datos.get("ciudad", "Rosario")).upper()
-    fuero = _fuero(datos)
-    autoridad = _autoridad_51(datos)
-    distrito = _distrito(datos)
-    tribunal = f"JUZGADO {fuero} Nº {nom}"
-
-    elementos = [
-        Paragraph("CÉDULA", ESTILO_ENCABEZADO),
-        Paragraph(
-            tribunal + (f" DISTRITO JUDICIAL NRO. {_esc(distrito)}" if distrito else "")
-            + f" - {ciudad}",
-            ESTILO_ENCABEZADO,
-        ),
-        Spacer(1, 6),
-    ]
-
-    # El destinatario y el domicilio solo si hay dato (nunca se inventan).
+    # El destinatario y el domicilio solo si hay dato: nunca se inventan.
     destinatario = _esc(datos.get("destinatario_nombre", "")).upper()
     if destinatario:
         elementos.append(Paragraph(f"<b>Señor:</b> {destinatario}", ESTILO_CAMPO))
     domicilio = _esc(datos.get("destinatario_domicilio", ""))
     if domicilio and destinatario:
         elementos.append(Paragraph(f"<b>Domicilio:</b> {domicilio}", ESTILO_CAMPO))
-    elementos.append(Spacer(1, 10))
 
-    caratula = _esc(datos.get("caratula", "")).upper()
-    cuij = _esc(datos.get("cuij", ""))
-    elementos.append(Paragraph(
-        f"Hago saber a Ud. que en el juicio seguido ante el {tribunal}"
-        + (f", a cargo de {_esc(autoridad)}" if autoridad else "")
-        + f", dentro de los autos caratulados: &ldquo;{caratula}&rdquo;"
-        + (f" {cuij}" if cuij else ""),
-        ESTILO_CUERPO,
-    ))
-
-    elementos.append(Paragraph(
-        f"Se ha dictado lo siguiente: {_esc(datos.get('texto_decreto', ''))}",
-        ESTILO_CUERPO,
-    ))
-
-    # Transcripción de artículos, un párrafo por artículo
-    for bloque in ARTICULOS_AUD_51.split("\n\n"):
-        if bloque.strip():
-            elementos.append(Paragraph(_esc(bloque.strip()), ESTILO_ARTICULOS))
-
-    # El cierre va DESPUÉS de las transcripciones, corto y centrado: así lo
-    # escribe el portal (nosotros antes lo poníamos antes y con el detalle de
-    # los apercibimientos, que el portal no incluye).
-    fecha_aud = _esc(datos.get("fecha_audiencia") or "___/___/______")
-    hora_aud = _esc(datos.get("hora_audiencia") or "__:__")
     elementos.append(Spacer(1, 10))
     elementos.append(Paragraph(
-        f"En consecuencia queda usted debidamente notificado del decreto que antecede, "
-        f"que la Audiencia de ART 51 se realizará el día {fecha_aud} a las {hora_aud} horas "
-        f"y de todos los derechos que efecto hubiera lugar. Saluda Atte.-",
+        f"Hago saber a Ud. que en el juicio seguido ante el {_juzgado_cuerpo(datos)}"
+        + (f", a cargo {autoridad}" if autoridad else "")
+        + f", dentro de los autos caratulados: "
+        f"&ldquo;{_esc(datos.get('caratula',''))}&rdquo; CUIJ {_esc(datos.get('cuij',''))} "
+        f"se ha dictado lo siguiente: {_decreto_con_fecha(datos)}",
+        ESTILO_CUERPO,
+    ))
+    return elementos
+
+
+def _cierre_comun():
+    """El cierre: una sola frase, en negrita.
+
+    Las tres cédulas reales cierran así. Antes cerrábamos con 'notificado/a' y
+    un bloque de 'Firma y sello' que ninguna de las tres trae: la cédula se
+    firma digitalmente y el sello lo pone FirmAr.
+    """
+    return Paragraph(
+        "<b>En consecuencia queda usted debidamente notificado del decreto que antecede.</b>",
         ESTILO_CIERRE,
-    ))
+    )
 
+
+def _transcripcion(texto):
+    """Los artículos, un párrafo por artículo."""
+    bloques = []
+    for bloque in texto.split("\n\n"):
+        if bloque.strip():
+            bloques.append(Paragraph(_esc(bloque.strip()), ESTILO_ARTICULOS))
+    return bloques
+
+
+def generar_pdf_estandar(datos, ruta):
+    """La cédula común: la base de todas las demás.
+
+    Verificada contra cédulas reales del SISFE (una contestación de demanda y
+    una designación de perito). Las otras cédulas son ésta más un bloque de
+    transcripciones — ver generar_pdf_peritos y generar_pdf_audiencia_51.
+    """
+    elementos = _cuerpo_comun(datos)
+    elementos.append(_cierre_comun())
     _doc(ruta).build(elementos)
     return ruta
+
+
+def generar_pdf_peritos(datos, ruta):
+    """Cédula al perito designado: la común + los arts. 78 y 79 del CPL.
+
+    Verificada contra una cédula real del SISFE (Juzgado de Primera Instancia
+    de Distrito en lo Laboral de la Localidad de Reconquista). El decreto que
+    se notifica es el acta del sorteo; lo que agrega la cédula es la intimación
+    a aceptar el cargo y la transcripción de los dos artículos.
+    """
+    elementos = _cuerpo_comun(datos)
+    elementos.append(Paragraph(_esc(PERITOS_INTIMACION), ESTILO_CUERPO))
+    elementos += _transcripcion(ARTICULOS_PERITOS)
+    elementos.append(_cierre_comun())
+    _doc(ruta).build(elementos)
+    return ruta
+
+
+def generar_pdf_audiencia_51(datos, ruta):
+    """Cédula que notifica la audiencia del Art. 51: la común + los arts. 51, 52 y 66.
+
+    Verificada contra una cédula real del SISFE (Juzgado en lo Laboral Nº 8 de
+    Rosario, 07/04/2026). Santiago definió el 16/09/2026 que esta cédula es la
+    común más la transcripción de los artículos — no un documento aparte.
+
+    Dos cosas que el portal hace distinto según el juzgado que la emite, y que
+    acá NO se copiaron: nombra al tribunal de otra forma ('JUZGADO EN LO
+    LABORAL Nº 8 DISTRITO JUDICIAL NRO. 2 - ROSARIO') y redacta la autoridad
+    con las etiquetas 'JUEZ/A' y 'SECRETARIO / PROSECRETARIO'. Se usa la forma
+    del común; si algún juzgado necesita la otra, va en datos["juzgado_header"].
+    """
+    elementos = _cuerpo_comun(datos)
+    elementos += _transcripcion(ARTICULOS_AUD_51)
+    elementos.append(_cierre_comun())
+    _doc(ruta).build(elementos)
+    return ruta
+
+
+def _bloque_firma():
+    """Bloque de firma para la Bus Federal (Ley 22.172), y solo para esa.
+
+    Es la única cédula que se diligencia a mano: la firma el oficial
+    notificador y la sella el tribunal receptor, así que necesita el espacio
+    impreso. Las otras tres (común, peritos y Art. 51) NO lo llevan — ninguna
+    de las cédulas reales del SISFE lo trae, porque se firman digitalmente.
+    """
+    return [
+        Spacer(1, 24),
+        Paragraph("_______________________________", ESTILO_FIRMA),
+        Paragraph("Firma y sello", ESTILO_FIRMA),
+    ]
 
 
 def generar_pdf_bus_federal(datos, ruta):
@@ -379,7 +364,7 @@ def _limpiar_nombre(texto, largo=28):
     return t[:largo].strip("_")
 
 
-def guardar_cedula_pdf(datos, ruta_carpeta, es_aud51=False, fecha_archivo="", novedad="", es_bus_federal=False):
+def guardar_cedula_pdf(datos, ruta_carpeta, es_aud51=False, fecha_archivo="", novedad="", es_bus_federal=False, es_peritos=False):
     """Construye un nombre de archivo único y genera el PDF."""
     os.makedirs(ruta_carpeta, exist_ok=True)
     fecha = (fecha_archivo or datos.get("fecha_decreto") or "").replace("/", "-").replace(" ", "_")
@@ -389,6 +374,8 @@ def guardar_cedula_pdf(datos, ruta_carpeta, es_aud51=False, fecha_archivo="", no
     partes = ["cedula"]
     if es_bus_federal:
         partes.append("BUSFEDERAL")
+    if es_peritos:
+        partes.append("PERITO")
     partes.append(fecha)
     if nov:
         partes.append(nov)
@@ -405,6 +392,8 @@ def guardar_cedula_pdf(datos, ruta_carpeta, es_aud51=False, fecha_archivo="", no
 
     if es_bus_federal:
         return generar_pdf_bus_federal(datos, ruta)
+    if es_peritos:
+        return generar_pdf_peritos(datos, ruta)
     if es_aud51:
         return generar_pdf_audiencia_51(datos, ruta)
     return generar_pdf_estandar(datos, ruta)

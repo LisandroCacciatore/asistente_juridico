@@ -197,3 +197,84 @@ def test_un_solo_destinatario_da_una_sola_cedula(tmp_path, monkeypatch):
     })
     assert len(r["archivos"]) == 1
     assert "generada" in r["mensaje"]
+
+
+# ============================================================
+#  Cédula de peritos (16/09/2026)
+# ------------------------------------------------------------
+#  Una cédula real del SISFE (Reconquista) muestra que la cédula al perito es
+#  la común + la intimación a aceptar el cargo + los arts. 78 y 79 del CPL.
+#  Y que va AL PERITO, no a las partes de la carátula.
+# ============================================================
+ACTA_PERITO = (
+    'ACTA DE SORTEO. En la ciudad de Reconquista, siendo dia y hora de audiencia y por '
+    'estar asi ordenado en los autos caratulados: "FERRERO HECTOR ALFREDO C/ PREVENCION '
+    'ART SA S/ ENFERMEDAD PROFESIONAL" 21-16746052-3, se procede al sorteo de un Perito '
+    'Médico y Contador de la lista para nombramientos de oficio, acto seguido resulta '
+    'sorteado el profesional MUÑOZ MARCELO ALFREDO con domicilio sito en calle Obligado '
+    'N° 457 y CHAVEZ LISANDRO ADRIAN con domicilio en Olessio n° 823. '
+    'Todo por ante mi que doy fe.-'
+)
+
+DECRETO_QUE_MENCIONA_EL_SORTEO = (
+    'Rosario, 10 de Septiembre de 2025- Por contestada la demanda y ofrecida prueba. '
+    'PERICIAL MEDICA Y CONTABLE: ofíciese a la Cám. de Apelación en lo Laboral a los '
+    'fines del sorteo de perito. Notifiquese por cédula.'
+)
+
+
+def test_una_designacion_de_perito_se_reconoce():
+    from cedulas import es_designacion_perito
+    assert es_designacion_perito(ACTA_PERITO) is True
+
+
+def test_mencionar_el_sorteo_no_alcanza_para_ser_peritos():
+    """Ojo con el falso positivo: la común ordena oficiar para el sorteo y NO es
+    de peritos (verificado contra la cédula real de la contestación de demanda)."""
+    from cedulas import es_designacion_perito
+    from generar_cedula import clasificar_por_reglas
+
+    assert es_designacion_perito(DECRETO_QUE_MENCIONA_EL_SORTEO) is False
+    assert clasificar_por_reglas(DECRETO_QUE_MENCIONA_EL_SORTEO) == "estandar"
+    assert clasificar_por_reglas(ACTA_PERITO) == "peritos"
+
+
+def test_extrae_los_peritos_del_acta_con_su_domicilio():
+    from cedula_desde_texto import extraer_peritos
+    peritos = extraer_peritos(ACTA_PERITO)
+    assert [p["nombre"] for p in peritos] == ["MUÑOZ MARCELO ALFREDO",
+                                             "CHAVEZ LISANDRO ADRIAN"]
+    assert peritos[0]["domicilio"] == "Obligado N° 457"
+    assert peritos[1]["domicilio"] == "Olessio n° 823"
+
+
+def test_el_destinatario_de_la_cedula_de_peritos_es_el_perito():
+    """No las partes: si se ofrecieran, saldría una cédula a nombre de quien no va."""
+    r = acciones.detectar_destinatarios({"texto": ACTA_PERITO})
+    assert r["tipo"] == "peritos"
+    assert r["caratula"] == "FERRERO HECTOR ALFREDO C/ PREVENCION ART SA S/ ENFERMEDAD PROFESIONAL"
+    assert [d["nombre"] for d in r["destinatarios"]] == [
+        "MUÑOZ MARCELO ALFREDO", "CHAVEZ LISANDRO ADRIAN"]
+    assert r["destinatarios"][0]["domicilio"] == "Obligado N° 457"
+    assert "perito" in r["destinatarios"][0]["rol"].lower()
+    # y la parte demandada NO aparece entre los candidatos
+    assert not any("PREVENCION" in d["nombre"] for d in r["destinatarios"])
+
+
+def test_la_cedula_de_peritos_sale_a_nombre_del_perito(tmp_path, monkeypatch):
+    """De punta a punta: el PDF va al perito y transcribe los arts. 78 y 79."""
+    monkeypatch.setattr(estado, "registrar_cedula", lambda e: None)
+    monkeypatch.setattr(generar_cedula, "CARPETA_CEDULAS_TEMP", str(tmp_path))
+
+    r = acciones.cedula({
+        "texto": ACTA_PERITO,
+        "destinatarios": [{"nombre": "MUÑOZ MARCELO ALFREDO",
+                           "domicilio": "Olessio N° 1577 - Reconquista"}],
+    })
+
+    assert len(r["archivos"]) == 1
+    texto = _texto(r["archivos"][0])
+    assert "Señor: MUÑOZ MARCELO ALFREDO" in texto
+    assert "ARTÍCULO 78" in texto and "ARTÍCULO 79" in texto
+    assert "ACEPTAR EL CARGO" in texto
+    assert "ARTICULO 51" not in texto

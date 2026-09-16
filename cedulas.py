@@ -20,6 +20,26 @@ ARTICULO 66. Además de la notificación a su apoderado en el domicilio legal, e
 """
 
 
+# --- Peritos: designación (arts. 78 y 79 del CPL) ------------------------
+# La cédula al perito designado es LA COMÚN + este bloque. Lo definió
+# Santiago el 16/09/2026 y sale de una cédula real del SISFE (Juzgado de
+# Primera Instancia de Distrito en lo Laboral de la Localidad de Reconquista,
+# "FERRERO HECTOR ALFREDO C/ PREVENCION ART SA S/ ENFERMEDAD PROFESIONAL").
+# La frase de la designación es de la plantilla del portal, no del decreto:
+# el decreto (el acta del sorteo) termina en "Todo por ante mi que doy fe.-".
+PERITOS_INTIMACION = (
+    "Se hace saber a Ud. su designación y se lo/la intima a ACEPTAR EL CARGO "
+    "dentro del término de cuarenta y ocho (48) horas de la presente "
+    "notificación, bajo apercibimiento de ley. A tales efectos, se transcriben "
+    "los artículos 78 y 79 del Código Procesal Laboral de la Provincia de "
+    "Santa Fe (Ley 7945):"
+)
+
+ARTICULOS_PERITOS = """ARTÍCULO 78. (Aceptación) Los peritos deberán aceptar el cargo dentro de las cuarenta y ocho horas de su notificación. Si no lo hicieren o se rehusaren sin causa justificada, se harán pasibles de las sanciones previstas en el Código Procesal Civil y Comercial.
+
+ARTÍCULO 79. (Plazo) El plazo para expedirse será de diez días desde la última aceptación del cargo, pudiendo ser ampliado prudencialmente por el juez, cuando el caso lo justifique. Cuando deba ampliarse el dictamen, el juez fijará el término respectivo."""
+
+
 def set_font(run, bold=False, size=10):
     """Configura fuente Arial en un run."""
     run.font.name = "Arial"
@@ -54,6 +74,26 @@ def es_decreto_audiencia_51(texto_decreto):
         "ley 7.945", "ley 7945"
     ]
     return any(ind in texto_lower for ind in indicadores)
+
+
+def es_designacion_perito(texto_decreto):
+    """Detecta la cédula al perito designado (arts. 78 y 79 del CPL).
+
+    La señal es el acta del sorteo, que nombra al profesional que salió
+    sorteado. Ojo con el falso positivo: un decreto que ordena oficiar a la
+    Cámara 'a los fines del sorteo de perito' MENCIONA el sorteo pero no
+    designa a nadie (es una cédula común) — por eso se pide la designación
+    efectiva y no la mención. Verificado contra cédulas reales del SISFE
+    (designación de perito de Reconquista vs. la común de la contestación de
+    demanda de Rosario, que menciona el sorteo y NO es de peritos).
+    """
+    t = (texto_decreto or "").lower()
+    if "perito" not in t:
+        return False
+    return any(s in t for s in (
+        "resulta sorteado", "resultó sorteado", "resulta designado",
+        "se designa perito", "aceptar el cargo",
+    ))
 
 
 def es_decreto_sin_notificacion(texto_decreto, titulo=""):

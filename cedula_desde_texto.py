@@ -287,6 +287,54 @@ def extraer_destinatarios(texto, caratula=None):
     return salida
 
 
+# --- Peritos: quién es el destinatario (acta del sorteo) -------------------
+# La cédula de peritos no va a las partes: va AL PERITO designado. El nombre
+# sale del acta del sorteo, que los nombra así:
+#
+#   'resulta sorteado el profesional MUÑOZ MARCELO ALFREDO con domicilio sito
+#    en calle Obligado N° 457 y CHAVEZ LISANDRO ADRIAN con domicilio en
+#    Olessio n° 823 y NOBILE VERÓNICA PAOLA con domicilio en calle Mitre 1035'
+#
+# Verificado contra una cédula real del SISFE (Reconquista). El acta puede
+# traer más de un profesional sorteado.
+_RE_SORTEO = re.compile(
+    r"result(?:a|ó)\s+sorteado\s+(?:el|la)\s+profesional\s+(.+?)(?=\.\s|\.\s*No\s+siendo|$)",
+    re.I | re.S,
+)
+
+# Un perito: NOMBRE (mayúsculas) + 'con domicilio [sito] [en] [calle] DIRECCIÓN'.
+# La dirección termina donde arranca el próximo nombre (' y APELLIDO') o el
+# punto que cierra la frase.
+_RE_PERITO_PAR = re.compile(
+    r"([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\.']{4,45}?)"
+    r"\s+con\s+domicilio\s+(?:sito\s+)?(?:en\s+)?(?:calle\s+)?"
+    r"(.+?)"
+    r"(?=\s+y\s+[A-ZÁÉÍÓÚÑ]{3,}[\s,]|\s*\.|$)"
+)
+
+
+def extraer_peritos(texto):
+    """Los peritos designados en un acta de sorteo, en el orden del acta.
+
+    Devuelve [{"nombre", "domicilio"}]. Es el destinatario de la cédula de
+    peritos. Lo que no se pueda separar queda vacío y el abogado lo completa
+    en el panel: nunca se inventa un nombre ni un domicilio.
+    """
+    m = _RE_SORTEO.search(texto or "")
+    if not m:
+        return []
+
+    salida, vistos = [], set()
+    for par in _RE_PERITO_PAR.finditer(m.group(1)):
+        nombre = re.sub(r"\s+", " ", par.group(1)).strip(" ,;:-")
+        domicilio = re.sub(r"\s+", " ", par.group(2)).strip(" ,;:-")
+        if len(nombre) < 5 or nombre.upper() in vistos:
+            continue
+        vistos.add(nombre.upper())
+        salida.append({"nombre": nombre, "domicilio": domicilio})
+    return salida
+
+
 # Ciudades con juzgados en Santa Fe (para no confundir la ciudad con
 # cualquier otra palabra del decreto).
 CIUDADES_SF = [

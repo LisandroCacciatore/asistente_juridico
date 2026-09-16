@@ -35,6 +35,7 @@ _TIPOS = {
     "aud51":       {"tipo": "aud",       "label": "Audiencia Art. 51 CPL",     "ic": "🛡"},
     "bus_federal": {"tipo": "bus",       "label": "Bus Federal — Ley 22.172",  "ic": "🔒"},
     "traslado":    {"tipo": "traslado",  "label": "Traslado de demanda",       "ic": "⚖"},
+    "peritos":     {"tipo": "peritos",   "label": "Perito (arts. 78 y 79)",   "ic": "🔬"},
 }
 
 
@@ -42,6 +43,8 @@ def clasificar_por_reglas(texto_decreto, novedad=""):
     """Deduce el tipo de cédula con TUS reglas (sin IA). Devuelve la clave de _TIPOS."""
     if cedulas.es_bus_federal(texto_decreto, novedad):
         return "bus_federal"
+    if cedulas.es_designacion_perito(texto_decreto):
+        return "peritos"
     if cedulas.es_decreto_audiencia_51(texto_decreto):
         return "aud51"
     if cedulas.es_primer_decreto(texto_decreto):
@@ -91,6 +94,7 @@ def generar(entrada, salida_dir=None):
     meta = _TIPOS[tipo]
     es_aud51 = (tipo == "aud51")
     es_bus = (tipo == "bus_federal")
+    es_peritos = (tipo == "peritos")
 
     # 3) Destinatarios: provistos a mano (Nivel 1). Si no hay, uno en blanco.
     destinatarios = entrada.get("destinatarios") or [{"nombre": "", "domicilio": ""}]
@@ -120,6 +124,7 @@ def generar(entrada, salida_dir=None):
         }
         ruta_pdf = guardar_cedula_pdf(
             datos, carpeta, es_aud51=es_aud51, es_bus_federal=es_bus,
+            es_peritos=es_peritos,
             fecha_archivo=fecha_decreto, novedad=novedad,
         )
 
