@@ -28,6 +28,11 @@ cambia, se cambia acá primero.
 | **D15** | Partes en SISFE (confirmado) | **16/09/2026, contra la pantalla real.** La tabla trae 4 filas: 2 **cajas fijas** (CS01, CF02) + los **representantes del expediente**. El sistema **las lee del portal y las muestra**; el abogado destilda lo que no va. **Ninguna parte se fija en el código.** |
 | **D16** | El correo de las partes | **Lo trae cargado el SISFE.** Se lee y se muestra tal cual; no se completa ni se inventa (coherente con D10: va solo donde existe — en la tabla real, solo Pereyra). |
 | **D17** | El clic en NOTIFICAR | **Es del abogado.** El sistema deja todo cargado (descripción, adjunto, partes tildadas) y **se detiene**. Está blindado: un test lee el código y **falla si alguien agrega un clic en Notificar / Presentar / Confirmar / Enviar**, y otro test corre el flujo contra una pantalla de mentira y comprueba que el botón quedó sin apretar. Misma regla que el mail. |
+| **D18** | Dos identidades | El sistema registra **operador** (quién maneja el asistente: Jr) y **identidad del acto** (con qué matrícula/sesión y con qué firma se ejecutó: Santiago — LV029). No son lo mismo y van las dos en cada línea del log, más `usuario_windows` como control cruzado. |
+| **D19** | La puerta de identidad | **Al abrir el asistente**, obligatoria una vez por jornada y cambiable. Se ve siempre en la barra de arriba. **Antes del portal no se vuelve a preguntar**: se confirma en pantalla en la pausa que ya existe ("vas a actuar con la identidad de Santiago"). |
+| **D20** | Quiénes | **Santiago, Jr y el socio.** Se registra quién operó y con qué identidad actuó. La lista sale de config, no cableada (falta el nombre del socio y si tiene identidad propia). |
+| **D21** | Qué se centraliza | **Los datos sí, las sesiones no.** Una sola fuente de verdad para estado, log y ficha del cliente. Los perfiles de Chrome, las sesiones de los portales, la firma, la generación de PDF y las rutas **quedan en cada máquina**: centralizar una sesión sería centralizar credenciales. |
+| **D22** | El anti-duplicado es central | Con dos máquinas y el estado local, **dos personas pueden notificar la misma cédula dos veces** y ninguna se entera. El control de duplicados tiene que vivir donde vive el estado. |
 
 ---
 
@@ -227,9 +232,114 @@ ciclos, y que si la sesión de SISFE expira la vuelva a pedir en vez de colgarse
       acotada y revisar después que no quedó nada colgado.
 - [ ] La corrida real de una jornada completa, sin supervisión.
 
-### Fase 10 — Multiagente (proyecto aparte, después)
-- [ ] Un usuario = su matrícula, su Firma Digital, su perfil de Chrome, su casilla,
-      su entrada en el log.
+### Fase 10 — Multiagente: identidad, auditoría y datos centralizados
+
+Tres personas (Santiago, Jr y el socio), cada una en su máquina. El asistente tiene
+que poder decir **quién hizo qué y con qué identidad**, y el estado y la información
+del cliente tienen que estar en **un solo lugar**.
+
+#### Fase 10a — Quién entra y con qué identidad *(se puede hacer ya, sin hub)*
+
+El log ya sella `usuario` (el de Windows) y `maquina` (D11). Lo que falta es lo que
+importa de verdad cuando hay más de una persona: **son dos identidades distintas**.
+
+| | Qué es | Ejemplo |
+|---|---|---|
+| **Operador** | Quién está manejando el asistente | Jr |
+| **Identidad del acto** | Con qué matrícula/sesión y con qué firma se ejecutó | Santiago — LV029, firma de Santiago |
+
+La cédula que se firma y se notifica queda **legalmente en cabeza de la identidad
+usada**, aunque la haya movido otra persona. Por eso el registro las separa: es lo
+que protege a los dos.
+
+**Cómo funciona la puerta (D19):**
+
+1. **Al abrir el asistente, una vez por jornada:** ¿Quién está trabajando? (lista de
+   personas de `config.py`). Queda en `sesion.json` con la hora de inicio y la
+   máquina, y **se ve siempre en la barra de arriba** — *"Trabajando: Jr"*. Un dato
+   que no se ve, no se controla.
+2. **Se puede cambiar** (se sienta otro). La declaración **vence al cerrar el día**
+   o después de X horas sin actividad: al vencer, vuelve a preguntar.
+3. **Antes de tocar el portal no se pregunta de nuevo**: se **confirma en pantalla**,
+   en la pausa que ya existe:
+
+   > Vas a actuar con la identidad de **Santiago** (LV029) en el SISFE.
+   > Operador registrado: **Jr**. ¿Seguimos?
+
+4. Cada línea del log queda con: `operador`, `usuario_windows` (el de la máquina, que
+   la interfaz no puede falsear → **control cruzado**), `maquina`, `identidad`, `firma`.
+
+**Lo que este registro NO es** (para no venderlo como algo que no es): **no prueba
+quién apretó FIRMAR.** Eso lo prueba FirmAr, con su matrícula y su OTP — el acuerdo
+que ya tienen Santiago y Jr, y que **no se toca**. El log aporta el contexto
+alrededor: quién operó, desde qué máquina, con qué identidad declarada.
+
+- [ ] `sesion.py`: la jornada (operador + inicio + máquina), con vencimiento.
+- [ ] La puerta al abrir el panel + *"Trabajando: X"* en la barra de estado.
+- [ ] `registrar_log` sella `operador` e `identidad`, además de lo que ya sella.
+- [ ] Las pausas de firma y de SISFE confirman la identidad antes de seguir.
+- [ ] La lista de personas e identidades sale de `config.py`, no cableada.
+
+#### Fase 10b — El almacén central (el hub)
+
+El problema no es el espacio en disco: es que **cada máquina tiene su propia verdad**.
+
+- El anti-duplicado es por máquina → **dos personas pueden notificar la misma cédula
+  dos veces** y ninguna se entera. Ese es el riesgo real (D22).
+- El log partido en dos **no es auditoría**: para reconstruir un expediente hay que
+  juntar los dos archivos.
+- La carpeta del cliente copiada en cada máquina no es redundancia, es
+  **divergencia**: dos versiones del mismo caso y nadie sabe cuál vale.
+
+**Qué se centraliza y qué no (D21).** Centralizar una sesión sería centralizar
+credenciales: eso no se hace. El que tiene la sesión es la máquina.
+
+| Se centraliza (una sola fuente de verdad) | Queda local (es de la máquina) |
+|---|---|
+| El estado de las cédulas **y el anti-duplicado** | Los perfiles de Chrome y las sesiones de los portales |
+| El log / la auditoría | La firma (FirmAr, con su OTP) |
+| La ficha del cliente: expediente, carátula, CUIJ, documentos, notas | La generación de los PDF |
+| La lista de personas e identidades | La matrícula del perfil y las rutas de cada máquina |
+
+**El contrato antes del motor.** Cuatro operaciones: *leer estado · escribir estado ·
+agregar al log · leer/escribir la ficha del cliente*. Con el contrato fijo, dónde vive
+el almacén pasa a ser configuración:
+
+- **Hub en la oficina** (una máquina del estudio o una VM): los datos no salen del
+  estudio. Contra: depende de que esa máquina esté prendida.
+- **VM en la nube**: no depende de ninguna máquina del estudio y permite trabajar de
+  cualquier lado. Contra: **los datos de los clientes salen del país** — no es una
+  decisión técnica, **la decide Santiago** (secreto profesional).
+- **Git como sincronización:** descartado. Dos personas a la vez sobre el mismo JSON
+  son conflictos de merge, y no hay concurrencia de verdad.
+
+**Recomendación, en orden:**
+
+1. Escribir el contrato y correr el hub **en local**, en una carpeta: valida el diseño
+   con cero infraestructura.
+2. Moverlo a una máquina del estudio — **que no sea la de trabajo**: mezclar el
+   "cerebro" con la máquina que corre Chrome hace que cada cierre de Chrome sea una
+   caída del hub para todos.
+3. Si hace falta trabajar de afuera, recién ahí la VM.
+
+**Las VMs gratis, con los números verificados (16/09/2026):**
+
+| | Google Cloud free tier | Oracle always free |
+|---|---|---|
+| Máquina | 1 × e2-micro, 30 GB de disco | 2 OCPU / 12 GB ARM (bajó de 4/24 en 2026) |
+| Salida | **1 GB por mes** | — |
+| Región | **solo 3 de EE.UU.** | admite **São Paulo** (los datos quedan en Sudamérica) |
+| Contra | los datos quedan en EE.UU. | la capacidad ARM gratis se agota; el alta es engorrosa |
+
+Para nuestro tráfico (JSON chico) **cualquiera de las dos alcanza de sobra**. Y ninguna
+de las dos es para *servir* el asistente: el navegador, la firma y la generación siguen
+en la máquina de cada uno. **La VM es un almacén, nada más.**
+
+- [ ] El contrato del almacén (las 4 operaciones) + una implementación local.
+- [ ] `estado.py` y `registrar_log` detrás del contrato.
+- [ ] El anti-duplicado central: dos máquinas no pueden notificar lo mismo.
+- [ ] La ficha del cliente (expediente por CUIJ), con quién la tocó por última vez.
+- [ ] Prueba de fuego: dos personas trabajando a la vez, sin pisarse.
 
 ---
 
@@ -244,6 +354,8 @@ ciclos, y que si la sesión de SISFE expira la vuelva a pedir en vez de colgarse
 | ~~Tipos de expediente de Meta Jurídico~~ | ~~Fase 5~~ | **ya no hace falta**: Meta salió del circuito (D1) |
 | **Lista real de partes de SISFE** | Fase 6 | ✅ **Recibida** el 16/09/2026 — las 4 filas están en la Fase 6 |
 | **El correo de los representantes** | Fase 6 | ✅ **Contestado**: lo trae cargado el SISFE (D16) |
+| **El nombre del socio** | Fase 10a | Santiago (para que la lista de operadores esté completa) |
+| **Si los tres actúan con la identidad de Santiago o alguno tiene la suya** | Fase 10a | Santiago. No cambia el diseño (la identidad es un dato por acto); cambia la lista |
 
 Mientras un dato no esté, el código queda listo y **el campo se muestra vacío**
 (nunca con un valor inventado).
