@@ -33,6 +33,12 @@ HORARIO_INICIO = "08:00"
 HORARIO_FIN = "18:00"
 DIAS_HABILES = [0, 1, 2, 3, 4]   # lunes a viernes (datetime.weekday)
 
+# Cuánto se espera a que alguien escriba la contraseña de SISFE antes de
+# dar el ciclo por perdido. Solo aplica al modo continuo: si nadie está
+# adelante de la máquina, el ciclo se saltea y el próximo vuelve a
+# pedir el login, en vez de quedar esperando ENTER toda la jornada.
+ESPERA_LOGIN_MINUTOS = 20
+
 # --- Cédulas (generar_cedula.py) ------------------------------
 # Carpeta genérica y transitoria para los PDF: se borran al
 # presentarse en Meta Jurídico (ver estado.marcar_presentada).

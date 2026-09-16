@@ -74,6 +74,11 @@ def main():
     print("Listo. Para arrancar:")
     print("    python servidor.py      y abrir http://localhost:8000")
     print("    python monitor_playwright.py --una-vez     (revisar SISFE una vez)")
+    print("    python monitor_playwright.py --limite-ciclos 3   (modo continuo acotado)")
+    print()
+    print("Después de firmar una cédula, subirla al SISFE:")
+    print('    python sisfe_notificar.py "ruta\\a\\cedula_FIRMADO.pdf" "21-04253894-6"')
+    print("    (deja todo cargado y espera TU clic en NOTIFICAR)")
     return 0
 
 

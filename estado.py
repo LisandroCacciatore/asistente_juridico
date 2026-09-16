@@ -200,6 +200,22 @@ def marcar_firmada(id_cedula, ruta_firmada):
     registrar_log("firmada", id_cedula, cedula.get("caratula", ""), cedula.get("cuij", ""), ruta_firmada or "")
 
 
+def marcar_cargada_sisfe(id_cedula, detalle="", descripcion=""):
+    """La cédula quedó cargada en el SISFE, esperando el clic en NOTIFICAR.
+
+    OJO: no se cambia `estado`. El dashboard dibuja tres estados (generada
+    → firmada → presentada) y meter uno nuevo haría que la cédula
+    desaparezca de la pantalla. El paso intermedio queda en el LOG, que es
+    justamente para lo que existe: la cédula sigue en «a presentar», con
+    el dato de que ya está cargada en el portal.
+    """
+    cedula = obtener_cedula(id_cedula) or {}
+    _actualizar(id_cedula, sisfe_cargada=True, sisfe_fecha=_ahora(),
+                sisfe_descripcion=descripcion)
+    registrar_log("cargada_en_sisfe", id_cedula, cedula.get("caratula", ""),
+                  cedula.get("cuij", ""), detalle or descripcion)
+
+
 def marcar_presentada(id_cedula):
     """
     Marca la cédula como presentada Y borra los PDF locales (original y

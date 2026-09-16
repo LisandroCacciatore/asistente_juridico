@@ -21,6 +21,8 @@ import os
 import re
 import sys
 import json
+import subprocess
+import threading
 from datetime import datetime
 from datetime import timedelta as _timedelta
 
@@ -58,6 +60,88 @@ SISFE_PARTES = "https://sisfe.justiciasantafe.gov.ar/nueva-notificacion-expedien
 DIAS_NOVEDADES = "10"
 CARPETA_BASE = os.path.dirname(os.path.abspath(__file__))
 PERFIL_SISFE = os.path.join(CARPETA_BASE, "chrome_profile_sisfe")
+
+# Cuánto se espera a que alguien escriba la contraseña antes de dar el
+# ciclo por perdido (modo continuo). Sin esto, el `input()` del login
+# cuelga la jornada entera esperando a una persona que quizá no está.
+try:
+    from config import ESPERA_LOGIN_MINUTOS
+except Exception:            # config.py de una máquina vieja, sin la clave
+    ESPERA_LOGIN_MINUTOS = 20
+
+# Para saber si quedó un Chrome colgado de un perfil hay que mirar los
+# PROCESOS: Chromium no deja ningún archivo de bloqueo en la raíz del
+# perfil (se verificó contra el navegador real). La línea de comando del
+# proceso principal sí lleva el --user-data-dir, y desaparece al cerrar.
+#
+# Ojo con dos cosas que se verificaron a mano:
+#   · en modo headless el ejecutable es chrome-headless-shell.exe, NO
+#     chrome.exe → el filtro es por nombre que CONTENGA "chrome";
+#   · el nombre es obligatorio, si no un bash o un python cuya línea de
+#     comando mencione la ruta se cuenta como un Chrome fantasma.
+_PS_PROCESOS = (
+    "Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*chrome*' } | "
+    "Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress"
+)
+
+
+def procesos_con_el_perfil(perfil):
+    """PIDs de los navegadores que están usando ese perfil.
+
+    Devuelve [] si no hay ninguno y None si no se pudo averiguar (mejor
+    no concluir nada que dar una falsa alarma de Chrome huérfano).
+    """
+    perfil = os.path.normcase(os.path.abspath(perfil))
+    try:
+        if os.name == "nt":
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS_PROCESOS],
+                capture_output=True, text=True, timeout=60,
+            )
+            if r.returncode != 0:
+                return None
+            texto = (r.stdout or "").strip()
+            if not texto:
+                return []
+            datos = json.loads(texto)
+        else:
+            r = subprocess.run(["pgrep", "-af", perfil], capture_output=True,
+                               text=True, timeout=60)
+            if r.returncode not in (0, 1):     # 1 = ninguno encontrado
+                return None
+            return [int(l.split()[0]) for l in (r.stdout or "").splitlines() if l.strip()]
+    except Exception:
+        return None
+
+    if isinstance(datos, dict):
+        datos = [datos]
+    pids = []
+    for d in datos:
+        if perfil in os.path.normcase(d.get("CommandLine") or ""):
+            pid = d.get("ProcessId")
+            if pid:
+                pids.append(pid)
+    return pids
+
+
+def perfil_en_uso(perfil):
+    """True/False, o None si no se pudo averiguar."""
+    pids = procesos_con_el_perfil(perfil)
+    return None if pids is None else bool(pids)
+
+
+# ============================================================
+#  HORARIO Y PERFIL (lógica pura — se prueba sin portal)
+# ============================================================
+def en_horario(ahora, inicio, fin, dias):
+    """¿Toca revisar en este momento?
+
+    `dias` son los de datetime.weekday() (0 = lunes) y las horas van en
+    formato "HH:MM". Es una función pura a propósito: la decisión del
+    modo continuo se podía leer pero no probar, porque vivía adentro
+    del `if __name__`.
+    """
+    return ahora.weekday() in dias and str(inicio) <= ahora.strftime("%H:%M") <= str(fin)
 
 
 # ============================================================
@@ -102,12 +186,71 @@ def actualizar_estado_expediente(estado, cuij, cant, ultimo):
                     "ultima_visita": datetime.now().isoformat()}
 
 
-def pausa(msg):
+def _esperar_enter(segundos, leer=None):
+    """Espera ENTER hasta `segundos`. True si alguien contestó, False si se agotó.
+
+    El hilo que queda esperando si nadie contesta es daemon y su
+    resultado se descarta: a lo sumo se "come" un ENTER suelto más
+    adelante, y el próximo ciclo vuelve a pedir el login igual.
+    """
+    lector = leer or input
+    caja = {"ok": False}
+
+    def _leer():
+        try:
+            lector("  >>> Cuando termines, presioná ENTER para continuar... ")
+            caja["ok"] = True
+        except Exception:
+            caja["ok"] = False
+
+    hilo = threading.Thread(target=_leer, daemon=True)
+    hilo.start()
+    hilo.join(segundos)
+    return caja["ok"]
+
+
+def pausa(msg, segundos=None, leer=None):
+    """Frena y espera ENTER.
+
+    Sin `segundos` espera para siempre (una corrida a mano: estás ahí).
+    Con `segundos` se rinde y devuelve False — es lo que usa el modo
+    continuo, para que un ciclo sin nadie adelante no deje la jornada
+    colgada hasta el día siguiente.
+    """
     print("\n  " + "─" * 55)
     print("  ACCIÓN TUYA")
     print("  " + msg)
-    input("  >>> Cuando termines, presioná ENTER para continuar... ")
+    if segundos is None:
+        input("  >>> Cuando termines, presioná ENTER para continuar... ")
+        print("")
+        return True
+    if _esperar_enter(segundos, leer=leer):
+        print("")
+        return True
+    print("  (nadie contestó a tiempo — se corta este ciclo)")
     print("")
+    return False
+
+
+def verificar_perfil_liberado(perfil=None):
+    """¿Quedó algún Chrome vivo con el perfil de este ciclo?
+
+    Se pregunta por el proceso, no por un archivo: es la única señal que
+    existe de verdad. Devuelve True (limpio), False (quedó alguno) o
+    None (no se pudo averiguar, no se concluye nada).
+    """
+    perfil = perfil or PERFIL_SISFE
+    pids = procesos_con_el_perfil(perfil)
+    if pids is None:
+        print("  (no pude verificar si quedó algún Chrome abierto)")
+        return None
+    if pids:
+        print(f"  ⚠ Quedaron {len(pids)} proceso(s) de Chrome con este perfil "
+              f"(PIDs {pids[:5]}).")
+        print("    Ese es el Chrome huérfano que hay que mirar.")
+        return False
+    print("  ✓ Sin Chromes colgados de este perfil")
+    return True
 
 
 # ============================================================
@@ -125,16 +268,22 @@ def abrir_sisfe(p, usar_chrome=True):
     return p.chromium.launch_persistent_context(**kwargs)
 
 
-def login_sisfe(page):
+def login_sisfe(page, pausar=None, espera=None):
     """Login con selectores por id (del codegen). El password y el
     reCAPTCHA los completás vos: es puerta humana. Con el perfil
-    persistente, muchas veces ya vas a estar adentro."""
+    persistente, muchas veces ya vas a estar adentro.
+
+    Devuelve True si quedó adentro. Con `espera` (segundos) la puerta
+    humana tiene límite: si nadie contesta, devuelve False y el ciclo
+    se corta limpio en vez de colgarse esperando para siempre.
+    """
+    pausar = pausar or pausa
     page.goto(SISFE_BUSCAR)
     page.wait_for_timeout(1500)
     # ¿Ya logueado? Si la página de búsqueda cargó, seguimos.
     if "login" not in page.url and page.locator("#localidad, table").count() > 0:
         print("  ✓ Sesión activa (perfil de Chrome)")
-        return
+        return True
 
     page.goto(SISFE_LOGIN)
     page.wait_for_timeout(1000)
@@ -169,7 +318,23 @@ def login_sisfe(page):
     except Exception:
         print("  ⚠ No pude precargar la matrícula — completala a mano.")
 
-    pausa("Ingresá tu CONTRASEÑA de SISFE, resolvé el reCAPTCHA y hacé clic en INGRESAR.")
+    if not pausar("Ingresá tu CONTRASEÑA de SISFE, resolvé el reCAPTCHA y "
+                  "hacé clic en INGRESAR.", segundos=espera):
+        print("  ✗ Nadie ingresó la contraseña a tiempo: salteo este ciclo.")
+        return False
+
+    # Esperar a que el login realmente ocurra (hasta 20 s) en vez de
+    # seguir a ciegas: si sigue en /login, el que llama tiene que saberlo
+    # y cortar, no arrancar la búsqueda y fallar con un error confuso.
+    for _ in range(20):
+        if "login" not in page.url:
+            break
+        page.wait_for_timeout(1000)
+    if "login" in page.url:
+        print("  ✗ Seguís en la pantalla de login: no puedo seguir sin sesión.")
+        return False
+    print("  ✓ Adentro del SISFE")
+    return True
 
 
 # ============================================================
@@ -450,15 +615,31 @@ def procesar_expediente(page, exp, registro, estado):
 # ============================================================
 #  CICLO PRINCIPAL
 # ============================================================
-def ciclo(usar_chrome=True):
+def ciclo(usar_chrome=True, espera_login=None, pausar=None):
+    """Un ciclo completo de revisión.
+
+    Devuelve nada: lo que importa queda en estado.json y en el log. Se
+    corta limpio (sin excepción) cuando no hay sesión, para que el modo
+    continuo pueda seguir con el próximo intervalo.
+    """
     registro = cargar_registro()
     estado = cargar_estado()
+    if perfil_en_uso(PERFIL_SISFE):
+        print("  ⚠ Ya hay un Chrome abierto con el perfil del monitor:")
+        print("    si esa ventana es tuya, cerrala. Se intenta igual.")
     with sync_playwright() as p:
-        ctx = abrir_sisfe(p, usar_chrome=usar_chrome)
+        try:
+            ctx = abrir_sisfe(p, usar_chrome=usar_chrome)
+        except Exception as e:
+            print(f"  ✗ No pude abrir Chrome ({type(e).__name__}): {str(e)[:160]}")
+            print("    Se reintenta en el próximo ciclo. Si dice que el perfil está")
+            print("    en uso, cerrá esa ventana de Chrome.")
+            return
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             print("  Ingresando a SISFE…")
-            login_sisfe(page)
+            if not login_sisfe(page, pausar=pausar, espera=espera_login):
+                return
             expedientes = obtener_expedientes(page)
             for exp in expedientes:
                 print(f"\n  Expediente {exp['cuij']}")
@@ -470,6 +651,7 @@ def ciclo(usar_chrome=True):
             guardar_registro(registro)
             guardar_estado(estado)
             ctx.close()
+            verificar_perfil_liberado()
     print("\n  ✓ Ciclo terminado. Revisá el dashboard.")
 
 
@@ -481,6 +663,17 @@ if __name__ == "__main__":
 
     modo_continuo = "--una-vez" not in _sys.argv
 
+    # --limite-ciclos N: corre N ciclos y corta. Sirve para dejar una
+    # corrida acotada (ej. media hora) y revisar después que no quedaron
+    # Chromes huérfanos ni el consumo se disparó.
+    limite = 0
+    if "--limite-ciclos" in _sys.argv:
+        try:
+            limite = int(_sys.argv[_sys.argv.index("--limite-ciclos") + 1])
+        except (IndexError, ValueError):
+            print("  (--limite-ciclos necesita un número; se ignora)")
+            limite = 0
+
     if not modo_continuo:
         ciclo()
     else:
@@ -488,19 +681,25 @@ if __name__ == "__main__":
               f"{HORARIO_INICIO} a {HORARIO_FIN}, días hábiles (lun-vie).")
         print("  La primera vez pide login (como siempre); después, mientras la\n"
               "  sesión de SISFE no expire, revisa solo — sin pedirte nada.")
+        if limite:
+            print(f"  Corta solo después de {limite} ciclo(s) (--limite-ciclos).")
         print("  Para detenerlo: Ctrl+C en esta ventana.\n")
+        hechos = 0
         try:
             while True:
                 ahora = _dt.now()
-                en_horario = (
-                    ahora.weekday() in DIAS_HABILES
-                    and HORARIO_INICIO <= ahora.strftime("%H:%M") <= HORARIO_FIN
-                )
-                if en_horario:
+                if en_horario(ahora, HORARIO_INICIO, HORARIO_FIN, DIAS_HABILES):
                     try:
-                        ciclo()
+                        # La puerta del login tiene tope: si nadie está adelante de
+                        # la máquina, el ciclo se pierde y el próximo lo vuelve a
+                        # pedir, en vez de esperar ENTER hasta el día siguiente.
+                        ciclo(espera_login=ESPERA_LOGIN_MINUTOS * 60)
                     except Exception as e:
                         print(f"  ⚠ Error en el ciclo: {type(e).__name__}: {e}")
+                    hechos += 1
+                    if limite and hechos >= limite:
+                        print(f"\n  Detenido a propósito después de {hechos} ciclo(s).")
+                        break
                 else:
                     print(f"  Fuera de horario ({ahora.strftime('%H:%M')}) — esperando...")
                 _time.sleep(INTERVALO_MINUTOS * 60)

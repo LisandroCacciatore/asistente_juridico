@@ -25,6 +25,9 @@ cambia, se cambia acá primero.
 | **D12** | Mail interactivo | **Abrir hilo · responder como borrador · descartar borrador.** La regla "el envío es del abogado" no se toca. |
 | **D13** | Refresco | **Monitor de SISFE: 10 min.** Dashboard: 60 s. |
 | **D14** | Tarjetas | **Se sacan las 5 tarjetas**; las skills **quedan** y se siguen pudiendo invocar. |
+| **D15** | Partes en SISFE (confirmado) | **16/09/2026, contra la pantalla real.** La tabla trae 4 filas: 2 **cajas fijas** (CS01, CF02) + los **representantes del expediente**. El sistema **las lee del portal y las muestra**; el abogado destilda lo que no va. **Ninguna parte se fija en el código.** |
+| **D16** | El correo de las partes | **Lo trae cargado el SISFE.** Se lee y se muestra tal cual; no se completa ni se inventa (coherente con D10: va solo donde existe — en la tabla real, solo Pereyra). |
+| **D17** | El clic en NOTIFICAR | **Es del abogado.** El sistema deja todo cargado (descripción, adjunto, partes tildadas) y **se detiene**. Está blindado: un test lee el código y **falla si alguien agrega un clic en Notificar / Presentar / Confirmar / Enviar**, y otro test corre el flujo contra una pantalla de mentira y comprueba que el botón quedó sin apretar. Misma regla que el mail. |
 
 ---
 
@@ -166,16 +169,63 @@ Mismo `_navegador.py` (perfil de Chrome persistente) que ya usan `firma.py` y
 `meta_juridico.py`. **Toda puerta humana (login, 2FA) corta con aviso**, como el
 `input()` del monitor: el script no sigue solo.
 
-- [ ] El paso entero, de punta a punta, con Santiago adelante.
-- [ ] Firma en lote: la identidad elegida en SISFE es la que firma (Fase 7).
+**Estado: construido (16/09/2026), falta la pasada en vivo.** Las tres preguntas que
+estaban abiertas ya se respondieron y quedaron como D15/D16/D17 — no se programó
+nada a ciegas:
 
-#### A confirmar en vivo (no se programa a ciegas)
+| Pregunta | Respuesta |
+|---|---|
+| ¿Las 4 partes se tildan siempre? | Se **leen del portal y se muestran**; ninguna se fija (D15) |
+| ¿El correo lo trae el SISFE? | Sí, **lo trae cargado** (D16) |
+| ¿Notificar lo aprieta el abogado? | Sí, y está blindado por test (D17) |
 
-- ¿Las **4 partes** se tildan siempre, o los representantes cambian por expediente?
-  *Código: leerlas del portal y mostrarlas para confirmar, nunca fijarlas.*
-- ¿El **correo** de los representantes lo trae cargado el SISFE o hay que escribirlo?
-- ¿**Notificar** es el clic final del abogado? *Código: dejar todo cargado y que el
-  clic sea humano, igual que la regla del mail.*
+Lo que queda para la pasada en vivo es **una sola cosa: los selectores**. Todo el
+paso intenta el camino automático y, cuando no encuentra un campo, **frena y te
+pide que lo hagas a mano** (nunca sigue a ciegas). Los que hay que confirmar contra
+el portal: la caja de búsqueda del CUIJ, el botón «Nueva Cédula», el campo de la
+Descripción genérica, el input de archivo, y la tabla de Partes. Están todos
+marcados y en un solo lugar de `sisfe_notificar.py`.
+
+Y si no puede verificar el expediente, **no sigue**: el CUIJ de la pantalla tiene
+que coincidir con el de la cédula (la carátula distinta solo avisa, porque el
+portal la escribe a su manera, y quien decide ahí es el abogado).
+
+- [x] El paso construido: `sisfe_notificar.py` + la acción `notificar_sisfe` y el
+      cierre `marcar_notificada` (que sí da la cédula por presentada, y lo dispara
+      una persona después de apretar Notificar en el portal).
+- [x] Que **no** toque el botón final, verificado de dos maneras (ver D17).
+- [x] Que cargar la cédula en el SISFE **no la saque de la pantalla**: el estado
+      sigue siendo `firmada` y el paso queda en el log (`cargada_en_sisfe`). Un
+      estado nuevo la habría hecho desaparecer de todas las secciones del panel.
+- [x] Que no se pueda subir **la cédula sin firmar**: si no hay firmado, la acción
+      se corta. *(Lo encontró un test: la primera versión caía al PDF sin firmar
+      cuando todavía no se había firmado.)*
+- [ ] La pasada en vivo con Santiago: confirmar los selectores de arriba.
+- [ ] Firma en lote (Fase 7): la identidad elegida en SISFE es la que firma.
+
+### Fase 8 — El monitor aguanta una jornada (16/09/2026)
+
+Lo que había que resolver: que no acumule memoria ni deje Chromes huérfanos entre
+ciclos, y que si la sesión de SISFE expira la vuelva a pedir en vez de colgarse.
+
+- [x] **La puerta del login tiene tope** (`ESPERA_LOGIN_MINUTOS`, 20 por defecto).
+      Sin esto, un `input()` esperando a una persona que no está dejaba la jornada
+      entera colgada. Si nadie contesta, el ciclo se pierde y el próximo lo pide
+      otra vez.
+- [x] **Si el login no se completó, el ciclo corta limpio** en vez de arrancar la
+      búsqueda y fallar con un error confuso.
+- [x] **Chromes huérfanos: se pregunta por el proceso.** Al cerrar cada ciclo se
+      revisa si quedó algún navegador con ese perfil y se reporta con los PIDs.
+      *(Ojo con esto: la primera versión buscaba un archivo de bloqueo dentro del
+      perfil; se probó contra el navegador real y **ese archivo no existe**. Lo que
+      existe es el proceso, con el perfil en su línea de comando. Queda un test que
+      lo verifica abriendo un Chromium de verdad.)*
+- [x] **La decisión de horario se puede probar**: era un `if` adentro del
+      `__main__`; ahora es una función pura con tests (bordes de apertura y cierre,
+      fin de semana, días configurables).
+- [x] `--limite-ciclos N`: corta después de N ciclos, para dejar una corrida
+      acotada y revisar después que no quedó nada colgado.
+- [ ] La corrida real de una jornada completa, sin supervisión.
 
 ### Fase 10 — Multiagente (proyecto aparte, después)
 - [ ] Un usuario = su matrícula, su Firma Digital, su perfil de Chrome, su casilla,
@@ -193,7 +243,7 @@ Mismo `_navegador.py` (perfil de Chrome persistente) que ya usan `firma.py` y
 | **¿FirmAr y SISFE comparten claves?** | Fase 7 | Santiago |
 | ~~Tipos de expediente de Meta Jurídico~~ | ~~Fase 5~~ | **ya no hace falta**: Meta salió del circuito (D1) |
 | **Lista real de partes de SISFE** | Fase 6 | ✅ **Recibida** el 16/09/2026 — las 4 filas están en la Fase 6 |
-| **El correo de los representantes** | Fase 6 | ¿lo trae el SISFE o hay que cargarlo? (en la tabla real solo lo tiene Pereyra) |
+| **El correo de los representantes** | Fase 6 | ✅ **Contestado**: lo trae cargado el SISFE (D16) |
 
 Mientras un dato no esté, el código queda listo y **el campo se muestra vacío**
 (nunca con un valor inventado).

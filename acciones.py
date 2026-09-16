@@ -277,6 +277,95 @@ def cuenta(datos, pausar=None):
 
 
 # ============================================================
+#  SISFE: subir la cédula firmada (Fase 6)
+# ============================================================
+
+def notificar_sisfe(datos, pausar=None):
+    """Carga la cédula firmada en el SISFE y deja todo listo para notificar.
+
+    NO notifica: deja la descripción, el adjunto y las partes cargadas, y
+    el clic en NOTIFICAR es del abogado (misma regla que el mail). Meta
+    Jurídico no participa: sale del circuito (spec D1).
+    """
+    import estado as estado_app
+    import sisfe_notificar
+
+    id_cedula = (datos.get("id_cedula") or "").strip()
+    ruta = (datos.get("ruta_pdf") or "").strip()
+    cuij = (datos.get("cuij") or "").strip()
+    caratula = (datos.get("caratula") or "").strip()
+
+    # Si viene el id de la cédula, el resto sale de estado.json: el panel
+    # no tiene que repetir datos ni puede equivocarse en el CUIJ.
+    #
+    # OJO con el archivo: de estado.json se toma SOLO `ruta_firmada`. Si
+    # cayera a `ruta_pdf` cuando todavía no se firmó, subiría al SISFE la
+    # cédula SIN FIRMAR — y el portal la aceptaría igual.
+    if id_cedula:
+        c = estado_app.obtener_cedula(id_cedula) or {}
+        if not ruta:
+            ruta = c.get("ruta_firmada") or ""
+        cuij = cuij or (c.get("cuij") or "")
+        caratula = caratula or (c.get("caratula") or "")
+
+    if not ruta:
+        raise AccionError(
+            "Esa cédula no tiene PDF firmado: firmala primero (el SISFE "
+            "recibe la cédula firmada, no el borrador)."
+        )
+    if not cuij:
+        raise AccionError(
+            "La cédula no tiene CUIJ, y sin CUIJ no se puede encontrar el "
+            "expediente en el SISFE."
+        )
+
+    if pausar:
+        pausar("Se va a abrir el SISFE con el perfil de Chrome del estudio.\n"
+               "Si te pide iniciar sesión, hacelo en la ventana y después "
+               "tocá «Ya está, continuar».")
+
+    r = sisfe_notificar.subir(ruta, cuij, caratula=caratula, pausar=pausar)
+    if not r.get("ok"):
+        raise AccionError("No quedó cargada: " + (" ".join(r.get("avisos") or [])
+                                                  or "sin detalle"))
+
+    if id_cedula:
+        estado_app.marcar_cargada_sisfe(
+            id_cedula, descripcion=r.get("descripcion", ""))
+
+    return {
+        "ok": True,
+        "mensaje": "Cargada en el SISFE — falta que aprietes NOTIFICAR",
+        "cuij": cuij,
+        "id_sisfe": r.get("id_sisfe"),
+        "descripcion": r.get("descripcion"),
+        "partes": [f'{p["caracter"]}: {p["parte"]}' for p in r.get("partes", [])],
+        "tildadas": len(r.get("tildadas", [])),
+        "avisos": r.get("avisos", []),
+        "notificado": False,
+    }
+
+
+def marcar_notificada(datos, pausar=None):
+    """El abogado confirma que apretó NOTIFICAR: ahí se cierra la cédula.
+
+    Es el único camino que la da por presentada, y lo dispara una persona
+    después de hacerlo en el portal — no el sistema por su cuenta.
+    """
+    import estado as estado_app
+
+    id_cedula = (datos.get("id_cedula") or "").strip()
+    cedula = estado_app.obtener_cedula(id_cedula)
+    if not cedula:
+        raise AccionError("No encuentro esa cédula en el registro.")
+
+    estado_app.registrar_log("notificada_en_sisfe", id_cedula,
+                             cedula.get("caratula", ""), cedula.get("cuij", ""))
+    estado_app.marcar_presentada(id_cedula)
+    return {"ok": True, "mensaje": "Cédula cerrada: notificada en el SISFE"}
+
+
+# ============================================================
 #  Motor "secretario": Hermes con la skill del estudio
 # ============================================================
 #  Las skills viven en skills/ como texto: es el procedimiento que
@@ -392,6 +481,10 @@ def ejecutar(accion, datos, pausar=None):
         return cedula(datos, pausar)
     if accion == "cuenta":
         return cuenta(datos, pausar)
+    if accion == "notificar_sisfe":
+        return notificar_sisfe(datos, pausar)
+    if accion == "marcar_notificada":
+        return marcar_notificada(datos, pausar)
     if accion in _SKILLS_SECRETARIO:
         return secretario(accion, datos, pausar)
     raise AccionError(f"Acción desconocida: {accion}")

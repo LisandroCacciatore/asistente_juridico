@@ -7,6 +7,22 @@
 Este documento es lo que necesita alguien (persona o agente) para retomar el
 proyecto sin depender de conversaciones previas.
 
+> ## ⚠ AL DÍA AL 16/09/2026 — leer antes que el resto
+>
+> Este documento es un repaso al commit `0140f77` y **quedó atrás en dos cosas**:
+>
+> 1. **Meta Jurídico salió del circuito.** La cédula firmada va **directo al
+>    SISFE**. Donde este documento diga que después de firmar se sube a Meta,
+>    vale lo nuevo: `sisfe_notificar.py` (buscar por CUIJ → Nueva Cédula →
+>    descripción → adjuntar la firmada → Partes → y **el clic en NOTIFICAR es
+>    tuyo**). El módulo `meta_juridico.py` queda guardado, sin usar.
+> 2. **Las cédulas son otras.** Los 4 tipos (común, peritos, Art. 51 y Bus
+>    Federal) quedaron verificados contra cédulas reales del SISFE, y la común +
+>    peritos + Art. 51 comparten una sola base.
+>
+> La fuente de verdad de todo esto es **`SPEC_CIRCUITO_v0.2.md`** (decisiones
+> D1–D17 y las fases). Si algo de este handoff la contradice, gana la spec.
+
 Cómo leer las afirmaciones:
 
 - **[CÓDIGO]** — verificado leyendo el repo en el commit indicado

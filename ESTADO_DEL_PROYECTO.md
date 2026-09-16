@@ -22,7 +22,8 @@ todo lo mecánico y **frenando siempre** en los actos que tenés que hacer vos.
 | Generación (sin IA) | `generar_cedula.py` + `cedulas.py`, `cedulas_pdf.py`, `expediente_utils.py`, `extraccion_decretos.py` | Arma el PDF y clasifica el tipo de cédula por reglas. |
 | Lectura de SISFE | `monitor_playwright.py` | Detecta decretos nuevos y dispara la generación. |
 | Firma | `firma.py` | Automatiza FirmAr hasta donde se puede; dos puertas humanas. |
-| Presentación | `meta_juridico.py` | Automatiza Meta Jurídico hasta donde se puede; dos puertas humanas. |
+| Notificación | `sisfe_notificar.py` | Sube la cédula **firmada** al SISFE: busca por CUIJ, verifica, describe, adjunta, tilda Partes. **No notifica**: el clic final es tuyo. |
+| *(dormido)* | `meta_juridico.py` | Meta Jurídico **salió del circuito** (16/09/2026): la cédula firmada va directo al SISFE. El módulo queda guardado, no se usa. |
 | Compartido | `_navegador.py`, `estado.py`, `config.py`, `config_portales.py` | Motor de navegador, registro de cédulas, configuración. |
 
 ---
@@ -33,12 +34,17 @@ todo lo mecánico y **frenando siempre** en los actos que tenés que hacer vos.
 |---|---|---|
 | SISFE | reCAPTCHA | Seguridad del acceso matriculado |
 | FirmAr | CUIL + contraseña + OTP + PIN + clic en FIRMAR | Es tu firma digital, con tu responsabilidad |
-| Meta Jurídico | Login + código por mail | 2FA — por diseño no se automatiza |
-| Meta Jurídico | Clic final en "Presentar" | Acto irreversible, confirmación tuya |
+| SISFE (cédula) | Contraseña + reCAPTCHA del login | Seguridad del acceso matriculado |
+| SISFE (cédula) | Clic final en **NOTIFICAR** | Acto irreversible, confirmación tuya |
 
 En el medio de esas puertas, el sistema automatiza todo lo que puede: adjuntar
-el PDF en FirmAr, descargar el firmado solo, buscar el expediente en Meta por
-apellido, adjuntar el archivo.
+el PDF en FirmAr, descargar el firmado solo, buscar el expediente en el SISFE
+por CUIJ, verificar que sea el mismo (carátula + CUIJ), escribir la descripción,
+adjuntar la cédula firmada y leer y tildar las Partes del expediente.
+
+Meta Jurídico ya no está en este circuito: se sacó el 16/09/2026 (la cédula
+firmada va directo al SISFE, ver `SPEC_CIRCUITO_v0.2.md`, D1). Su módulo sigue
+en la carpeta, sin usar.
 
 ---
 
@@ -77,7 +83,8 @@ apellido, adjuntar el archivo.
 
 ```
 asistente_juridico.html      servidor.py                config.py
-firma.py                     meta_juridico.py            config_portales.py
+firma.py                     sisfe_notificar.py          config_portales.py
+meta_juridico.py             (dormido: fuera del circuito)
 _navegador.py                estado.py                   estado.json
 generar_cedula.py            cedulas.py                  cedulas_pdf.py
 expediente_utils.py          extraccion_decretos.py      monitor_playwright.py
