@@ -12,7 +12,7 @@ cambia, se cambia acá primero.
 | # | Decisión | Quedó así |
 |---|---|---|
 | **D1** | Orden del circuito | **Meta Jurídico primero** (guardar/asociar y crear si no existe), **SISFE después** (notificar con partes). |
-| **D2** | "Proveyendo escrito" | **Subtipo de la cédula común**, no plantilla nueva. |
+| **D2** | "Proveyendo escrito" | ❌ **No es un tipo de cédula** (corregido el 16/09/2026). Es lo que dictó el juzgado — un proveído al escrito presentado. La cédula que lo notifica es la **común**: no hay plantilla nueva **ni subtipo que configurar**. |
 | **D3** | Crear expediente en Meta | **Con confirmación previa** en el dashboard, una vez por expediente. |
 | **D4** | Alta de Cliente ART | **Se elimina la tarjeta**; la skill queda y se dispara **desde la carpeta de documentación del cliente**. |
 | **D5** | Multiagente: cuenta | **Cuenta por persona** (es la única forma de saber *quién* hizo qué). Si en el camino SISFE/Firma no lo permiten por usuario, se documenta la limitación y el log registra la máquina. |
@@ -44,10 +44,13 @@ cambia, se cambia acá primero.
 - [x] Tests nuevos cubriendo cada punto, y los 33 existentes siguen pasando.
       *(40 nuevos, 73 en total, todos verdes)*
 - [ ] **Tipo "Peritos"**: reconocido como tipo propio y con un destinatario por perito.
-      ⚠️ **Falta la muestra de una cédula de peritos real** — no se inventa la redacción.
-- [ ] **Subtipo de decreto** (audiencia / prueba / proveyendo escrito) fijable a mano.
-      ⚠️ **Falta la muestra de una cédula de "proveyendo escrito"** para saber si
-      cambia algo más que el encabezado.
+      ⚠️ **Falta la muestra de una cédula de peritos real** — Santiago ya la tiene
+      pedida (16/09/2026). No se inventa la redacción: se espera la muestra.
+- ~~**Subtipo de decreto** (audiencia / prueba / "proveyendo escrito") fijable a mano.~~
+      **Descartado el 16/09/2026: "proveyendo escrito" no es una cédula** (ver D2).
+      Los subtipos de decreto que **sí** cambian la cédula ya los detectan las
+      reglas (`aud51`, `bus_federal`, `traslado`); el resto sale como común y no
+      hay nada que configurar.
 
 ### Fase 2 — Destinatarios (sin portal)
 - [x] Antes de generar, el dashboard lista los destinatarios detectados, **todos tildados**.
@@ -88,8 +91,7 @@ juzgado, si es sentencia) para que confirme sobre datos concretos.
 | Dato | Para qué | Quién lo tiene |
 |---|---|---|
 | **Nombres de prosecretarios por juzgado** | Fase 1 | Santiago (o los decretos reales) |
-| **Una cédula de peritos real** | Fase 1 | Santiago |
-| **Una cédula "proveyendo escrito" real** | Fase 1 | Santiago |
+| **Una cédula de peritos real** | Fase 1 | Santiago — **ya pedida** el 16/09/2026 |
 | **¿FirmAr y SISFE comparten claves?** | Fase 7 | Santiago |
 | **Tipos de expediente de Meta Jurídico** | Fase 5 | la pantalla del portal |
 | **Lista real de partes de SISFE** | Fase 6 | la pantalla del portal |
