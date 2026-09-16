@@ -413,8 +413,10 @@ En orden de impacto (`PENDIENTES.feature.md` prioriza los dos primeros):
    en tu HTML"** y el dashboard ya tiene esas funciones adentro. Son una
    segunda versión de la misma UI: **[A VERIFICAR]** si todavía se usan
    para algo o son huérfanos.
-5. **No hay `requirements.txt`.** Las dependencias solo viven en este
-   documento. Cualquier instalación nueva depende de leer §10.
+5. ✅ **`requirements.txt` — AGREGADO.** Ya no hace falta leer este documento para
+   instalar: `python -m pip install -r requirements.txt`. Además
+   `preparar_maquina.py` crea el `config.py` con la matrícula y avisa si falta
+   instalar algo o si Hermes no está en el PATH.
 6. **`package.json`** es resto de un scaffold de Node/Playwright, sin uso
    aparente.
 7. **`_error_mail()` traduce bien los errores de Gmail**, pero ese camino
@@ -491,21 +493,20 @@ cédula pegada a mano):
 
 ## 10. Cómo arrancar
 
-**[CÓDIGO]** Dependencias que el código realmente importa:
+**[CÓDIGO]** Las dependencias están en `requirements.txt`:
 
 ```bash
-python -m pip install fastapi uvicorn playwright python-docx reportlab \
-    pypdf pillow requests google-auth-oauthlib google-api-python-client
-python -m playwright install chromium
-python -m pip install pytest            # solo para los tests
+python -m pip install -r requirements.txt
+python -m playwright install chromium      # el navegador propio de Playwright
 ```
 
-Después:
+Después, en una máquina nueva:
 
 ```bash
-copy config.example.py config.py        # y completar (ver §4)
-python servidor.py                      # levanta en 127.0.0.1:8000
-# abrir http://localhost:8000
+python preparar_maquina.py --matricula <TU MATRÍCULA>   # crea config.py
+python servidor.py                                      # levanta en 127.0.0.1:8000
+# abrir http://localhost:8000 EN CHROME (no en el pane de Hermes: ese webview
+# bloquea los POST y los botones no funcionan)
 ```
 
 Para correr los tests, sin portales ni login:
@@ -530,8 +531,8 @@ confirmarlos contra la versión instalada.
 - La **lista real de `JUZGADOS`** en la `config.py` de Santiago, y si
   coincide con `skills/juzgados_rosario.json`.
 - El **comando y los flags vigentes de Hermes** (los del código están en §5).
-- **Versión de Python** objetivo del proyecto (no hay `requirements.txt`
-  ni `.python-version`).
+- La **versión de Python** objetivo (hay `requirements.txt`, pero ningún
+  `.python-version`; se probó con 3.11).
 - Si `bloque_firma_lote.html` y `bloque_pendientes_clasificar.html` siguen
   teniendo algún uso.
 - Si `package.json` es basura reciclable.
