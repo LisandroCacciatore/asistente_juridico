@@ -1,0 +1,16 @@
+# Dependencias del Asistente Jurídico.
+#   pip install -r requirements.txt
+#   python -m playwright install chromium
+#
+# Hermes (para las 4 acciones del secretario) se instala aparte.
+fastapi
+uvicorn
+playwright
+pypdf
+reportlab
+pillow
+python-docx
+requests
+google-auth-oauthlib
+google-api-python-client
+pytest
