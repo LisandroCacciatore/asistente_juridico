@@ -187,6 +187,61 @@ def extraer_juzgado(texto):
     return ""
 
 
+# Ciudades con juzgados en Santa Fe (para no confundir la ciudad con
+# cualquier otra palabra del decreto).
+CIUDADES_SF = [
+    "VILLA GOBERNADOR GALVEZ", "CAÑADA DE GOMEZ", "VENADO TUERTO",
+    "SAN LORENZO", "RECONQUISTA", "SUNCHALES", "ESPERANZA", "MELINCUE",
+    "RAFAELA", "ROSARIO", "CASILDA", "FIRMAT", "RUFINO", "SANTA FE",
+]
+
+_FUEROS_TXT = {
+    "LABORAL": r"\blaboral\b|\bdel\s+trabajo\b",
+    "CIVIL": r"\bcivil\b",
+    "COMERCIAL": r"\bcomercial\b",
+    "CONTRACTUAL": r"\bcontractual\b",
+    "FAMILIA": r"\bfamilia\b|\bfamiliar\b",
+}
+
+
+def extraer_ciudad(texto):
+    """Ciudad de la cabecera: 'ROSARIO, 04 de Agosto de 2026', 'en la ciudad
+    de RAFAELA', 'CIUDAD DE ROSARIO'. Devuelve '' si no la encuentra.
+
+    Importa porque el encabezado de la cédula dice la ciudad del juzgado, y
+    los decretos de Rafaela no son los de Rosario.
+    """
+    if not texto:
+        return ""
+    t = texto.upper()
+    m = re.search(
+        r"CIUDAD\s+DE\s+([A-ZÁÉÍÓÚÑÜ]+(?:\s+[A-ZÁÉÍÓÚÑÜ]+){0,2})"
+        r"(?=\s*[,.\-]|\s+A\s+CARGO|\s*$)", t)
+    if m and len(m.group(1).strip()) >= 4:
+        return m.group(1).strip()
+    for ciudad in CIUDADES_SF:
+        if re.search(rf"\b{re.escape(ciudad)}\b", t):
+            return ciudad
+    return ""
+
+
+def extraer_fuero(texto):
+    """Fuero del juzgado: LABORAL / CIVIL / COMERCIAL / CONTRACTUAL / FAMILIA.
+
+    Mira primero la línea del juzgado (donde no se confunde con citas de
+    códigos) y después todo el texto. Devuelve '' si no lo encuentra, para
+    que la plantilla use su valor por defecto.
+    """
+    if not texto:
+        return ""
+    for zona in (extraer_juzgado(texto) or "", texto):
+        z = zona.lower()
+        for fuero, patron in _FUEROS_TXT.items():
+            if re.search(patron, z):
+                return fuero
+    return ""
+
+
 # ============================================================
 #  3. Formato de nombre de archivo (preferencia de Santiago)
 # ============================================================

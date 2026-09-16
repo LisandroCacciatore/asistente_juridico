@@ -31,18 +31,23 @@ cambia, se cambia acá primero.
 ## 2. Criterios de aceptación por fase
 
 ### Fase 1 — Cédula completa (sin portal)
-- [ ] El PDF puede mostrar **juez, secretario y prosecretario**, cada uno con su cargo.
-      Si un dato no está, **la línea no se imprime** (no sale "____" ni "None").
-- [ ] La **ciudad** del juzgado se puede fijar explícitamente (Rosario, Rafaela, …) y
-      se usa en el encabezado.
-- [ ] Destinatario **persona jurídica** → el domicilio **no** se imprime (va por SISFE).
-      Persona física → se imprime.
+- [x] El PDF puede mostrar **juez, secretario y prosecretario**, cada uno con su cargo.
+      Si un dato no está, **la línea no se imprime** (no sale "____" ni "None",
+      ni queda una coma colgando). *(hecho — `_autoridad()`)*
+- [x] La **ciudad** del juzgado se puede fijar explícitamente (Rosario, Rafaela, …)
+      y se usa en el encabezado. *(hecho — `extraer_ciudad()` + campo `ciudad`)*
+- [x] Destinatario **persona jurídica** → el domicilio **no** se imprime (va por SISFE).
+      Persona física → se imprime. *(hecho — `_es_juridica()`, con flag para forzarlo)*
+- [x] **El fuero del encabezado ya no está escrito a mano.** Estaba fijo en
+      "EN LO LABORAL" en la plantilla, así que una cédula de Civil o Comercial
+      salía con el fuero equivocado. *(hallazgo + arreglo de esta fase)*
+- [x] Tests nuevos cubriendo cada punto, y los 33 existentes siguen pasando.
+      *(40 nuevos, 73 en total, todos verdes)*
 - [ ] **Tipo "Peritos"**: reconocido como tipo propio y con un destinatario por perito.
-      ⚠️ La **redacción legal de la cédula de peritos hay que validarla con una
-      cédula real** — no se inventa.
-- [ ] **Subtipo de decreto** (audiencia / prueba / proveyendo escrito) se puede fijar
-      explícitamente y pisa lo que infieran las reglas.
-- [ ] Tests nuevos cubriendo cada punto, y los 33 existentes siguen pasando.
+      ⚠️ **Falta la muestra de una cédula de peritos real** — no se inventa la redacción.
+- [ ] **Subtipo de decreto** (audiencia / prueba / proveyendo escrito) fijable a mano.
+      ⚠️ **Falta la muestra de una cédula de "proveyendo escrito"** para saber si
+      cambia algo más que el encabezado.
 
 ### Fase 2 — Destinatarios (sin portal)
 - [ ] Antes de generar, el dashboard lista los destinatarios detectados, **todos tildados**.

@@ -58,6 +58,101 @@ def _doc(ruta):
     )
 
 
+# --- Fuero: el encabezado dice "en lo laboral/civil/comercial/contractual" ---
+FUEROS = {
+    "LABORAL": "EN LO LABORAL",
+    "CIVIL": "EN LO CIVIL",
+    "COMERCIAL": "EN LO COMERCIAL",
+    "CONTRACTUAL": "EN LO CONTRACTUAL",
+    "FAMILIA": "EN LO FAMILIAR",
+}
+
+
+def _fuero(datos):
+    """'EN LO LABORAL' / 'EN LO CIVIL' / … para el encabezado.
+
+    Antes estaba escrito a mano "EN LO LABORAL" en la plantilla, así que una
+    cédula de Civil o Comercial salía con el fuero equivocado.
+    """
+    f = (datos.get("fuero") or "LABORAL").strip().upper()
+    return FUEROS.get(f, f"EN LO {f}")
+
+
+def _fuero_simple(datos):
+    """Igual que _fuero pero pelado, para 'JUZGADO LABORAL DE LA …'."""
+    f = (datos.get("fuero") or "LABORAL").strip().upper()
+    return "FAMILIA" if f in ("FAMILIA", "FAMILIAR") else f
+
+
+def _autoridad(datos, prefijo="del/la"):
+    """Arma '{prefijo} DR./DRA. {juez} ({cargo}), {cargo} DR./DRA. {sec}…'.
+
+    Solo con los datos que existen: si falta un nombre, esa parte no se
+    imprime — nunca sale '____' ni 'None'. Incluye el prosecretario cuando
+    está. Devuelve '' si no hay ninguno de los tres.
+    """
+    juez = (datos.get("juez") or "").strip().upper()
+    sec = (datos.get("secretario") or "").strip().upper()
+    pros = (datos.get("prosecretario") or "").strip().upper()
+    cargo_j = (datos.get("cargo_juez") or "JUEZ").strip()
+    cargo_s = (datos.get("cargo_secretario") or "SECRETARIO").strip()
+    cargo_p = (datos.get("cargo_prosecretario") or "PROSECRETARIO").strip()
+
+    if juez and sec:
+        txt = f"{prefijo} DR./DRA. {juez} ({cargo_j}), {cargo_s} DR./DRA. {sec}"
+    elif juez:
+        txt = f"{prefijo} DR./DRA. {juez} ({cargo_j})"
+    elif sec:
+        txt = f"{prefijo} {cargo_s} DR./DRA. {sec}"
+    else:
+        return ""
+    if pros:
+        txt += f", {cargo_p} DR./DRA. {pros}"
+    return txt
+
+
+def _autoridad_51(datos):
+    """Igual que _autoridad pero con la redacción propia del Art. 51.
+
+    Esa cédula dice 'a cargo de la/el DRA./DR. …' — se mantiene tal cual.
+    """
+    juez = (datos.get("juez") or "").strip().upper()
+    sec = (datos.get("secretario") or "").strip().upper()
+    pros = (datos.get("prosecretario") or "").strip().upper()
+    cargo_j = (datos.get("cargo_juez") or "JUEZ").strip()
+    cargo_s = (datos.get("cargo_secretario") or "SECRETARIO").strip()
+    cargo_p = (datos.get("cargo_prosecretario") or "PROSECRETARIO").strip()
+
+    if juez and sec:
+        txt = f"la/el DRA./DR. {juez} ({cargo_j}), {cargo_s} de la/el DRA./DR. {sec}"
+    elif juez:
+        txt = f"la/el DRA./DR. {juez} ({cargo_j})"
+    elif sec:
+        txt = f"la/el DRA./DR. {sec} ({cargo_s})"
+    else:
+        return ""
+    if pros:
+        txt += f", {cargo_p} de la/el DRA./DR. {pros}"
+    return txt
+
+
+# Personas jurídicas: la notificación va por SISFE, así que el domicilio no
+# se imprime. Se puede forzar con datos["destinatario_es_juridica"].
+_JURIDICA = re.compile(
+    r"\b(S\.?A\.?|S\.?R\.?L\.?|S\.?A\.?S\.?|LTDA\.?|SOCIEDAD|EMPRESA|COOPERATIVA|"
+    r"MUTUAL|ASEGURADORA|ART|CAJA|BANCO|MUNICIPALIDAD|COMUNA|PROVINCIA|FISCO|"
+    r"OBRA SOCIAL|INSTITUTO|FUNDACION|FUNDACIÓN|ASOCIACION|ASOCIACIÓN)\b",
+    re.I,
+)
+
+
+def _es_juridica(datos):
+    """True si el destinatario es persona jurídica (o si se fuerza el flag)."""
+    if "destinatario_es_juridica" in datos:
+        return bool(datos["destinatario_es_juridica"])
+    return bool(_JURIDICA.search(datos.get("destinatario_nombre") or ""))
+
+
 def _bloque_firma():
     return [
         Spacer(1, 24),
@@ -68,38 +163,45 @@ def _bloque_firma():
 
 def generar_pdf_estandar(datos, ruta):
     """Cédula estándar (modelo Racca/Arriola) en PDF."""
-    juez = _esc(datos.get("juez") or "________________").upper()
-    sec = _esc(datos.get("secretario") or "________________").upper()
     nom = _esc(datos.get("nominacion") or "____")
     ciudad = _esc(datos.get("ciudad", "Rosario")).upper()
-    cargo_j = _esc(datos.get("cargo_juez", "JUEZ"))
-    cargo_s = _esc(datos.get("cargo_secretario", "SECRETARIO"))
+    autoridad = _autoridad(datos)
 
     elementos = [
         Paragraph("CÉDULA", ESTILO_TITULO),
         Paragraph(
-            f"JUZGADO DE PRIMERA INSTANCIA DE DISTRITO EN LO LABORAL "
+            f"JUZGADO DE PRIMERA INSTANCIA DE DISTRITO {_fuero(datos)} "
             f"DE LA {nom} NOMINACIÓN DE {ciudad}",
             ESTILO_ENCABEZADO,
         ),
-        Paragraph(f"<b>Señor/a:</b> {_esc(datos.get('destinatario_nombre','')).upper()}", ESTILO_CAMPO),
-        Paragraph(f"<b>Domicilio:</b> {_esc(datos.get('destinatario_domicilio',''))}", ESTILO_CAMPO),
-        Spacer(1, 10),
-        Paragraph(
-            f"Hago saber a Ud. que en el juicio seguido ante el JUZGADO LABORAL DE LA "
-            f"{nom} NOMINACIÓN DE LA CIUDAD DE {ciudad}, a cargo del/la DR./DRA. {juez} ({cargo_j}), "
-            f"{cargo_s} DR./DRA. {sec}, dentro de los autos caratulados: "
+    ]
+
+    # El destinatario y el domicilio solo se imprimen si hay dato. En las
+    # personas jurídicas el domicilio no va: la notificación sale por SISFE.
+    destinatario = _esc(datos.get("destinatario_nombre", "")).upper()
+    if destinatario:
+        elementos.append(Paragraph(f"<b>Señor/a:</b> {destinatario}", ESTILO_CAMPO))
+    domicilio = _esc(datos.get("destinatario_domicilio", ""))
+    if domicilio and destinatario and not _es_juridica(datos):
+        elementos.append(Paragraph(f"<b>Domicilio:</b> {domicilio}", ESTILO_CAMPO))
+
+    elementos.append(Spacer(1, 10))
+    elementos.append(Paragraph(
+            f"Hago saber a Ud. que en el juicio seguido ante el JUZGADO "
+            f"{_fuero_simple(datos)} DE LA "
+            f"{nom} NOMINACIÓN DE LA CIUDAD DE {ciudad}"
+            + (f", a cargo {autoridad}" if autoridad else "")
+            + f", dentro de los autos caratulados: "
             f"&ldquo;{_esc(datos.get('caratula',''))}&rdquo; CUIJ {_esc(datos.get('cuij',''))} "
             f"se ha dictado lo siguiente: {ciudad}, {_esc(datos.get('fecha_decreto',''))} "
             f"{_esc(datos.get('texto_decreto',''))}",
             ESTILO_CUERPO,
-        ),
-        Spacer(1, 8),
-        Paragraph(
-            "<b>En consecuencia queda usted debidamente notificado/a del decreto que antecede.</b>",
-            ESTILO_CUERPO,
-        ),
-    ]
+        ))
+    elementos.append(Spacer(1, 8))
+    elementos.append(Paragraph(
+        "<b>En consecuencia queda usted debidamente notificado/a del decreto que antecede.</b>",
+        ESTILO_CUERPO,
+    ))
     elementos += _bloque_firma()
     _doc(ruta).build(elementos)
     return ruta
@@ -107,26 +209,30 @@ def generar_pdf_estandar(datos, ruta):
 
 def generar_pdf_audiencia_51(datos, ruta):
     """Cédula de audiencia Art. 51 CPL con transcripción de artículos, en PDF."""
-    juez = _esc(datos.get("juez") or "________________").upper()
-    sec = _esc(datos.get("secretario") or "________________").upper()
     nom = _esc(datos.get("nominacion") or "____")
     ciudad = _esc(datos.get("ciudad", "Rosario"))
-    cargo_j = _esc(datos.get("cargo_juez", "JUEZ"))
-    cargo_s = _esc(datos.get("cargo_secretario", "SECRETARIO"))
+    autoridad = _autoridad_51(datos)
     fecha_aud = _esc(datos.get("fecha_audiencia") or "___/___/______")
     hora_aud = _esc(datos.get("hora_audiencia") or "__:__ hs.")
 
-    elementos = [
+    cabecera = [
         Paragraph(f"JUZGADO DEL TRABAJO {nom}ª NOMINACIÓN &nbsp;&nbsp;&nbsp; CÉDULA JUDICIAL", ESTILO_ENCABEZADO),
         Paragraph(f"{ciudad}, {_esc(datos.get('fecha_decreto',''))}.-", ESTILO_CAMPO),
         Spacer(1, 6),
-        Paragraph(f"<b>SEÑOR/A:</b> {_esc(datos.get('destinatario_nombre','')).upper()}.-", ESTILO_CAMPO),
-        Paragraph(f"<b>DOMICILIO:</b> {_esc(datos.get('destinatario_domicilio',''))}.-", ESTILO_CAMPO),
-        Spacer(1, 10),
+    ]
+    destinatario = _esc(datos.get("destinatario_nombre", "")).upper()
+    if destinatario:
+        cabecera.append(Paragraph(f"<b>SEÑOR/A:</b> {destinatario}.-", ESTILO_CAMPO))
+    domicilio = _esc(datos.get("destinatario_domicilio", ""))
+    if domicilio and destinatario and not _es_juridica(datos):
+        cabecera.append(Paragraph(f"<b>DOMICILIO:</b> {domicilio}.-", ESTILO_CAMPO))
+    cabecera.append(Spacer(1, 10))
+
+    elementos = cabecera + [
         Paragraph(
             f"Hago saber a Ud. que en el juicio seguido por ante el Juzgado del Trabajo de la "
-            f"{nom}ª Nominación de la ciudad de {ciudad}, a cargo de la/el DRA./DR. {juez} ({cargo_j}), "
-            f"{cargo_s} de la/el DRA./DR. {sec}.",
+            f"{nom}ª Nominación de la ciudad de {ciudad}"
+            + (f", a cargo de {autoridad}." if autoridad else "."),
             ESTILO_CUERPO,
         ),
         Paragraph(f"<b>Por:</b> {_esc(datos.get('actor') or '________________')}.", ESTILO_CAMPO),
@@ -173,12 +279,9 @@ def generar_pdf_bus_federal(datos, ruta):
     Cédula Bus Federal (Ley 22.172) para notificar fuera de Santa Fe.
     El destinatario y el domicilio quedan en blanco para completar a mano.
     """
-    juez = _esc(datos.get("juez") or "________________").upper()
-    sec = _esc(datos.get("secretario") or "________________").upper()
     nom = _esc(datos.get("nominacion") or "____")
     ciudad = _esc(datos.get("ciudad", "Rosario")).upper()
-    cargo_j = _esc(datos.get("cargo_juez", "JUEZ"))
-    cargo_s = _esc(datos.get("cargo_secretario", "SECRETARIO"))
+    autoridad = _autoridad(datos, prefijo="la/el")
 
     dest = _esc(datos.get("destinatario_nombre", "")).upper()
     dom = _esc(datos.get("destinatario_domicilio", ""))
@@ -186,7 +289,7 @@ def generar_pdf_bus_federal(datos, ruta):
 
     elementos = [
         Paragraph(
-            f"JUZGADO DE PRIMERA INSTANCIA DE DISTRITO EN LO LABORAL<br/>"
+            f"JUZGADO DE PRIMERA INSTANCIA DE DISTRITO {_fuero(datos)}<br/>"
             f"{nom}ª NOMINACIÓN DE {ciudad}<br/>PROVINCIA DE SANTA FE",
             ESTILO_ENCABEZADO,
         ),
@@ -201,9 +304,10 @@ def generar_pdf_bus_federal(datos, ruta):
         Paragraph(f"<b>Domicilio:</b> {dom or linea}", ESTILO_CAMPO),
         Spacer(1, 12),
         Paragraph(
-            f"En el juicio seguido ante el JUZGADO LABORAL DE LA {nom}ª NOMINACIÓN DE LA CIUDAD DE "
-            f"{ciudad}, a cargo de la/el DR./DRA. {juez} ({cargo_j}), {cargo_s} DR./DRA. {sec}, "
-            f"dentro de los autos caratulados: &ldquo;{_esc(datos.get('caratula',''))}&rdquo;, "
+            f"En el juicio seguido ante el JUZGADO {_fuero_simple(datos)} DE LA {nom}ª NOMINACIÓN DE LA CIUDAD DE "
+            f"{ciudad}"
+            + (f", a cargo de {autoridad}" if autoridad else "")
+            + f", dentro de los autos caratulados: &ldquo;{_esc(datos.get('caratula',''))}&rdquo;, "
             f"CUIJ {_esc(datos.get('cuij',''))}, se ha dictado el siguiente decreto:",
             ESTILO_CUERPO,
         ),

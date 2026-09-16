@@ -79,6 +79,7 @@ def cedula(datos, pausar=None):
     from cedula_desde_texto import (
         es_sentencia, recortar_sentencia, extraer_caratula,
         extraer_cuij, extraer_fecha_decreto, extraer_juzgado,
+        extraer_ciudad, extraer_fuero,
     )
     import generar_cedula
 
@@ -109,6 +110,15 @@ def cedula(datos, pausar=None):
         "tipo": "auto",                     # lo deducen las reglas del repo
         "destinatarios": [{"nombre": dest, "domicilio": "Domicilio constituido"}],
     }
+
+    # Ciudad y fuero solo si se detectaron: si se pasaran vacíos, la plantilla
+    # los tomaría como dato válido e imprimiría un hueco en vez de su default.
+    ciudad = extraer_ciudad(texto)
+    if ciudad:
+        entrada["ciudad"] = ciudad
+    fuero = extraer_fuero(texto)
+    if fuero:
+        entrada["fuero"] = fuero
     registradas = generar_cedula.generar(entrada)
     if not registradas:
         raise AccionError("El generador no devolvió ninguna cédula.")
