@@ -11,15 +11,15 @@ cambia, se cambia acá primero.
 
 | # | Decisión | Quedó así |
 |---|---|---|
-| **D1** | Orden del circuito | **Meta Jurídico primero** (guardar/asociar y crear si no existe), **SISFE después** (notificar con partes). |
+| **D1** | Orden del circuito | **Meta Jurídico SALE del circuito** (decidido el 16/09/2026). Queda: texto → cédula PDF → **firma** (FirmAr) → **SISFE** (Nueva Cédula → descripción → adjuntar la firmada → Partes → notificar). `meta_juridico.py` queda **guardado y dormido** en el repo: no se borra, no se usa. |
 | **D2** | "Proveyendo escrito" | ❌ **No es un tipo de cédula** (corregido el 16/09/2026). Es lo que dictó el juzgado — un proveído al escrito presentado. La cédula que lo notifica es la **común**: no hay plantilla nueva **ni subtipo que configurar**. |
-| **D3** | Crear expediente en Meta | **Con confirmación previa** en el dashboard, una vez por expediente. |
+| **D3** | Crear expediente en Meta | **No se hace** (16/09/2026): Meta salió del circuito (ver D1). |
 | **D4** | Alta de Cliente ART | **Se elimina la tarjeta**; la skill queda y se dispara **desde la carpeta de documentación del cliente**. |
 | **D5** | Multiagente: cuenta | **Cuenta por persona** (es la única forma de saber *quién* hizo qué). Si en el camino SISFE/Firma no lo permiten por usuario, se documenta la limitación y el log registra la máquina. |
 | **D6** | Multiagente: cuándo | **Después** de cerrar el circuito de una sola persona. |
 | **D7** | FirmAr vs SISFE | **[A CONFIRMAR EN VIVO]** ¿mismas claves o cuentas distintas de la misma persona? El código se escribe para **elegir la identidad una vez por corrida** y usarla en las dos, con las claves que cada portal pida. |
 | **D8** | Varios destinatarios | **Mostrar la lista antes de generar**, todos tildados; el abogado destilda. Una cédula y una firma por destinatario. |
-| **D9** | Partes en SISFE | **Cajas fijas** (Seg. Social de Abogados + Caja Forense Rosario) por regla; **representantes desde el expediente**, mostrados para confirmar antes de notificar. |
+| **D9** | Partes en SISFE | **Cajas fijas** (Seg. Social de Abogados CS01 + Caja Forense Rosario CF02) por regla; **representantes desde el expediente**, mostrados para confirmar antes de notificar. **Verificado contra la pantalla real el 16/09/2026** (las 4 filas están en la Fase 6). El código entre paréntesis es la matrícula de caja, y es el mismo dato que ya usa la skill de boletas. |
 | **D10** | Correo de la parte | **Solo si existe**; si no, queda vacío (notificación solo en el sistema). |
 | **D11** | Log | **Usuario + máquina en cada entrada** (el usuario depende de D5; hasta entonces, el de Windows). |
 | **D12** | Mail interactivo | **Abrir hilo · responder como borrador · descartar borrador.** La regla "el envío es del abogado" no se toca. |
@@ -132,10 +132,50 @@ juzgado, si es sentencia) para que confirme sobre datos concretos.
 - [x] Las entradas viejas (sin esos campos) se siguen leyendo sin romper el dashboard
       (se completan vacías al leer, así ningún consumidor tiene que acordarse).
 
-### Fases 5 a 7 — con portal (una sola tanda, con Santiago)
-- [ ] Meta Jurídico: crear contacto + expediente si no existe, **con confirmación previa**.
-- [ ] SISFE: Nueva cédula → descripción → adjuntar firmada → Partes → notificar.
-- [ ] Firma: la identidad elegida en SISFE es la que firma; validar **firma en lote**.
+### Fase 5 — Meta Jurídico → **ELIMINADA** (16/09/2026)
+
+Sale del circuito: una vez que la cédula está firmada, va directo al SISFE. No hay
+contacto, no hay expediente en Meta, no hay confirmación previa que pedir.
+
+### Fase 6 — SISFE: subir la cédula firmada (con portal, con Santiago)
+
+La secuencia es la que dictó Santiago el 16/09/2026:
+
+1. **Entrar al expediente por CUIJ.** El buscador del SISFE resuelve el CUIJ en una URL
+   propia del portal — `.../buscar-notificacion-expediente/<id>` — donde `<id>` es de
+   SISFE y **no** es el CUIJ (caso real: `10067855763` para el CUIJ `21-04253894-6`).
+   Se busca por CUIJ; el id no se adivina. Verificar **carátula + CUIJ** antes de seguir.
+2. **Nueva Cédula.**
+3. **Descripción genérica** — texto libre; la convención es la fecha.
+4. **Adjuntar** la cédula **firmada** (la que baja de `firma.py` / FirmAr).
+5. **Partes** — la tabla que trae el expediente, tildando:
+
+   | Carácter | Parte | Correo |
+   |---|---|---|
+   | AUXILIAR DE JUSTICIA | CAJA DE SEG.SOCIAL DE ABOGADOS Y PROCURA (CS01) | — |
+   | AUXILIAR DE JUSTICIA | CAJA FORENSE-ROSARIO (CF02) | — |
+   | REPRESENTANTE | LAMAS, ERICA GISELA (6372) | — |
+   | REPRESENTANTE | PEREYRA, FABIAN CARLOS (XXI100) | FCPEREYRA@GMAIL.COM |
+
+   Las **dos cajas son fijas** (D9). Los **representantes se leen del expediente**
+   (no se fijan a mano: son los que el SISFE muestra). El correo va **solo donde
+   existe** (D10) — en esta tabla lo tiene únicamente Pereyra.
+6. **Notificar.**
+
+Mismo `_navegador.py` (perfil de Chrome persistente) que ya usan `firma.py` y
+`meta_juridico.py`. **Toda puerta humana (login, 2FA) corta con aviso**, como el
+`input()` del monitor: el script no sigue solo.
+
+- [ ] El paso entero, de punta a punta, con Santiago adelante.
+- [ ] Firma en lote: la identidad elegida en SISFE es la que firma (Fase 7).
+
+#### A confirmar en vivo (no se programa a ciegas)
+
+- ¿Las **4 partes** se tildan siempre, o los representantes cambian por expediente?
+  *Código: leerlas del portal y mostrarlas para confirmar, nunca fijarlas.*
+- ¿El **correo** de los representantes lo trae cargado el SISFE o hay que escribirlo?
+- ¿**Notificar** es el clic final del abogado? *Código: dejar todo cargado y que el
+  clic sea humano, igual que la regla del mail.*
 
 ### Fase 10 — Multiagente (proyecto aparte, después)
 - [ ] Un usuario = su matrícula, su Firma Digital, su perfil de Chrome, su casilla,
@@ -151,8 +191,9 @@ juzgado, si es sentencia) para que confirme sobre datos concretos.
 | **Una cédula de peritos real** | Fase 1 | ✅ **Recibida** el 16/09/2026 (Reconquista) |
 | **El nombre del juzgado cuando se llama distinto** | Encabezado de las cédulas | Sale de la cédula real de ese juzgado y se pasa en `datos["juzgado_header"]`. El número de distrito judicial **no se deduce de la ciudad**: distrito judicial no es la circunscripción y los numeran sin orden (San Jorge es el Nº 11) |
 | **¿FirmAr y SISFE comparten claves?** | Fase 7 | Santiago |
-| **Tipos de expediente de Meta Jurídico** | Fase 5 | la pantalla del portal |
-| **Lista real de partes de SISFE** | Fase 6 | la pantalla del portal |
+| ~~Tipos de expediente de Meta Jurídico~~ | ~~Fase 5~~ | **ya no hace falta**: Meta salió del circuito (D1) |
+| **Lista real de partes de SISFE** | Fase 6 | ✅ **Recibida** el 16/09/2026 — las 4 filas están en la Fase 6 |
+| **El correo de los representantes** | Fase 6 | ¿lo trae el SISFE o hay que cargarlo? (en la tabla real solo lo tiene Pereyra) |
 
 Mientras un dato no esté, el código queda listo y **el campo se muestra vacío**
 (nunca con un valor inventado).
@@ -164,3 +205,5 @@ Mientras un dato no esté, el código queda listo y **el campo se muestra vacío
 | Tema | Por qué queda afuera |
 |---|---|
 | **Formularios SRT (Anexos I a IV)** | Santiago **usa la SRT directo desde Claude**. La skill `cliente-art-nuevo` ya tiene los 4 Anexos y el mapeo verificado (commit `a7da75e`), así que no falta nada — pero **no se sigue invirtiendo ahí**. Lo único que sigue valiendo es controlar que los formularios no queden sin vigencia. |
+| **Meta Jurídico** | Sale del circuito (16/09/2026): la cédula firmada va directo al SISFE. `meta_juridico.py`, `_navegador.py` y la parte de `config_portales.py` quedan **guardados y dormidos** en el repo — no se borran ni se usan. |
+| **Las 4 skills del secretario** (art, boletas, raeo, transferencia) | Santiago las va a usar **desde Claude**. Quedan **guardadas** en `skills/` y siguen invocables por `/api/skill/<id>`; no se desarrollan más desde el dashboard. |

@@ -53,6 +53,9 @@ Feature: Selectores de SISFE sin confirmar en vivo
       inspector, no con una nueva conjetura
 
 # ============================================================
+# ⛔ FUERA DE ALCANCE desde el 16/09/2026 (spec D1): Meta Jurídico sale del
+#    circuito — la cédula firmada va directo al SISFE. Se deja escrito por si
+#    alguna vez vuelve, pero NO se trabaja acá.
 Feature: Circuito de Meta Jurídico de punta a punta, sin cortes
   Como Santiago
   Quiero subir una cédula real a Meta Jurídico sin que el sistema caiga
@@ -233,6 +236,9 @@ Feature: Capa de mail del secretario (Gmail vía Hermes)
       no dependa de una acción humana explícita
 
 # ============================================================
+# ⏸️ PARQUEADO el 16/09/2026: Santiago las va a usar desde Claude. Las skills
+#    quedan guardadas en skills/ y siguen invocables por /api/skill/<id> — no se
+#    desarrollan más desde el dashboard, pero no se tiran.
 Feature: Las 4 skills del secretario (art, boletas, raeo, transferencia),
   de punta a punta
   Como Santiago
