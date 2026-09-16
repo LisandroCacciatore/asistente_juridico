@@ -1,6 +1,6 @@
 ---
 name: cliente-art-nuevo
-description: Genera el paquete inicial de documentos para un cliente nuevo de casos de ART (Aseguradora de Riesgos del Trabajo) del estudio jurídico de Santiago Segovia — accidentes de trabajo, enfermedades profesionales y divergencias de incapacidad. Usar siempre que Santiago diga que tiene un cliente nuevo de ART, un caso de accidente laboral o enfermedad profesional, o pida armar el "poder especial", el "convenio de honorarios" / "pacto de cuota litis", un "relato de los hechos", un "formulario SRT" (Anexo I, II o III) o un "telegrama" para un caso de ART, aunque no mencione todos los documentos a la vez. También usar si pide "arrancar un expediente", "cargar un cliente nuevo" o "preparar la documentación inicial" en el contexto de ART/SRT.
+description: Genera el paquete inicial de documentos para un cliente nuevo de casos de ART (Aseguradora de Riesgos del Trabajo) del estudio jurídico de Santiago Segovia — accidentes de trabajo, enfermedades profesionales y divergencias de incapacidad. Usar siempre que Santiago diga que tiene un cliente nuevo de ART, un caso de accidente laboral o enfermedad profesional, o pida armar el "poder especial", el "convenio de honorarios" / "pacto de cuota litis", un "relato de los hechos", un "formulario SRT" (Anexo I, II, III o IV) o un "telegrama" para un caso de ART, aunque no mencione todos los documentos a la vez. También usar si pide "arrancar un expediente", "cargar un cliente nuevo" o "preparar la documentación inicial" en el contexto de ART/SRT.
 ---
 
 # Cliente nuevo de ART
@@ -10,7 +10,7 @@ Este flujo cubre lo que Santiago hace cada vez que entra un cliente nuevo por un
 1. Poder especial
 2. Relato de los hechos (presentación corta a la SRT)
 3. Cuerpo del telegrama de intimación a la ART (solo el texto, no el formulario completo)
-4. Formulario SRT correspondiente (Anexo I, II o III)
+4. Formulario SRT correspondiente (Anexo I, II, III o IV)
 5. Pacto de cuota litis / convenio de honorarios
 
 Todo se genera como .docx y se convierte a PDF, con el texto justificado y los títulos centrados (así es como Santiago quiere siempre sus escritos).
@@ -36,10 +36,11 @@ Preguntale a Santiago (o extraé de lo que ya te haya pasado, incluida la docume
 - **Poder especial**: hay dos variantes según el tipo de caso — ver `references/poder-especial.md`. Usar la de accidente laboral o la de enfermedad profesional según corresponda. Ojo con la fecha: nunca lleva el día, y el mes solo se completa si Santiago te lo pide expresamente estando entre el 1 y el 10 del mes en curso (el detalle completo está en esa referencia).
 - **Relato de los hechos**: hay dos variantes (accidente / enfermedad) — ver `references/relato-de-hechos.md`.
 - **Pacto de cuota litis / convenio de honorarios**: un solo modelo adaptado a reclamos de ART — ver `references/convenio-honorarios.md`.
-- **Formulario SRT**: hay 3 Anexos oficiales y hay que elegir el que corresponde al tipo de caso — ver `references/formularios-srt.md` para la tabla de campos de cada uno:
+- **Formulario SRT**: hay 4 Anexos oficiales (Res. SRT 5/2026) y hay que elegir el que corresponde al tipo de caso — ver `references/formularios-srt.md` para la tabla de campos de cada uno:
   - Anexo I – Divergencia en la determinación de la incapacidad
   - Anexo II – Rechazo de accidente de trabajo
   - Anexo III – Rechazo de enfermedad profesional
+  - Anexo IV – Prestaciones (reingreso al tratamiento, divergencia con el alta médica otorgada, divergencia con las prestaciones)
 - **Telegrama**: por defecto, solo el cuerpo de texto (no la tabla oficial de destinatario/remitente), adaptado a accidente o enfermedad — ver `references/telegrama.md`.
 
 ## Paso 3: generar los documentos

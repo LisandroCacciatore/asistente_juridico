@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Rellena uno de los 3 formularios oficiales SRT (Anexo I, II o III) sobre el PDF
+Rellena uno de los 4 formularios oficiales SRT (Anexo I, II, III o IV) sobre el PDF
 editable real que provee la SRT (assets/ANEXO_*.pdf), en vez de recrear una tabla.
 
 IMPORTANTE sobre los nombres de campo: varios campos de estos PDF tienen un
@@ -22,13 +22,20 @@ que no venga en data.json se deja en blanco (no se inventan datos).
 Para los campos Sí/No y de opción múltiple, el valor esperado en data.json es el
 texto visible ("Sí", "No", "Accidente de trabajo", "Domicilio", etc.) — el script
 se encarga de traducirlo al estado interno del PDF.
+
+Por defecto el PDF de salida se APLANA (los valores quedan dibujados en la página).
+Sin eso, el formulario se ve vacío en Chrome y en cualquier visor que no regenere
+el aspecto por su cuenta. Si necesitás el formulario editable para corregir algo a
+mano, pasá --editable (y revisá que los valores se vean antes de presentarlo).
 """
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
+from pypdf.generic import NameObject
 
 ASSETS = Path(__file__).parent.parent / "assets"
 
@@ -36,6 +43,7 @@ ANEXO_FILES = {
     "I": ASSETS / "ANEXO_I_divergencia_incapacidad.pdf",
     "II": ASSETS / "ANEXO_II_rechazo_accidente_trabajo.pdf",
     "III": ASSETS / "ANEXO_III_rechazo_enfermedad_profesional.pdf",
+    "IV": ASSETS / "ANEXO_IV_prestaciones.pdf",
 }
 
 # ---------------------------------------------------------------------------
@@ -180,6 +188,56 @@ FIELD_MAPS = {
             "Domicilio donde habitualmente reporta": "Opción3",
         }),
     },
+    "IV": {  # Prestaciones: alta, reingreso o divergencia en las prestaciones (2 páginas)
+        # Verificado contra el PDF oficial (anexo_iv_-_prestaciones_editable_ok.pdf,
+        # IF-2026-09572607-APN-SRT#MCH, Res. SRT 5/26) por geometría: se comparó el
+        # rect de cada campo con la caja de cada texto del formulario, y se miró el
+        # render de las dos páginas. OJO: este anexo NO tiene campos de letrado
+        # patrocinante (el trámite no lo exige) — si Santiago firma como letrado,
+        # va en "firma_trabajador"/"aclaración" o en hoja aparte.
+        "nombre_trabajador": "Texto1",
+        "cuil": "Texto2",
+        "empleador_nombre": "NombreRazón Social",
+        "empleador_cuit": "CUIT",
+        "establecimiento": "Establecimiento del lugar de efectiva prestación de servicios o donde habitualmente reporta",
+        "localidad": "Localidad",
+        "provincia": "Provincia",
+        "art_denominacion": "DenominaciónRazón Social",
+        "art_cuit": "CUIT En caso de empleadores",
+        "fecha_denuncia": "Fecha3_af_date",
+        "fecha_baja_laboral": "Fecha4_af_date",
+        "fecha_ocurrencia_diagnostico": "Fecha5_af_date",
+        "fecha_alta_medica": "Fecha6_af_date",
+        # OJO: los DOS cuadros grandes están nombrados al revés en el PDF de origen.
+        # El campo que se llama "afecciones" es en realidad la respuesta a
+        # "Detallá el accidente de trabajo o enfermedad profesional" (es el cuadro
+        # que está justo debajo de esa etiqueta), y "Texto7" responde a
+        # "Detallá la o las afecciones o diagnósticos...". Verificado por geometría
+        # y por render: en este formulario la etiqueta va ARRIBA de su cuadro.
+        "detalle_accidente_enfermedad": "Detallá la o las afecciones o diagnósticos por los que requiere prestaciones",
+        "afecciones_diagnosticos": "Texto7",
+        "detalle_prueba_medica": "Detalle prueba médica",
+        "comision_medica_n": "N",
+        "jurisdiccion": "Jurisdicción",
+        "firma_trabajador": "Firma Trabajador",
+        "firma_trabajador_aclaracion": "Aclaración",
+        "fecha_firma": "Fecha8_af_date",
+        # radios: en cada par, el círculo de la IZQUIERDA es "Sí" y el de la derecha
+        # "No" (verificado: las cajas de las palabras están a x≈396 "Sí" y x≈448
+        # "No", y los widgets en x≈408 y x≈462 respectivamente).
+        "motivo_solicitud": ("radio", "Group5", {
+            "Alta": "Opción1", "Reingreso": "Opción2", "Prestaciones": "Opción3",
+        }),
+        "recibio_atencion_art": ("radio", "Group7", {"Sí": "Opción4", "No": "Opción1"}),
+        "art_dio_alta_medica": ("radio", "Group8", {"Sí": "Opción2", "No": "Opción1"}),
+        "atencion_obra_social": ("radio", "Group9", {"Sí": "Opción3", "No": "Opción1"}),
+        "estudio_medico_obra_social": ("radio", "Group10", {"Sí": "Opción2", "No": "Opción1"}),
+        "fundamento_domicilio": ("radio", "Group11", {
+            "Domicilio": "Opción1",
+            "Domicilio de efectiva prestación de servicios": "Opción2",
+            "Domicilio donde habitualmente reporta": "Opción3",
+        }),
+    },
 }
 
 # NOTA sobre los nombres de estado "Opción1/2/3": pypdf a veces los muestra con
@@ -190,9 +248,132 @@ FIELD_MAPS = {
 # arriba en vez de adivinar.
 
 
-def fill(anexo: str, data: dict, out_path: str):
+def _marcar_radios(writer, radio_values: dict):
+    """Marca el /AS del grupo elegido (lo que mira Acrobat).
+
+    pypdf escribe /V en el grupo pero deja el /AS de cada opción en /Off — los
+    widgets de radio no están en /Annots con /FT propio, así que su rama de
+    botones los pisa. Esto deja el /AS bien para el visor que sí lo respeta.
+    Para el PDF aplanado, además, hay que dibujar el punto (ver _dibujar_puntos).
+    """
+    acro = writer._root_object["/AcroForm"]
+    acro = acro.get_object() if hasattr(acro, "get_object") else acro
+    for ref in acro.get("/Fields", []):
+        campo = ref.get_object()
+        if str(campo.get("/FT")) != "/Btn":
+            continue
+        elegido = radio_values.get(str(campo.get("/T")))
+        if not elegido:
+            continue
+        kids = campo.get("/Kids")
+        kids = kids.get_object() if kids else [ref]
+        for k in kids:
+            kid = k.get_object() if hasattr(k, "get_object") else k
+            ap = kid.get("/AP")
+            estado = _estado_elegido(elegido, ap)
+            kid[NameObject("/AS")] = NameObject(estado or "/Off")
+
+
+def _normalizar(texto) -> str:
+    return str(texto or "").lstrip("/").strip().lower()
+
+
+def _num_estado(texto) -> str:
+    """Saca el número de un estado tipo "Opción2" (/Off no tiene número).
+
+    Los nombres de estado de estos PDF llegan con el acento mal decodificado
+    ("Opci髇2"), así que comparar el texto completo falla siempre. El número, en
+    cambio, sobrevive a la decodificación: por eso se compara por número.
+    """
+    m = re.search(r"(\d+)\s*$", str(texto or ""))
+    return m.group(1) if m else ""
+
+
+def _estado_elegido(elegido: str, ap) -> str:
+    """Devuelve el nombre real (el de /AP /N) del estado elegido, o ""."""
+    if not ap or not ap.get("/N"):
+        return ""
+    quiero = _num_estado(elegido)
+    for s in ap["/N"].keys():
+        if _num_estado(s) and _num_estado(s) == quiero:
+            return str(s)
+    return ""
+
+
+def _centros_elegidos(writer, radio_values: dict) -> dict:
+    """Ubica el centro de la caja de la opción elegida de cada grupo de radios.
+
+    Se llama ANTES de update_page_form_field_values(): hay que leer los estados
+    (/AP /N) del formulario original, porque pypdf reemplaza los aspectos al
+    aplanar y después ya no se puede saber qué widget era cada opción.
+    Devuelve {indice_de_pagina: [(cx, cy), ...]}.
+    """
+    acro = writer._root_object["/AcroForm"]
+    acro = acro.get_object() if hasattr(acro, "get_object") else acro
+    elegido_por_grupo = {}
+    for ref in acro.get("/Fields", []):
+        campo = ref.get_object()
+        if str(campo.get("/FT")) == "/Btn":
+            elegido = radio_values.get(str(campo.get("/T")))
+            if elegido:
+                elegido_por_grupo[str(campo.get("/T"))] = _normalizar(elegido)
+
+    por_pagina = {}
+    for i, pagina in enumerate(writer.pages):
+        for a in (pagina.get("/Annots") or []):
+            an = a.get_object()
+            if an.get("/Subtype") != "/Widget" or an.get("/Parent") is None:
+                continue
+            nombre = str(an["/Parent"].get_object().get("/T"))
+            if elegido_por_grupo.get(nombre) is None:
+                continue
+            ap = an.get("/AP")
+            if not _estado_elegido(elegido_por_grupo[nombre], ap):
+                continue
+            x0, y0, x1, y1 = [float(v) for v in an["/Rect"]]
+            por_pagina.setdefault(i, []).append(((x0 + x1) / 2, (y0 + y1) / 2))
+    return por_pagina
+
+
+def _dibujar_puntos(writer, centros_por_pagina: dict):
+    """Dibuja el punto negro de la opción elegida de cada grupo de radios.
+
+    Sin esto el formulario aplanado sale con TODOS los círculos vacíos: pypdf
+    genera un círculo vacío por opción y no hay forma de que el visor sepa cuál
+    está elegido (no queda un aspecto usable ni un /AS que el visor respete).
+    El punto se dibuja encima, en el centro de la caja de la opción elegida.
+    """
+    from pypdf.generic import ContentStream, NumberObject
+
+    def num(v):
+        return NumberObject(round(v, 2))
+
+    for i, centros in (centros_por_pagina or {}).items():
+        if not centros:
+            continue
+        pagina = writer.pages[i]
+
+        contenido = ContentStream(pagina.get_contents(), writer)
+        for cx, cy in centros:
+            r = 4.0                 # radio del punto, dentro del círculo vacío
+            k = 0.5523 * r          # constante de Bézier para aproximar un círculo
+            contenido.operations.extend([
+                ([], b"q"),
+                ([num(0), num(0), num(0)], b"rg"),          # negro
+                ([num(cx + r), num(cy)], b"m"),
+                ([num(cx + r), num(cy + k), num(cx + k), num(cy + r), num(cx), num(cy + r)], b"c"),
+                ([num(cx - k), num(cy + r), num(cx - r), num(cy + k), num(cx - r), num(cy)], b"c"),
+                ([num(cx - r), num(cy - k), num(cx - k), num(cy - r), num(cx), num(cy - r)], b"c"),
+                ([num(cx + k), num(cy - r), num(cx + r), num(cy - k), num(cx + r), num(cy)], b"c"),
+                ([], b"f"),
+                ([], b"Q"),
+            ])
+        pagina.replace_contents(contenido)
+
+
+def fill(anexo: str, data: dict, out_path: str, editable: bool = False):
     if anexo not in ANEXO_FILES:
-        sys.exit(f"Anexo inválido: {anexo}. Usar I, II o III.")
+        sys.exit(f"Anexo inválido: {anexo}. Usar I, II, III o IV.")
     src = ANEXO_FILES[anexo]
     field_map = FIELD_MAPS[anexo]
 
@@ -219,21 +400,46 @@ def fill(anexo: str, data: dict, out_path: str):
     writer.append(reader)
 
     all_values = {**text_values, **radio_values}
+
+    # Los círculos elegidos se ubican ANTES de aplanar: pypdf reemplaza los
+    # aspectos, y después ya no se puede saber qué widget era cada opción.
+    centros_radios = _centros_elegidos(writer, radio_values)
+
+    # OJO — acá estaba el bug que hacía que el formulario saliera VACÍO:
+    # update_page_form_field_values() deja el valor en /V pero no lo dibuja en
+    # la página. El PDF "tiene" los datos (se leen con get_fields()) pero no se
+    # ven en Chrome ni en ningún visor que no regenere el aspecto por su cuenta
+    # (que es lo que pide /NeedAppearances, y no todos los visores lo hacen).
+    # Con flatten=True los valores quedan escritos en el contenido de la página
+    # y se ven siempre. Por eso el default es aplanar: lo que se presenta es un
+    # formulario completo, no un formulario editable a medio llenar.
     for page in writer.pages:
-        writer.update_page_form_field_values(page, all_values)
-    writer.set_need_appearances_writer(True)
+        writer.update_page_form_field_values(
+            page, all_values, auto_regenerate=True, flatten=not editable,
+        )
+    if editable:
+        writer.set_need_appearances_writer(True)
+
+    # Después de aplanar: el /AS correcto (para Acrobat) y, si el PDF va
+    # aplanado, el punto dibujado de la opción elegida (ver _dibujar_puntos).
+    _marcar_radios(writer, radio_values)
+    if not editable:
+        _dibujar_puntos(writer, centros_radios)
 
     with open(out_path, "wb") as f:
         writer.write(f)
-    print(f"Escrito: {out_path}")
+    print(f"Escrito: {out_path}" + (" (editable: sin aplanar)" if editable else ""))
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--anexo", required=True, choices=["I", "II", "III"])
+    ap.add_argument("--anexo", required=True, choices=["I", "II", "III", "IV"])
     ap.add_argument("--data", required=True, help="Ruta a un JSON con {clave_amigable: valor}")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--editable", action="store_true",
+                    help="No aplanar: deja el formulario editable (los valores pueden "
+                         "no verse en algunos visores, ver la nota de fill())")
     args = ap.parse_args()
     with open(args.data, encoding="utf-8") as f:
         data = json.load(f)
-    fill(args.anexo, data, args.out)
+    fill(args.anexo, data, args.out, editable=args.editable)

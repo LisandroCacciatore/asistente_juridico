@@ -375,7 +375,7 @@ de carpetas del estudio. Se prefirió no publicarlo.
 | Capa de mail (código) | ✅ | `mail_gmail.py` sin función de envío; `/api/mail/bandeja` y `/api/mail/borradores` responden. |
 | Capa de mail **contra la casilla del estudio** | ❌ | Se probó contra **una casilla de Gmail de prueba**, no la del estudio. Falta autorizar la casilla real en la máquina de Santiago. |
 | Tests sin portal | ✅ | `tests/` existe: `python -m pytest tests/ -q` → **33/33 en 0,46 s**, sin portal ni login. |
-| Formularios SRT de `cliente-art-nuevo` | ⚠️ | Anexos I, II y III presentes y con mapeo verificado (36/36, 37/37, 34/34). **Falta el Anexo IV** (Res. SRT 5/2026, vigente desde 02/02/2026): no está, hay que agregarlo (no es duda de vigencia). |
+| Formularios SRT de `cliente-art-nuevo` | ✅ | Los **4** Anexos oficiales vigentes (Res. SRT 5/2026) presentes, con el mapeo de campos verificado (36/36, 37/37, 34/34 y 27/27). El **Anexo IV se agregó el 16/09/2026**, junto con el arreglo del bug que hacía que el PDF saliera vacío al abrirlo. |
 | Dashboard (riel, listas, acciones, mail) | ✅ | Renderizado y verificado por captura; los GET traen datos reales. |
 
 ### Lo que falta para decir "funciona para el estudio"
@@ -389,8 +389,7 @@ En orden de impacto (`PENDIENTES.feature.md` prioriza los dos primeros):
 3. **Validar los selectores de SISFE** en el portal real y sacarles el
    `⬅ VALIDAR`.
 4. **Autorizar la casilla de Gmail del estudio** en la máquina de Santiago.
-5. **Agregar el Anexo IV** de la SRT y actualizar `fill_srt_form.py`.
-6. **Corrida sostenida del monitor** durante una jornada.
+5. **Corrida sostenida del monitor** durante una jornada.
 
 ---
 
