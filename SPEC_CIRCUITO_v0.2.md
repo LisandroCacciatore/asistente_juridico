@@ -82,6 +82,20 @@ cambia, se cambia acá primero.
       — ninguna de las tres cédulas reales lo trae (se firman digitalmente). El bloque
       queda **solo** en la Bus Federal, que es la única que se diligencia a mano y la
       necesita para el oficial notificador.
+- [x] **La Bus Federal (Ley 22.172) se alineó al modelo del portal** (16/09/2026). La
+      nuestra era otro documento. Ahora es el formulario del SISFE: tribunal exhortante,
+      domicilio del tribunal, jueza, secretaría, **clave de acceso al expediente**,
+      tribunal receptor, carátula, destinatario con su CUIT, el objeto (una resolución por
+      párrafo, con la fecha en negrita) y al final el recuadro **PARA EL OFICIAL
+      NOTIFICADOR** con las dos firmas y el pie de la Ley 22.172.
+      Lo que no venga en los datos sale con el renglón en blanco (la clave de acceso la
+      genera el SISFE): no se inventa nada. Datos nuevos: `clave_acceso` y
+      `destinatario_cuit`. El domicilio del tribunal se verifica por ciudad (Rosario =
+      Balcarce 1651, del Mapa Judicial del Poder Judicial), no se supone.
+- [x] **La autoridad queda con nuestra redacción** — decisión del 16/09/2026. Las cédulas
+      reales dicen *"a cargo de la DRA. X (JUEZA) Y DE LA DRA. Y (PROSECRETARÍA)"* y
+      nosotros *"a cargo del/la DR./DRA. … (JUEZ), SECRETARIO DR./DRA. …"*. **No se
+      cambia**: es wording distinto y queda como está a propósito.
 - [x] **El fuero del encabezado ya no está escrito a mano.** Estaba fijo en
       "EN LO LABORAL" en la plantilla, así que una cédula de Civil o Comercial
       salía con el fuero equivocado. *(hallazgo + arreglo de esta fase)*

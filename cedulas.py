@@ -40,6 +40,40 @@ ARTICULOS_PERITOS = """ARTÍCULO 78. (Aceptación) Los peritos deberán aceptar 
 ARTÍCULO 79. (Plazo) El plazo para expedirse será de diez días desde la última aceptación del cargo, pudiendo ser ampliado prudencialmente por el juez, cuando el caso lo justifique. Cuando deba ampliarse el dictamen, el juez fijará el término respectivo."""
 
 
+# --- Bus Federal (Ley 22.172): el texto fijo de la cédula -----------------
+# Copiado tal cual de una cédula real del SISFE (RIVAS JESUS IGNACIO C/
+# ASOCIART ART SA S/ ENFERMEDAD LABORAL, CUIJ 21-04253894-6, notificación a
+# BETTER CATERING S.A. en CABA, 2 páginas). Son los párrafos que no dependen
+# del caso: el cierre, el instructivo de acceso al expediente y el pie.
+BUSFEDERAL_CIERRE = (
+    "En consecuencia queda Ud. debidamente notificado/a de los decretos que "
+    "anteceden, quedando a disposición del Tribunal receptor para su "
+    "diligenciamiento conforme lo establece la Ley 22.172 de uso del despacho "
+    "interprovincial, a través de la plataforma Bus Federal de Justicia "
+    "conforme lo dispuesto por el Acuerdo del 17/06/2025 (Acta 22, pto. 10) de "
+    "la Excma. Corte Suprema de la Provincia de Santa Fe."
+)
+
+BUSFEDERAL_COMO_ACCEDER = (
+    "Se informa que el expediente completo con la documental puede consultarse "
+    "en línea a través del sistema de autoconsultas del Poder Judicial de la "
+    "Provincia de Santa fe. A continuación, se detallan los pasos para acceder: "
+    "Ingresar al siguiente enlace: https://sisfe.justiciasantafe.gov.ar/login, "
+    "seleccione su perfil de acceso, elegir la opción: “OTROS” Completar los "
+    "siguientes datos: CUIJ: {cuij} Clave de acceso: {clave} .- Una vez "
+    "ingresados los datos, podrá visualizar la información del expediente en el "
+    "sistema."
+)
+
+BUSFEDERAL_PIE = (
+    "Confeccionada conforme a la Ley Nacional 22.172 y diligenciada mediante la "
+    "plataforma Bus Federal de Justicia, conforme Acuerdo Ordinario Acta 22/2025 "
+    "(pto. 10) de la Excma. Corte Suprema de la Provincia de Santa Fe (17/06/2025)."
+)
+
+BUSFEDERAL_TRIBUNAL_RECEPTOR = "(Ley 22.172 / Bus Federal de Justicia)"
+
+
 def set_font(run, bold=False, size=10):
     """Configura fuente Arial en un run."""
     run.font.name = "Arial"

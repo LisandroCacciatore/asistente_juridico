@@ -367,3 +367,89 @@ def test_peritos_cierra_como_la_comun(tmp_path, caso_perito):
     assert texto.rstrip().endswith(
         "En consecuencia queda usted debidamente notificado del decreto que antecede.")
     assert "Firma y sello" not in texto
+
+
+# ============================================================
+#  Bus Federal (Ley 22.172), alineada el 16/09/2026
+# ------------------------------------------------------------
+#  Modelo: cédula real del SISFE (RIVAS C/ ASOCIART ART SA, notificación a
+#  BETTER CATERING S.A. en CABA). Era un documento distinto: ahora es el
+#  formulario del portal, con el exhorto, la clave de acceso, el objeto y en
+#  la segunda página el bloque del oficial notificador.
+# ============================================================
+def test_las_resoluciones_se_separan_una_por_parrafo():
+    """Cada decreto va con su fecha en negrita, y el texto no se parte."""
+    from cedulas_pdf import _resoluciones
+
+    texto = ("ROSARIO, 21 de Mayo de 2026: Téngase presente la aceptación de cargo. "
+             "ROSARIO, 16 de Junio de 2026: Por fijada fecha de pericia.")
+    parrafos = _resoluciones(texto)
+    assert len(parrafos) == 2
+    assert parrafos[0].text == ("<b>ROSARIO, 21 de Mayo de 2026:</b> "
+                                "Téngase presente la aceptación de cargo.")
+    assert parrafos[1].text == ("<b>ROSARIO, 16 de Junio de 2026:</b> "
+                                "Por fijada fecha de pericia.")
+
+
+def test_una_sola_resolucion_no_se_parte():
+    """Sin fecha con dos puntos al inicio, el decreto sale entero."""
+    from cedulas_pdf import _resoluciones
+
+    texto = "Rosario, 10 de Septiembre de 2025- Por presentado. Notifíquese por cédula."
+    parrafos = _resoluciones(texto)
+    assert len(parrafos) == 1
+    assert parrafos[0].text == texto
+
+
+def test_bus_federal_arma_el_formulario_del_portal(tmp_path):
+    from cedulas_pdf import generar_pdf_bus_federal
+
+    generar_pdf_bus_federal({
+        "nominacion": "10", "ciudad": "Rosario", "fuero": "LABORAL",
+        "juez": "Dra. Paula Verónica Calace Vigo",
+        "secretario": "Dra. Paula Nydia Hechem",
+        "prosecretario": "Dra. Aldana Lucrecia Viele",
+        "clave_acceso": "3864",
+        "caratula": "RIVAS JESUS IGNACIO C/ ASOCIART ART SA S/ ENFERMEDAD LABORAL",
+        "cuij": "21-04253894-6",
+        "destinatario_nombre": "BETTER CATERING S.A.",
+        "destinatario_cuit": "30-70821868-1",
+        "destinatario_domicilio": "Av. Corrientes 1386, Piso 9°, Dpto. 912 — CABA",
+        "texto_decreto": "ROSARIO, 21 de Mayo de 2026: Téngase presente.",
+    }, str(tmp_path / "bus.pdf"))
+
+    texto = _plano(tmp_path / "bus.pdf")
+    assert "CÉDULA DE NOTIFICACIÓN - LEY 22.172" in texto
+    assert "TRIBUNAL EXHORTANTE: JUZGADO LABORAL N° 10 — ROSARIO — PROVINCIA DE SANTA FE" in texto
+    assert "DOMICILIO DEL TRIBUNAL: Balcarce 1651, Rosario" in texto
+    assert "SECRETARÍA: Dra. Paula Nydia Hechem / Dra. Aldana Lucrecia Viele" in texto
+    assert "CLAVE DE ACCESO AL EXPEDIENTE: 3864" in texto
+    assert "TRIBUNAL RECEPTOR: (Ley 22.172 / Bus Federal de Justicia)" in texto
+    assert "CARÁTULA:" in texto
+    assert "NOTIFICAR A: BETTER CATERING S.A. — CUIT 30-70821868-1" in texto
+    assert "OBJETO DE LA NOTIFICACIÓN" in texto
+    assert "PARA EL OFICIAL NOTIFICADOR" in texto
+    assert "Firma del Oficial Notificador" in texto
+    assert "Firma y Sello del Receptor" in texto
+    assert "Confeccionada conforme a la Ley Nacional 22.172" in texto
+    # y no sale el texto viejo de la plantilla que dejaba todo en blanco
+    assert "EXPTE. N°" not in texto
+    assert "C É D U L A" not in texto
+
+
+def test_bus_federal_sin_clave_deja_el_renglon_vacio(tmp_path):
+    """La clave de acceso la da el SISFE: si no está, no se inventa."""
+    from cedulas_pdf import generar_pdf_bus_federal
+
+    generar_pdf_bus_federal({
+        "nominacion": "10", "ciudad": "Rosario",
+        "caratula": "X C/ Y S/ Z", "cuij": "21-00000001-0",
+        "destinatario_nombre": "EMPRESA EJEMPLO S.A.",
+        "texto_decreto": "ROSARIO, 21 de Mayo de 2026: Téngase presente.",
+    }, str(tmp_path / "bus.pdf"))
+
+    texto = _plano(tmp_path / "bus.pdf")
+    assert "CLAVE DE ACCESO AL EXPEDIENTE:" in texto
+    # el destinatario sale sin CUIT, no con un CUIT inventado
+    assert "NOTIFICAR A: EMPRESA EJEMPLO S.A." in texto
+    assert "CUIT" not in texto.split("NOTIFICAR A:")[1].split("DOMICILIO")[0]

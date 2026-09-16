@@ -4,13 +4,20 @@
 
 import os
 import re
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.lib.enums import TA_JUSTIFY, TA_CENTER, TA_LEFT
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether,
+)
 
-from cedulas import ARTICULOS_AUD_51, ARTICULOS_PERITOS, PERITOS_INTIMACION
+from cedulas import (
+    ARTICULOS_AUD_51, ARTICULOS_PERITOS, PERITOS_INTIMACION,
+    BUSFEDERAL_CIERRE, BUSFEDERAL_COMO_ACCEDER, BUSFEDERAL_PIE,
+    BUSFEDERAL_TRIBUNAL_RECEPTOR,
+)
 
 
 # --- Estilos: cuerpo justificado, títulos centrados ---
@@ -43,6 +50,32 @@ ESTILO_FIRMA = ParagraphStyle(
 ESTILO_CIERRE = ParagraphStyle(
     "cierre", fontName="Helvetica-Bold", fontSize=10,
     alignment=TA_LEFT, spaceBefore=6, spaceAfter=6, leading=14,
+)
+
+# --- Estilos de la Bus Federal: es un formulario, con etiquetas y renglones ---
+ESTILO_ROTULO_BUS = ParagraphStyle(
+    "rotulobus", fontName="Helvetica-Bold", fontSize=10.5,
+    alignment=TA_CENTER, spaceAfter=2, leading=14,
+)
+ESTILO_CARATULA_BUS = ParagraphStyle(
+    "caratulabus", fontName="Helvetica", fontSize=10,
+    alignment=TA_CENTER, spaceAfter=0, leading=14,
+)
+ESTILO_ROTULO = ParagraphStyle(
+    "rotulo", fontName="Helvetica-Bold", fontSize=9,
+    alignment=TA_LEFT, spaceAfter=0, leading=12,
+)
+ESTILO_VALOR = ParagraphStyle(
+    "valor", fontName="Helvetica", fontSize=9,
+    alignment=TA_LEFT, spaceAfter=0, leading=12,
+)
+ESTILO_NOTA = ParagraphStyle(
+    "nota", fontName="Helvetica-Bold", fontSize=10,
+    alignment=TA_JUSTIFY, spaceBefore=8, spaceAfter=4, leading=14,
+)
+ESTILO_PIE = ParagraphStyle(
+    "pie", fontName="Helvetica", fontSize=8,
+    alignment=TA_CENTER, spaceBefore=8, spaceAfter=0, leading=11,
 )
 
 
@@ -289,68 +322,216 @@ def generar_pdf_audiencia_51(datos, ruta):
     return ruta
 
 
-def _bloque_firma():
-    """Bloque de firma para la Bus Federal (Ley 22.172), y solo para esa.
+# ============================================================
+#  Bus Federal (Ley 22.172)
+# ------------------------------------------------------------
+#  Es un formulario, no una carta: el modelo es de una cédula real del SISFE
+#  (RIVAS C/ ASOCIART ART SA, notificación a una empresa de CABA, 2 páginas).
+# ============================================================
 
-    Es la única cédula que se diligencia a mano: la firma el oficial
-    notificador y la sella el tribunal receptor, así que necesita el espacio
-    impreso. Las otras tres (común, peritos y Art. 51) NO lo llevan — ninguna
-    de las cédulas reales del SISFE lo trae, porque se firman digitalmente.
+# Domicilio de los tribunales para el exhorto. Verificado: Rosario, Balcarce
+# 1651 (Mapa Judicial del Poder Judicial de Santa Fe + la cédula real). Para
+# otra ciudad va en datos["domicilio_tribunal"]: no se inventa una dirección
+# para mandar un exhorto.
+_DOMICILIOS_TRIBUNAL = {"ROSARIO": "Balcarce 1651, Rosario"}
+
+
+def _tribunal_exhortante(datos):
+    """Cómo se presenta el tribunal que exhorta."""
+    propio = str(datos.get("tribunal_exhortante") or "").strip()
+    if propio:
+        return _esc(propio).upper()
+    ciudad = _esc(datos.get("ciudad", "Rosario")).upper()
+    nom = str(datos.get("nominacion") or "").strip()
+    juzgado = f"JUZGADO {_fuero_simple(datos)}" + (f" N° {nom}" if nom else "")
+    return f"{juzgado} — {ciudad} — PROVINCIA DE SANTA FE"
+
+
+def _domicilio_tribunal(datos):
+    propio = str(datos.get("domicilio_tribunal") or "").strip()
+    if propio:
+        return _esc(propio)
+    return _DOMICILIOS_TRIBUNAL.get(_esc(datos.get("ciudad", "Rosario")).upper(), "")
+
+
+def _secretaria_txt(datos):
+    """'Dra. A / Dr. B' cuando hay secretario y prosecretario."""
+    partes = [(datos.get("secretario") or "").strip(),
+              (datos.get("prosecretario") or "").strip()]
+    return _esc(" / ".join(p for p in partes if p))
+
+
+def _tabla_campos(filas, titulo="", con_caja=False, gris=False):
+    """Tabla de etiqueta + valor, con un renglón abajo de cada fila.
+
+    Es el formato de la Bus Federal: las etiquetas a la izquierda y el valor a
+    la derecha, separado por una línea para escribir. Si viene `titulo`, va una
+    primera fila que ocupa las dos columnas (el 'PARA EL OFICIAL NOTIFICADOR').
     """
-    return [
-        Spacer(1, 24),
-        Paragraph("_______________________________", ESTILO_FIRMA),
-        Paragraph("Firma y sello", ESTILO_FIRMA),
+    cuerpo = [[Paragraph(_esc(k), ESTILO_ROTULO), Paragraph(_esc(v), ESTILO_VALOR)]
+              for k, v in filas]
+    datos_tabla = ([[Paragraph(titulo, ESTILO_ROTULO), ""]] + cuerpo) if titulo else cuerpo
+
+    t = Table(datos_tabla, colWidths=[4.7 * cm, None])
+    estilo = [
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.HexColor("#444444")),
+        # Poco aire: la cédula real entra en dos páginas y con más padding se
+        # desborda a una tercera con apenas dos párrafos.
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING", (0, 0), (0, -1), 0),
+        ("LEFTPADDING", (1, 0), (1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]
+    if titulo:
+        estilo += [("SPAN", (0, 0), (1, 0)), ("LINEBELOW", (0, 0), (-1, 0), 0, colors.white)]
+    if con_caja:
+        estilo += [
+            ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#444444")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 9),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+            ("TOPPADDING", (0, 0), (-1, 0), 8),
+        ]
+    if gris:
+        estilo.append(("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#ededed")))
+    t.setStyle(TableStyle(estilo))
+    return t
+
+
+def _resoluciones(texto):
+    """Los decretos, uno por párrafo y con la fecha en negrita.
+
+    En la cédula real cada resolución va aparte, encabezada por su fecha
+    ('ROSARIO, 21 de Mayo de 2026: …'). Si el texto trae varias se separan; si
+    trae una sola, sale como un solo párrafo.
+    """
+    texto = (texto or "").strip()
+    if not texto:
+        return []
+    # El \b del principio es imprescindible: sin él el patrón también matchea
+    # adentro de la palabra ('RIO, 21 de Mayo…' dentro de 'ROSARIO, …') y el
+    # texto sale partido letra por letra (R / O / S / A / RIO, …).
+    fecha = (r"\b[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{2,25},\s*\d{1,2}\s+de\s+"
+             r"[A-Za-zÁÉÍÓÚÑ]+\s*(?:de\s+\d{4})?\s*:")
+    salida = []
+    for parte in re.split(f"(?={fecha})", texto):
+        parte = parte.strip()
+        if not parte:
+            continue
+        m = re.match(f"^({fecha})(.*)$", parte, re.S)
+        if m:
+            salida.append(Paragraph(f"<b>{_esc(m.group(1))}</b>{_esc(m.group(2))}",
+                                    ESTILO_CUERPO))
+        else:
+            salida.append(Paragraph(_esc(parte), ESTILO_CUERPO))
+    return salida
+
+
+def _bloque_firma_bus_federal():
+    """Las dos firmas: el oficial notificador y el tribunal receptor."""
+    linea = "_______________________________"
+    filas = [
+        [Paragraph(linea, ESTILO_FIRMA), Paragraph(linea, ESTILO_FIRMA)],
+        [Paragraph("<b>Firma del Oficial Notificador</b>", ESTILO_FIRMA),
+         Paragraph("<b>Firma y Sello del Receptor</b>", ESTILO_FIRMA)],
+        [Paragraph("", ESTILO_FIRMA),
+         Paragraph("(Tribunal Receptor — Ley 22.172)", ESTILO_PIE)],
+    ]
+    t = Table(filas, colWidths=[7.4 * cm, None])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    return t
 
 
 def generar_pdf_bus_federal(datos, ruta):
-    """
-    Cédula Bus Federal (Ley 22.172) para notificar fuera de Santa Fe.
-    El destinatario y el domicilio quedan en blanco para completar a mano.
-    """
-    nom = _esc(datos.get("nominacion") or "____")
-    ciudad = _esc(datos.get("ciudad", "Rosario")).upper()
-    autoridad = _autoridad(datos, prefijo="la/el")
+    """Cédula Bus Federal (Ley 22.172) para notificar fuera de Santa Fe.
 
+    Sigue el modelo de una cédula real del SISFE (2 páginas): los datos del
+    tribunal exhortante y del receptor, la clave de acceso al expediente, la
+    carátula, el destinatario con su CUIT, el objeto, y en la segunda página el
+    recuadro que completa el oficial notificador con las dos firmas.
+
+    Lo que no venga en los datos sale vacío, con el renglón para completar a
+    mano: la clave de acceso la genera el SISFE y el CUIT y el domicilio salen
+    del expediente. Antes esta cédula dejaba el destinatario y el domicilio en
+    blanco a propósito; ahora se imprimen si están (y si no, se dejan para
+    completar, como antes).
+    """
+    cuij = _esc(datos.get("cuij", ""))
+    clave = _esc(datos.get("clave_acceso", ""))
+    caratula = _esc(datos.get("caratula", ""))
     dest = _esc(datos.get("destinatario_nombre", "")).upper()
     dom = _esc(datos.get("destinatario_domicilio", ""))
-    linea = "_" * 60
+    cuit = _esc(datos.get("destinatario_cuit", ""))
+
+    # 'BETTER CATERING S.A. — CUIT 30-70821868-1', como en la cédula real.
+    notificar_a = f"{dest} — CUIT {cuit}" if dest and cuit else dest
 
     elementos = [
-        Paragraph(
-            f"JUZGADO DE PRIMERA INSTANCIA DE DISTRITO {_fuero(datos)}<br/>"
-            f"{nom}ª NOMINACIÓN DE {ciudad}<br/>PROVINCIA DE SANTA FE",
-            ESTILO_ENCABEZADO,
-        ),
-        Paragraph("C É D U L A", ESTILO_TITULO),
-        Spacer(1, 6),
-        Paragraph(f"<b>EXPTE. N°:</b> {_esc(datos.get('cuij',''))}", ESTILO_CAMPO),
-        Paragraph(f"<b>Caratulado:</b> &ldquo;{_esc(datos.get('caratula',''))}&rdquo;", ESTILO_CAMPO),
-        Spacer(1, 10),
-        Paragraph(f"<b>Señor/es:</b> {dest or linea}", ESTILO_CAMPO),
-        Paragraph(linea, ESTILO_CAMPO),
-        Paragraph(linea, ESTILO_CAMPO),
-        Paragraph(f"<b>Domicilio:</b> {dom or linea}", ESTILO_CAMPO),
-        Spacer(1, 12),
-        Paragraph(
-            f"En el juicio seguido ante el JUZGADO {_fuero_simple(datos)} DE LA {nom}ª NOMINACIÓN DE LA CIUDAD DE "
-            f"{ciudad}"
-            + (f", a cargo de {autoridad}" if autoridad else "")
-            + f", dentro de los autos caratulados: &ldquo;{_esc(datos.get('caratula',''))}&rdquo;, "
-            f"CUIJ {_esc(datos.get('cuij',''))}, se ha dictado el siguiente decreto:",
-            ESTILO_CUERPO,
-        ),
-        Spacer(1, 6),
-        Paragraph(f"<b>{ciudad}, {_esc(datos.get('fecha_decreto',''))}:</b>", ESTILO_CAMPO),
-        Paragraph(f"&ldquo;{_esc(datos.get('texto_decreto',''))}&rdquo;", ESTILO_CUERPO),
-        Spacer(1, 10),
-        Paragraph(
-            "<b>En consecuencia queda usted debidamente notificado del decreto que antecede.</b>",
-            ESTILO_CUERPO,
-        ),
+        Paragraph("CÉDULA DE NOTIFICACIÓN - LEY 22.172", ESTILO_ROTULO_BUS),
+        Paragraph("(BUS FEDERAL DE JUSTICIA — COMUNICACIÓN ELECTRÓNICA "
+                  "INTERJURISDICCIONAL)", ESTILO_ROTULO_BUS),
+        Spacer(1, 14),
+        _tabla_campos([
+            ("TRIBUNAL EXHORTANTE:", _tribunal_exhortante(datos)),
+            ("DOMICILIO DEL TRIBUNAL:", _domicilio_tribunal(datos)),
+            ("JUEZA:", _esc((datos.get("juez") or "").strip())),
+            ("SECRETARÍA:", _secretaria_txt(datos)),
+            ("CLAVE DE ACCESO AL EXPEDIENTE:", clave),
+            ("TRIBUNAL RECEPTOR:", BUSFEDERAL_TRIBUNAL_RECEPTOR),
+            ("DOMICILIO A NOTIFICAR:", dom),
+        ]),
+        Spacer(1, 16),
+        Paragraph("CARÁTULA:", ESTILO_ROTULO_BUS),
+        Paragraph(f"&ldquo;{caratula}&rdquo;", ESTILO_CARATULA_BUS),
+        Spacer(1, 16),
+        _tabla_campos([
+            ("CUIJ:", cuij),
+            ("NOTIFICAR A:", notificar_a),
+            ("DOMICILIO:", dom),
+        ]),
+        Spacer(1, 16),
+        Paragraph("<b>OBJETO DE LA NOTIFICACIÓN:</b>", ESTILO_CAMPO),
+        Paragraph("Se hace saber a Ud. que en el juicio de referencia se han "
+                  "dictado las siguientes resoluciones:", ESTILO_CUERPO),
     ]
-    elementos += _bloque_firma()
+
+    elementos += _resoluciones(datos.get("texto_decreto", ""))
+    # El cierre y el instructivo van juntos: si quedan al final de una página,
+    # que bajen los dos enteros y no partidos al medio.
+    elementos.append(KeepTogether([
+        Paragraph(_esc(BUSFEDERAL_CIERRE), ESTILO_CUERPO),
+        Paragraph(_esc(BUSFEDERAL_COMO_ACCEDER.format(cuij=cuij, clave=clave)), ESTILO_NOTA),
+    ]))
+
+    # El formulario del oficial notificador es lo último y va entero: es la
+    # parte que se imprime, se lleva y se firma. No se fuerza el salto de
+    # página (una cédula corta desperdiciaría una hoja): se mantiene junto y
+    # cae donde tenga que caer.
+    elementos.append(Spacer(1, 18))
+    elementos.append(KeepTogether([
+        _tabla_campos(
+            [
+                ("Fecha de diligenciamiento:", "____ / ____ / ______"),
+                ("Hora:", "____________"),
+                ("Persona que recibe:", "_____________________________"),
+                ("Carácter:", "titular / familiar / empleado / otro: ________________"),
+                ("DNI de quien recibe:", "___________________"),
+                ("Observaciones:", "___________________________________________"),
+            ],
+            titulo="PARA EL OFICIAL NOTIFICADOR:",
+            con_caja=True,
+            gris=True,
+        ),
+        Spacer(1, 26),
+        _bloque_firma_bus_federal(),
+        Paragraph(_esc(BUSFEDERAL_PIE), ESTILO_PIE),
+    ]))
+
     _doc(ruta).build(elementos)
     return ruta
 
