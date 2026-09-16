@@ -1390,6 +1390,19 @@ async function loadData(){
 }
 loadData();
 
+/* ---------------- Refresco automático ----------------
+   El mail y el estado se leen en vivo del servidor (no hay caché), pero el
+   navegador solo los pedía UNA vez, al abrir la página: un mail nuevo no
+   aparecía hasta apretar F5. Ahora se refresca solo cada REFRESCO_SEG.
+   No lo hace si la pestaña está en segundo plano (no lo estás mirando) ni
+   si hay un modal abierto, para no pisarte lo que estás haciendo. */
+const REFRESCO_SEG = 60;
+setInterval(()=>{
+  if(document.hidden) return;
+  if(scrim.classList.contains("show")) return;
+  loadData();
+}, REFRESCO_SEG*1000);
+
 const reduce = window.matchMedia("(prefers-reduced-motion:reduce)").matches;
 if(reduce){ finishSweep(); }
 else { setTimeout(nextLine, 700); }
