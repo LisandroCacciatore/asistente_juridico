@@ -24,6 +24,8 @@ import subprocess
 import sys
 import tempfile
 
+import sesion   # quién opera, y con qué identidad (SPEC D18 y D25)
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 SKILLS_DIR = os.path.join(BASE, "skills")
 
@@ -204,6 +206,11 @@ def cedula(datos, pausar=None):
         "destinatarios": destinatarios,
     }
 
+    # De quién va a ser esta cédula (SPEC D25). Se graba con la identidad del
+    # acto de generación; si no hay ninguna, queda vacío y se fija en el
+    # primer acto del portal. Nunca se inventa.
+    entrada["identidad_cadena"] = sesion.identidad_para_el_acto(datos.get("identidad"))
+
     # Ciudad y fuero solo si se detectaron: si se pasaran vacíos, la plantilla
     # los tomaría como dato válido e imprimiría un hueco en vez de su default.
     ciudad = extraer_ciudad(texto)
@@ -277,6 +284,39 @@ def cuenta(datos, pausar=None):
 
 
 # ============================================================
+#  La regla de la cadena (SPEC D25)
+# ============================================================
+
+def verificar_cadena(id_cedula, identidad):
+    """De quién es esta cédula, y con qué identidad se puede actuar.
+
+    *"Del SISFE que bajé, es el mismo que tiene que firmar."* Una cédula
+    pertenece a una sola identidad: la sesión con la que se leyó el
+    expediente, la firma que se le pone y la sesión con la que se notifica
+    son la misma persona. El operador puede ser cualquiera y puede usar sus
+    claves o las de un compañero; lo que no puede es mezclar.
+
+    Si ya está fijada y no es la que se quiere usar, **se frena con el
+    motivo** (no se corrige en silencio ni se sigue igual). Si todavía no
+    está fijada, devuelve la que corresponde: el que llama la graba.
+    """
+    if not id_cedula:
+        return identidad
+    import estado as estado_app
+
+    fijada = estado_app.cadena_de(id_cedula)
+    if fijada and identidad and fijada != identidad:
+        raise AccionError(
+            f"Esta cédula es de {sesion.detalle_identidad(fijada)} y se está "
+            f"por usar la identidad de {identidad}.\n"
+            "Del SISFE que salió, es el mismo que tiene que firmar y notificar: "
+            "no se puede cruzar. Si la cédula está bien, actuá con esa identidad; "
+            "si no, hay que rehacer la cédula."
+        )
+    return fijada or identidad
+
+
+# ============================================================
 #  SISFE: subir la cédula firmada (Fase 6)
 # ============================================================
 
@@ -326,6 +366,7 @@ def notificar_sisfe(datos, pausar=None):
     # defecto, la del que está operando; si alguien opera con la sesión de
     # otro, el panel lo puede decir y queda asentado.
     identidad = sesion.identidad_para_el_acto(datos.get("identidad"))
+    identidad = verificar_cadena(id_cedula, identidad)
     perfil = sesion.perfil_de(identidad)
 
     # La pausa va recién acá: avisa que se va a abrir una ventana. Si algo de
@@ -340,6 +381,7 @@ def notificar_sisfe(datos, pausar=None):
                                                   or "sin detalle"))
 
     if id_cedula:
+        estado_app.fijar_cadena(id_cedula, identidad)
         estado_app.marcar_cargada_sisfe(
             id_cedula, descripcion=r.get("descripcion", ""), identidad=identidad)
 

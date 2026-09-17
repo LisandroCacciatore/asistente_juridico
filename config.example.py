@@ -44,16 +44,23 @@ ESPERA_LOGIN_MINUTOS = 20
 # portales. Cada uno tiene su propio acceso al SISFE y a FirmAr, así que
 # lo normal es que la identidad sea la misma persona que está operando.
 #
+#   mail      : con el que entra al asistente. Cada uno entra con el suyo
+#               (el vacío no bloquea: mientras no lo tengas, entra con el
+#               nombre).
 #   matricula : la del SISFE. Si todavía no la tenés, dejala vacía: el
 #               sistema muestra el campo vacío, nunca un valor inventado.
+#   firma     : cómo identificar su Firma Digital (el CUIL con el que firma).
 #   perfil    : la carpeta del perfil de Chrome de esa persona. La sesión
-#               del SISFE y la de FirmAr son PERSONALES y no se comparten.
+#               del SISFE y la de FirmAr son personales y no se comparten.
 #
 # ⚠ "Socio" es provisorio: reemplazalo por el nombre real cuando lo sepas.
 PERSONAS = {
-    "Santiago": {"matricula": SISFE_USUARIO, "perfil": "chrome_profile_portales"},
-    "Jr":       {"matricula": "",            "perfil": "chrome_profile_jr"},
-    "Socio":    {"matricula": "",            "perfil": "chrome_profile_socio"},
+    "Santiago": {"mail": "", "matricula": SISFE_USUARIO, "firma": "",
+                 "perfil": "chrome_profile_portales"},
+    "Jr":       {"mail": "", "matricula": "",            "firma": "",
+                 "perfil": "chrome_profile_jr"},
+    "Socio":    {"mail": "", "matricula": "",            "firma": "",
+                 "perfil": "chrome_profile_socio"},
 }
 
 # Cuándo vence la declaración de quién está trabajando:

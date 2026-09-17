@@ -701,7 +701,7 @@ function sideFor(c){
     if(c.sisfe_cargada)
       return `<div class="dest" style="color:var(--muted-2)">En el SISFE, esperando tu NOTIFICAR</div>
               <button class="btn upload" onclick="confirmarNotificada('${esc(c.id)}')">Ya la notifiqué</button>`;
-    return `<button class="btn upload" onclick="upload('${esc(c.id)}')">Subir al SISFE</button>`;
+    return `<button class="btn upload" onclick="elegirIdentidad('${esc(c.id)}','notificar')">Subir al SISFE</button>`;
   }
   return `<span class="done-tag">✓ Presentada</span>`;
 }
@@ -961,7 +961,7 @@ function review(id){
     </div>
     <div class="modal-foot">
       <button class="btn ghost" onclick="closeModal()">Cerrar</button>
-      <button class="btn sign" onclick="startFirma('${id}')">🔒 Firmar digitalmente</button>
+      <button class="btn sign" onclick="elegirIdentidad('${id}','firmar')">🔒 Firmar digitalmente</button>
     </div>`);
 }
 
@@ -1039,13 +1039,13 @@ async function poll(jobId, id, tipo){
 }
 
 /* ---------- Firmar ---------- */
-async function startFirma(id){
+async function startFirma(id, identidad){
   const c = getCed(id);
   if(!SERVER){ return signGateSim(id); }        // demo offline
   closeModal();
   try{
     const r = await fetch('/api/firmar',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id_cedula:id, ruta_pdf:c.ruta_pdf})});
+      body:JSON.stringify({id_cedula:id, ruta_pdf:c.ruta_pdf, identidad:identidad||null})});
     const {job_id} = await r.json();
     poll(job_id, id, 'firma');
   }catch(e){ toast("⚠ No pude contactar al servidor"); }
@@ -1056,11 +1056,11 @@ async function startFirma(id){
    al SISFE. Acá el panel manda sólo el id: el PDF firmado, el CUIJ y la
    carátula los resuelve el servidor desde estado.json, así no hay forma de
    que el navegador mande un dato distinto al de la cédula. */
-async function upload(id){
+async function upload(id, identidad){
   if(!SERVER){ return uploadSim(id); }           // demo offline
   try{
     const r = await fetch('/api/skill/notificar_sisfe',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({datos:{id_cedula:id}})});
+      body:JSON.stringify({datos:{id_cedula:id, identidad:identidad||null}})});
     const {job_id} = await r.json();
     poll(job_id, id, 'subida');
   }catch(e){ toast("⚠ No pude contactar al servidor"); }
@@ -1577,18 +1577,69 @@ function pintarSesion(){
 
 function abrirPuertaSesion(){
   const ops = (SESION.opciones||[]).filter(Boolean);
-  const filas = ops.map(n=>`<button class="btn" style="display:block;width:100%;margin-bottom:8px"
-      onclick="declararSesion('${esc(n)}')">${esc(n)}</button>`).join("");
+  const atajos = ops.map(n=>`<button class="btn ghost" style="margin:2px 4px 2px 0"
+      onclick="document.getElementById('loginSesion').value='${esc(n)}'">${esc(n)}</button>`).join("");
   openModal(`
     <div class="modal-body">
       <div class="gate-box">
         <div class="gate-icon">👤</div>
         <h4>¿Quién está trabajando?</h4>
-        <p>Queda asentado en cada acción: quién la hizo y con qué identidad se
-           firmó y se notificó.</p>
-        ${filas || `<div class="hint">No hay personas cargadas: agregalas en config.py.</div>`}
+        <p>Entrá con tu mail. Queda asentado en cada acción: quién la hizo y con
+           qué identidad se firmó y se notificó.</p>
+        <input class="code-in" type="text" id="loginSesion" placeholder="tu mail"
+               style="width:100%;letter-spacing:0"
+               onkeydown="if(event.key==='Enter')declararSesion(this.value)">
+        <div class="hint" id="errorSesion"
+             style="display:none;color:#b45309;margin-top:8px;font-weight:600"></div>
+        ${atajos ? `<div class="hint" style="margin-top:10px">Atajos (mientras no tengas el mail cargado): ${atajos}</div>` : ""}
+        ${ops.length ? "" : `<div class="hint">No hay personas cargadas: agregalas en config.py.</div>`}
       </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn primary"
+        onclick="declararSesion(document.getElementById('loginSesion').value)">Entrar</button>
     </div>`);
+  setTimeout(()=>document.getElementById("loginSesion")?.focus(),60);
+}
+
+/* ---------------- Con qué identidad se toca el portal (spec D25) ----------
+   "Del SISFE que bajé, es el mismo que tiene que firmar." Se puede actuar con
+   las claves propias o con las de un compañero, pero no mezclar: si la cédula
+   ya salió de una sesión del SISFE, esa es su identidad y las otras quedan
+   bloqueadas acá (y el servidor las rechaza igual, por las dudas). */
+function elegirIdentidad(id, accion){
+  const c = getCed(id) || {};
+  const fija = c.identidad_cadena || "";
+  const ops = (SESION.opciones||[]).filter(Boolean);
+  const filas = ops.map(n=>{
+    const esFija = !!fija && n === fija;
+    const bloqueada = !!fija && !esFija;
+    return `<button class="btn ${esFija?"primary":"ghost"}"
+      style="display:block;width:100%;margin-bottom:8px${bloqueada?";opacity:.4":""}"
+      ${bloqueada?"disabled":""}
+      onclick="seguirConIdentidad('${esc(id)}','${esc(accion)}','${esc(n)}')">
+      ${esc(n)}${esFija?" · la de esta cédula":""}</button>`;
+  }).join("");
+  openModal(`
+    <div class="modal-body">
+      <div class="gate-box">
+        <div class="gate-icon">🔑</div>
+        <h4>¿Con qué identidad?</h4>
+        <p>${fija
+          ? `Esta cédula salió del SISFE con la sesión de <b>${esc(fija)}</b>: se
+             firma y se notifica con la misma. No se puede cruzar.`
+          : `Podés usar tus claves o las de un compañero. La que elijas queda fija
+             para esta cédula: la firma y la notificación van con la misma.`}</p>
+        ${filas || `<div class="hint">No hay identidades cargadas (config.py).</div>`}
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cancelar</button></div>`);
+}
+
+function seguirConIdentidad(id, accion, identidad){
+  closeModal();
+  if(accion === 'firmar') return startFirma(id, identidad);
+  return upload(id, identidad);
 }
 
 async function declararSesion(nombre){
@@ -1601,7 +1652,15 @@ async function declararSesion(nombre){
     const r = await fetch('/api/sesion',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({operador:nombre})});
     const j = await r.json();
-    if(!j.ok){ toast("⚠ "+(j.error||"No pude registrar quién es")); return; }
+    if(!j.ok){
+      // El motivo va EN LA PUERTA, no en un toast que se pierde: si te
+      // rechazó el mail, tenés que poder leer por qué sin buscarlo.
+      const err = document.getElementById("errorSesion");
+      const texto = j.error || "No pude registrar quién es";
+      if(err){ err.textContent = texto; err.style.display = ""; }
+      else { toast("⚠ " + texto); }
+      return;
+    }
     SESION = j; pintarSesion(); closeModal();
     toast("✓ Trabajando: "+nombre);
     renderActividad();

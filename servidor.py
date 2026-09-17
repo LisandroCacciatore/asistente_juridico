@@ -134,6 +134,7 @@ def _lanzar(tipo, id_cedula, trabajo):
 class DatosFirma(BaseModel):
     id_cedula: str
     ruta_pdf: str
+    identidad: str | None = None
 
 class DatosSubida(BaseModel):
     id_cedula: str
@@ -144,6 +145,7 @@ class DatosSubida(BaseModel):
 class ItemLote(BaseModel):
     id_cedula: str
     ruta_pdf: str
+    identidad: str | None = None
 
 class DatosFirmaLote(BaseModel):
     items: list[ItemLote]
@@ -241,13 +243,19 @@ def api_firmar(d: DatosFirma):
         # Con qué identidad y con qué perfil: cada uno firma con su Firma
         # Digital y su sesión (SPEC D18 y D24). Antes de abrir el portal se
         # confirma en pantalla con qué identidad se va a actuar (D19).
-        identidad = sesion.identidad_para_el_acto()
+        # La regla de la cadena (D25): si la cédula ya es de alguien, se firma
+        # con esa identidad o no se firma.
+        identidad = acciones.verificar_cadena(
+            d.id_cedula, sesion.identidad_para_el_acto(d.identidad))
         ruta_firmada = firmar(
             d.ruta_pdf,
             pausar=sesion.pausar_con_identidad(pausar, identidad),
             perfil=sesion.perfil_de(identidad),
         )
         if ruta_firmada:
+            # La cédula queda de esta identidad (D25): la notificación va a
+            # tener que ser con la misma.
+            estado.fijar_cadena(d.id_cedula, identidad)
             estado.marcar_firmada(d.id_cedula, ruta_firmada, identidad=identidad)
         return {"ruta_firmada": ruta_firmada}
     job_id = _lanzar("firma", d.id_cedula, trabajo)
@@ -262,11 +270,18 @@ def api_firmar_lote(d: DatosFirmaLote):
     def trabajo(pausar):
         identidad = sesion.identidad_para_el_acto()
 
+        # Cada cédula del lote tiene que ser de la misma identidad (D25): se
+        # firman todas en una sola sesión de FirmAr, así que no se puede
+        # mezclar gente en el mismo lote. Si alguna es de otro, se frena acá.
+        for it in items:
+            identidad = acciones.verificar_cadena(it["id_cedula"], identidad)
+
         def on_resultado(id_cedula, ruta_firmada):
             # se guarda en estado.json apenas termina CADA documento,
             # no al final del lote (si se corta a mitad de camino, no
             # se pierde lo ya firmado).
             if ruta_firmada:
+                estado.fijar_cadena(id_cedula, identidad)
                 estado.marcar_firmada(id_cedula, ruta_firmada, identidad=identidad)
         resultados = firmar_lote(
             items,

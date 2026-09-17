@@ -138,6 +138,10 @@ def generar(entrada, salida_dir=None):
             "ruta_pdf": os.path.abspath(ruta_pdf),
             "ruta_firmada": None,
             "estado": "generada",
+            # De quién es esta cédula (SPEC D25): de qué sesión del SISFE
+            # salieron los decretos. Se graba acá y no se cambia; si no se
+            # sabe, queda vacío y se fija en el primer acto del portal.
+            "identidad_cadena": entrada.get("identidad_cadena", ""),
         }
         estado.registrar_cedula(entry)
         registradas.append(entry)

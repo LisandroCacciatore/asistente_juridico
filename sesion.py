@@ -79,12 +79,18 @@ def nombre_valido(nombre):
 
     No alcanza con que venga un texto: si el nombre no está en la lista no
     se acepta, o cualquiera podría firmar el log con cualquier nombre.
+
+    Acepta el nombre O el mail, porque cada uno entra con su mail (D26);
+    adentro y en los registros se usa siempre el nombre.
     """
     buscado = str(nombre or "").strip().lower()
     if not buscado:
         return ""
-    for real in personas():
+    for real, datos in personas().items():
         if real.strip().lower() == buscado:
+            return real
+        mail = ((datos or {}).get("mail") or "").strip().lower()
+        if mail and mail == buscado:
             return real
     # Sin lista de personas configurada, el único nombre legítimo es el de
     # la máquina: si no, no habría con qué validar.
@@ -98,13 +104,42 @@ def matricula_de(persona):
     return (datos.get("matricula") or "").strip()
 
 
+def mail_de(persona):
+    return ((personas().get(persona) or {}).get("mail") or "").strip()
+
+
+def firma_de(persona):
+    return ((personas().get(persona) or {}).get("firma") or "").strip()
+
+
+def persona_por_matricula(matricula):
+    """Qué persona del estudio entra al SISFE con esta matrícula.
+
+    Es la base de la regla de la cadena (D25): las cédulas que salieron de
+    esa sesión son de esa persona, y tienen que firmarse con la firma de
+    esa persona. Si la matrícula no está en la lista, devuelve "" y la
+    cadena se fija después, con la identidad que se elija en el primer
+    acto (no se inventa a quién pertenece).
+    """
+    buscada = str(matricula or "").strip().lower()
+    if not buscada:
+        return ""
+    for real, datos in personas().items():
+        if ((datos or {}).get("matricula") or "").strip().lower() == buscada:
+            return real
+    return ""
+
+
 def detalle_identidad(persona=None):
     """Texto corto para mostrar y para el log: «Jr — matrícula LV029»."""
     persona = persona or (actual() or {}).get("identidad") or ""
     if not persona:
         return "(identidad sin declarar)"
     mat = matricula_de(persona)
-    return f"{persona} — matrícula {mat}" if mat else f"{persona} (sin matrícula cargada)"
+    firma = firma_de(persona)
+    if mat:
+        return f"{persona} — matrícula {mat}" + (f" · firma {firma}" if firma else "")
+    return f"{persona} (sin matrícula cargada)"
 
 
 def perfil_de(persona=None):
@@ -223,6 +258,7 @@ def declarar(operador, identidad=None, cuando=None):
     return _escribir({
         "operador": nombre,
         "identidad": ident,
+        "mail_operador": mail_de(nombre),
         "inicio": momento,
         "ultimo_uso": momento,
         "maquina": maquina(),

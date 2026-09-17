@@ -28,9 +28,11 @@ cambia, se cambia acá primero.
 | **D15** | Partes en SISFE (confirmado) | **16/09/2026, contra la pantalla real.** La tabla trae 4 filas: 2 **cajas fijas** (CS01, CF02) + los **representantes del expediente**. El sistema **las lee del portal y las muestra**; el abogado destilda lo que no va. **Ninguna parte se fija en el código.** |
 | **D16** | El correo de las partes | **Lo trae cargado el SISFE.** Se lee y se muestra tal cual; no se completa ni se inventa (coherente con D10: va solo donde existe — en la tabla real, solo Pereyra). |
 | **D17** | El clic en NOTIFICAR | **Es del abogado.** El sistema deja todo cargado (descripción, adjunto, partes tildadas) y **se detiene**. Está blindado: un test lee el código y **falla si alguien agrega un clic en Notificar / Presentar / Confirmar / Enviar**, y otro test corre el flujo contra una pantalla de mentira y comprueba que el botón quedó sin apretar. Misma regla que el mail. |
-| **D18** | Dos identidades | El sistema registra **operador** (quién maneja el asistente: Jr) y **identidad del acto** (con qué matrícula/sesión y con qué firma se ejecutó). **Cada uno tiene la suya** (su matrícula de SISFE, su Firma Digital, su perfil de Chrome), así que lo normal es que coincidan. El caso "operador con la identidad de otro" (Jr con la sesión de Santiago) pasa a ser una **excepción tolerada** — y por eso el registro las sigue separando: es lo que hace visible la excepción cuando ocurre. Van las dos en cada línea, más `usuario_windows` como control cruzado. |
+| **D18** | Dos identidades | El sistema registra **operador** (quién maneja el asistente) y **identidad del acto** (con qué matrícula/sesión y con qué firma se ejecutó). Son **independientes a propósito**: el operador puede usar sus claves **o las de un compañero** — eso está permitido y es normal, no es una excepción. Lo que los une es la regla de la cadena (**D25**). Las dos van en cada línea del log, más `usuario_windows` como control cruzado. |
 | **D19** | La puerta de identidad | **Al abrir el asistente**, obligatoria una vez por jornada y cambiable. Se ve siempre en la barra de arriba. **Antes del portal no se vuelve a preguntar**: se confirma en pantalla en la pausa que ya existe ("vas a actuar con la identidad de Santiago"). |
 | **D20** | Quiénes | **Santiago, Jr y Socio** *(«Socio» es provisorio: Santiago no tiene el nombre todavía — está marcado en `config.py` para reemplazar)*. Cada uno con **su ingreso propio al asistente** y **su propio acceso al SISFE y a FirmAr**. La identidad del acto es, por defecto, **la del operador**. |
+| **D25** | **La regla de la cadena** | *"Del SISFE que bajé, es el mismo que tiene que firmar."* Una cédula pertenece a **una sola identidad**, y no se puede cruzar: **la sesión con la que se leyó el expediente, la firma que se le pone y la sesión con la que se notifica son la misma persona.** El operador puede ser cualquiera y puede usar sus claves o las de un compañero; lo que no puede es mezclar. La identidad **se fija en el primer acto del portal** y queda grabada en la cédula; los actos siguientes la respetan **o el sistema los frena y dice por qué**. |
+| **D26** | El ingreso: por mail | Cada uno entra al asistente **con su mail** (o con su nombre, mientras no tenga el mail cargado: el campo vacío no bloquea). Hoy eso es una declaración con más fricción y deja el registro; cuando el panel se sirva desde el hub (D23) el mismo campo pasa a ser **un login de verdad** — cambia la validación, no el diseño. |
 | **D21** | Qué se centraliza | **Los datos sí, las sesiones no.** Una sola fuente de verdad para estado, log y ficha del cliente. Los perfiles de Chrome, las sesiones de los portales, la firma, la generación de PDF y las rutas **quedan en cada máquina**: centralizar una sesión sería centralizar credenciales. |
 | **D22** | El anti-duplicado es central | Con dos máquinas y el estado local, **dos personas pueden notificar la misma cédula dos veces** y ninguna se entera. El control de duplicados tiene que vivir donde vive el estado. |
 | **D23** | El ingreso al asistente | Mientras el asistente es **local**, el ingreso es la **declaración** (D19). Cuando el panel se sirva desde el hub (Fase 10b), el ingreso pasa a ser un **login de verdad** — y ahí la declaración se vuelve **identidad autenticada**: recién entonces el log deja de ser "lo que alguien dijo ser". Se hace en ese orden a propósito: primero el registro, después el candado sobre el registro. |
@@ -291,6 +293,18 @@ se decidieron todavía — ver abajo).
       `config.py` (D24), no cableadas. *(hecho)*
 - [x] Un nombre que no está en la lista **no entra**: el log no se puede firmar
       con cualquier nombre. *(hecho)*
+- [x] **La regla de la cadena (D25)**, en los tres lugares donde se puede cruzar:
+      **al generar** (la cédula nace con la identidad de quien la generó, y el
+      monitor la marca con la matrícula de la máquina, que es la sesión de la que
+      bajó los decretos), **al firmar** y **al notificar**. Si se intenta cruzar,
+      **frena y dice por qué**; y el candado no se puede corregir por atrás: una
+      vez que la cédula es de alguien, es de esa persona. *(hecho)*
+- [x] **El ingreso con el mail (D26)**: se entra con el mail o con el nombre, y el
+      que no está en la lista no entra (con el motivo **en la puerta**, no en un
+      aviso que se pierde). *(hecho)*
+- [ ] **La firma en lote**: hoy el lote entero usa la identidad de la jornada, y el
+      servidor verifica una por una que ninguna cédula sea de otra persona (si lo
+      es, frena). Falta poder **elegir la identidad del lote** desde el panel.
 - [ ] **La casilla de mail por persona**: no se decidió si cada uno usa la suya o
       siguen con una del estudio. Hoy la capa de mail es del estudio.
 - [ ] **El monitor**: corre con la matrícula configurada en la máquina

@@ -61,6 +61,21 @@ DIAS_NOVEDADES = "10"
 CARPETA_BASE = os.path.dirname(os.path.abspath(__file__))
 PERFIL_SISFE = os.path.join(CARPETA_BASE, "chrome_profile_sisfe")
 
+
+def _persona_de_la_matricula():
+    """De quién son los decretos que baja este monitor (SPEC D25).
+
+    El monitor entra al SISFE con la matrícula de esta máquina, así que las
+    cédulas que salgan de acá son de esa persona. Si la matrícula no está en
+    la lista del estudio, devuelve "" — y la cadena se fija en el primer acto
+    del portal, con la identidad que se elija.
+    """
+    try:
+        import sesion
+        return sesion.persona_por_matricula(SISFE_USUARIO)
+    except Exception:
+        return ""
+
 # Cuánto se espera a que alguien escriba la contraseña antes de dar el
 # ciclo por perdido (modo continuo). Sin esto, el `input()` del login
 # cuelga la jornada entera esperando a una persona que quizá no está.
@@ -603,6 +618,9 @@ def procesar_expediente(page, exp, registro, estado):
             "fecha_audiencia": dec.get("fecha_audiencia") or "",
             "hora_audiencia": dec.get("hora_audiencia") or "",
             "tipo_sugerido": tipo_sugerido,
+            # De qué sesión del SISFE salieron estos decretos (SPEC D25):
+            # la cédula es de esa persona y no se puede cruzar.
+            "identidad_cadena": _persona_de_la_matricula(),
         }
         try:
             estado_app.agregar_pendiente(pendiente)

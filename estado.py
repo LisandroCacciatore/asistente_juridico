@@ -214,6 +214,37 @@ def marcar_firmada(id_cedula, ruta_firmada, identidad=None):
                   ruta_firmada or "", identidad=identidad)
 
 
+def fijar_cadena(id_cedula, identidad):
+    """Fija de quién es esta cédula, y no se cambia más (SPEC D25).
+
+    "Del SISFE que bajé, es el mismo que tiene que firmar": la identidad
+    queda grabada en la cédula en el primer acto del portal, y los actos
+    siguientes la tienen que respetar. Fijarla no es un detalle de
+    auditoría: es el candado.
+    """
+    if not identidad:
+        return ""
+    cedula = obtener_cedula(id_cedula) or {}
+    if (cedula.get("identidad_cadena") or "") == identidad:
+        return identidad
+    ya_es_de_alguien = cedula.get("identidad_cadena") or ""
+    if ya_es_de_alguien:
+        # La cadena es un candado, no un dato que se corrige por atrás: si ya
+        # es de alguien, no se cambia. El que llama tendría que haber frenado
+        # antes (acciones.verificar_cadena).
+        return ya_es_de_alguien
+    _actualizar(id_cedula, identidad_cadena=identidad)
+    registrar_log("cadena_fijada", id_cedula, cedula.get("caratula", ""),
+                  cedula.get("cuij", ""), f"la cédula queda de {identidad}",
+                  identidad=identidad)
+    return identidad
+
+
+def cadena_de(id_cedula):
+    """De quién es esta cédula, o "" si todavía no se fijó."""
+    return (obtener_cedula(id_cedula) or {}).get("identidad_cadena") or ""
+
+
 def marcar_cargada_sisfe(id_cedula, detalle="", descripcion="", identidad=None):
     """La cédula quedó cargada en el SISFE, esperando el clic en NOTIFICAR.
 
