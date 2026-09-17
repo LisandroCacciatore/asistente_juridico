@@ -35,6 +35,7 @@ import uvicorn
 from firma import firmar, firmar_lote
 from meta_juridico import subir, ExpedienteNoEncontrado
 import estado
+import sesion
 import generar_cedula
 import acciones
 import mail_gmail
@@ -159,6 +160,11 @@ class DatosDestinatarios(BaseModel):
     domicilio: str | None = None
 
 
+class DatosSesion(BaseModel):
+    operador: str
+    identidad: str | None = None
+
+
 # --- Dashboard ---------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
@@ -170,6 +176,36 @@ def dashboard():
 @app.get("/api/cedulas")
 def api_cedulas():
     return estado.cargar()
+
+
+# --- Quién está trabajando (SPEC D18 y D19) -----------------------
+# El panel lo consulta al abrir y en cada refresco (que además marca
+# actividad: si nadie mira el panel por 12 horas, la jornada vence y
+# vuelve a preguntar).
+#
+# OJO: mientras el asistente corra local, esto es una DECLARACIÓN, no un
+# login (SPEC D23). El login de verdad llega cuando el panel se sirva
+# desde el hub, y recién ahí el log deja de ser "lo que alguien dijo ser".
+@app.get("/api/sesion")
+def api_sesion():
+    return sesion.estado_para_el_panel(tocar=True)
+
+
+@app.post("/api/sesion")
+def api_declarar_sesion(d: DatosSesion):
+    try:
+        sesion.declarar(d.operador, d.identidad)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    # Queda asentado quién entró, con qué identidad y desde qué máquina.
+    estado.registrar_log("sesion_iniciada", "", detalle=f"operador {d.operador}")
+    return {"ok": True, **sesion.estado_para_el_panel()}
+
+
+@app.delete("/api/sesion")
+def api_cerrar_sesion():
+    sesion.cerrar()
+    return {"ok": True, **sesion.estado_para_el_panel()}
 
 
 # --- Log de acciones (para la sección "Actividad") ----------------
@@ -202,9 +238,17 @@ def api_generar_desde_pendiente(d: DatosGenerarDesdePendiente):
 @app.post("/api/firmar")
 def api_firmar(d: DatosFirma):
     def trabajo(pausar):
-        ruta_firmada = firmar(d.ruta_pdf, pausar=pausar)
+        # Con qué identidad y con qué perfil: cada uno firma con su Firma
+        # Digital y su sesión (SPEC D18 y D24). Antes de abrir el portal se
+        # confirma en pantalla con qué identidad se va a actuar (D19).
+        identidad = sesion.identidad_para_el_acto()
+        ruta_firmada = firmar(
+            d.ruta_pdf,
+            pausar=sesion.pausar_con_identidad(pausar, identidad),
+            perfil=sesion.perfil_de(identidad),
+        )
         if ruta_firmada:
-            estado.marcar_firmada(d.id_cedula, ruta_firmada)
+            estado.marcar_firmada(d.id_cedula, ruta_firmada, identidad=identidad)
         return {"ruta_firmada": ruta_firmada}
     job_id = _lanzar("firma", d.id_cedula, trabajo)
     return {"job_id": job_id}
@@ -216,13 +260,20 @@ def api_firmar_lote(d: DatosFirmaLote):
     items = [{"id_cedula": it.id_cedula, "ruta_pdf": it.ruta_pdf} for it in d.items]
 
     def trabajo(pausar):
+        identidad = sesion.identidad_para_el_acto()
+
         def on_resultado(id_cedula, ruta_firmada):
             # se guarda en estado.json apenas termina CADA documento,
             # no al final del lote (si se corta a mitad de camino, no
             # se pierde lo ya firmado).
             if ruta_firmada:
-                estado.marcar_firmada(id_cedula, ruta_firmada)
-        resultados = firmar_lote(items, pausar=pausar, on_resultado=on_resultado)
+                estado.marcar_firmada(id_cedula, ruta_firmada, identidad=identidad)
+        resultados = firmar_lote(
+            items,
+            pausar=sesion.pausar_con_identidad(pausar, identidad),
+            on_resultado=on_resultado,
+            perfil=sesion.perfil_de(identidad),
+        )
         return {"resultados": resultados}
 
     job_id = _lanzar("firma_lote", "lote", trabajo)

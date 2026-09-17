@@ -500,11 +500,14 @@ def _id_del_expediente(page, cuij, pausar):
 
 
 def subir(ruta_pdf, cuij, caratula=None, descripcion=None, usar_chrome=True,
-          pausar=None, elegir=None):
+          pausar=None, elegir=None, perfil=None):
     """Sube la cédula firmada al SISFE y deja todo listo para notificar.
 
     Devuelve un dict con el detalle. `notificado` SIEMPRE es False: el
     clic final es del abogado.
+
+    `perfil` es la carpeta del perfil de Chrome de la persona que actúa
+    (SPEC D24): la sesión del SISFE es personal, no de la máquina.
     """
     pausar = pausar or pausa_humana
     devolver = {
@@ -526,7 +529,7 @@ def subir(ruta_pdf, cuij, caratula=None, descripcion=None, usar_chrome=True,
     print(f"    Carátula    : {caratula or '(no provista)'}")
     print(f"    Descripción : {devolver['descripcion']}")
 
-    with abrir_navegador(usar_chrome=usar_chrome) as (ctx, page):
+    with abrir_navegador(usar_chrome=usar_chrome, perfil=perfil) as (ctx, page):
         if not _entrar(page, pausar):
             devolver["avisos"].append("No se inició la sesión del SISFE.")
             return devolver

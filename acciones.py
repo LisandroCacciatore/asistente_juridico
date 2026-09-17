@@ -288,6 +288,7 @@ def notificar_sisfe(datos, pausar=None):
     Jurídico no participa: sale del circuito (spec D1).
     """
     import estado as estado_app
+    import sesion
     import sisfe_notificar
 
     id_cedula = (datos.get("id_cedula") or "").strip()
@@ -321,22 +322,26 @@ def notificar_sisfe(datos, pausar=None):
             "expediente en el SISFE."
         )
 
+    # Con qué identidad y con qué perfil se actúa (SPEC D18 y D24). Por
+    # defecto, la del que está operando; si alguien opera con la sesión de
+    # otro, el panel lo puede decir y queda asentado.
+    identidad = sesion.identidad_para_el_acto(datos.get("identidad"))
+    perfil = sesion.perfil_de(identidad)
+
     # La pausa va recién acá: avisa que se va a abrir una ventana. Si algo de
     # lo de arriba falla, no tiene sentido hacerte apretar «continuar» para
     # después contarte que el archivo no estaba.
     if pausar:
-        pausar("Se va a abrir el SISFE con el perfil de Chrome del estudio.\n"
-               "Si te pide iniciar sesión, hacelo en la ventana y después "
-               "tocá «Ya está, continuar».")
+        pausar = sesion.pausar_con_identidad(pausar, identidad)
 
-    r = sisfe_notificar.subir(ruta, cuij, caratula=caratula, pausar=pausar)
+    r = sisfe_notificar.subir(ruta, cuij, caratula=caratula, pausar=pausar, perfil=perfil)
     if not r.get("ok"):
         raise AccionError("No quedó cargada: " + (" ".join(r.get("avisos") or [])
                                                   or "sin detalle"))
 
     if id_cedula:
         estado_app.marcar_cargada_sisfe(
-            id_cedula, descripcion=r.get("descripcion", ""))
+            id_cedula, descripcion=r.get("descripcion", ""), identidad=identidad)
 
     return {
         "ok": True,
@@ -347,6 +352,7 @@ def notificar_sisfe(datos, pausar=None):
         "partes": [f'{p["caracter"]}: {p["parte"]}' for p in r.get("partes", [])],
         "tildadas": len(r.get("tildadas", [])),
         "avisos": r.get("avisos", []),
+        "identidad": identidad,
         "notificado": False,
     }
 
@@ -358,15 +364,18 @@ def marcar_notificada(datos, pausar=None):
     después de hacerlo en el portal — no el sistema por su cuenta.
     """
     import estado as estado_app
+    import sesion
 
     id_cedula = (datos.get("id_cedula") or "").strip()
     cedula = estado_app.obtener_cedula(id_cedula)
     if not cedula:
         raise AccionError("No encuentro esa cédula en el registro.")
 
+    identidad = sesion.identidad_para_el_acto(datos.get("identidad"))
     estado_app.registrar_log("notificada_en_sisfe", id_cedula,
-                             cedula.get("caratula", ""), cedula.get("cuij", ""))
-    estado_app.marcar_presentada(id_cedula)
+                             cedula.get("caratula", ""), cedula.get("cuij", ""),
+                             identidad=identidad)
+    estado_app.marcar_presentada(id_cedula, identidad=identidad)
     return {"ok": True, "mensaje": "Cédula cerrada: notificada en el SISFE"}
 
 

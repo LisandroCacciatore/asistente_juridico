@@ -398,6 +398,10 @@
     <div>Asistente Jurídico<small>Estudio Segovia · Procuración</small></div>
   </div>
   <div class="status">
+    <div class="item" id="sesionItem" style="cursor:pointer"
+         title="Cambiar quién está trabajando" onclick="abrirPuertaSesion()">
+      <span class="dot warn" id="sesionDot"></span><span id="sesionTexto">Trabajando: —</span>
+    </div>
     <div class="item"><span class="dot"></span><span>SISFE conectado</span></div>
     <div class="item"><span class="dot"></span><span>Firma disponible</span></div>
     <div class="item"><span class="dot warn"></span><span>SISFE · login</span></div>
@@ -913,7 +917,7 @@ async function renderActividad(){
         <span style="font-weight:600;font-size:13px">${esc(e.accion)}</span>
         ${e.caratula?`<span style="color:var(--muted);font-size:12.5px"> — ${esc(e.caratula)}</span>`:""}
         ${e.detalle?`<div style="color:var(--muted-2);font-size:11.5px;margin-top:2px">${esc(e.detalle)}</div>`:""}
-        ${(e.usuario||e.maquina)?`<div style="color:var(--muted-2);font-size:11px;margin-top:2px">👤 ${esc(e.usuario||"?")}${e.maquina?` · 🖥 ${esc(e.maquina)}`:""}</div>`:""}
+        ${(e.operador||e.usuario||e.maquina)?`<div style="color:var(--muted-2);font-size:11px;margin-top:2px">👤 ${esc(e.operador||e.usuario||"?")}${e.maquina?` · 🖥 ${esc(e.maquina)}`:""}${(e.identidad && e.operador && e.identidad!==e.operador)?` · <b style="color:#b45309">actuó con la identidad de ${esc(e.identidad)}</b>`:""}</div>`:""}
       </span>
       <span style="flex:0 0 auto;font-size:11.5px;color:var(--muted-2);font-variant-numeric:tabular-nums">${esc(cuando)}</span>
     </div>`;
@@ -1540,6 +1544,70 @@ function finishSweep(){
   setTimeout(()=>s.style.display="none", 520);
 }
 
+/* ---------------- Quién está trabajando (spec D18 y D19) ----------------
+   Se declara una vez por jornada, al abrir el asistente. Se ve siempre acá
+   arriba, y se puede cambiar haciendo clic.
+
+   OJO: esto NO es un login. Mientras el asistente corra local es una
+   DECLARACIÓN (spec D23); el login de verdad llega cuando el panel se
+   sirva desde el hub. El dato duro, el que la pantalla no puede falsear,
+   es el usuario de Windows de la máquina: el servidor lo sella solo en
+   cada línea del log, como control cruzado de lo que se declara. */
+let SESION = {declarada:false, operador:"", identidad:"", opciones:[]};
+
+async function cargarSesion(){
+  try{
+    const r = await fetch('/api/sesion');
+    if(!r.ok) return;                    // sin servidor: modo demo, sin puerta
+    SESION = await r.json();
+  }catch(e){ return; }
+  pintarSesion();
+  // No abrir la puerta encima de otro modal (por ejemplo, el de un trabajo
+  // que está corriendo y esperando que aprietes «Ya está, continuar»).
+  if(!SESION.declarada && !scrim.classList.contains("show")) abrirPuertaSesion();
+}
+
+function pintarSesion(){
+  const t = document.getElementById("sesionTexto");
+  if(!t) return;
+  t.textContent = "Trabajando: " + (SESION.operador || "—");
+  const d = document.getElementById("sesionDot");
+  if(d) d.className = "dot" + (SESION.declarada ? "" : " warn");
+}
+
+function abrirPuertaSesion(){
+  const ops = (SESION.opciones||[]).filter(Boolean);
+  const filas = ops.map(n=>`<button class="btn" style="display:block;width:100%;margin-bottom:8px"
+      onclick="declararSesion('${esc(n)}')">${esc(n)}</button>`).join("");
+  openModal(`
+    <div class="modal-body">
+      <div class="gate-box">
+        <div class="gate-icon">👤</div>
+        <h4>¿Quién está trabajando?</h4>
+        <p>Queda asentado en cada acción: quién la hizo y con qué identidad se
+           firmó y se notificó.</p>
+        ${filas || `<div class="hint">No hay personas cargadas: agregalas en config.py.</div>`}
+      </div>
+    </div>`);
+}
+
+async function declararSesion(nombre){
+  if(!SERVER){                       // demo offline: se anota y listo
+    SESION = {...SESION, declarada:true, operador:nombre, identidad:nombre};
+    pintarSesion(); closeModal(); toast("✓ Trabajando: "+nombre);
+    return;
+  }
+  try{
+    const r = await fetch('/api/sesion',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({operador:nombre})});
+    const j = await r.json();
+    if(!j.ok){ toast("⚠ "+(j.error||"No pude registrar quién es")); return; }
+    SESION = j; pintarSesion(); closeModal();
+    toast("✓ Trabajando: "+nombre);
+    renderActividad();
+  }catch(e){ toast("⚠ No pude contactar al servidor"); }
+}
+
 // arranque: si hay servidor, uso las cédulas reales; si no, la demo.
 async function loadData(){
   try{
@@ -1558,6 +1626,7 @@ async function loadData(){
   renderPendientes();
   renderActividad();
   renderMail();
+  cargarSesion();          // quién está trabajando (y marca actividad)
 }
 loadData();
 

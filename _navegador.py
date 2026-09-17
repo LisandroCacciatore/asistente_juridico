@@ -32,7 +32,7 @@ for _flujo in (sys.stdout, sys.stderr):
 
 
 @contextmanager
-def abrir_navegador(usar_chrome=True, descargas=None, headless=False):
+def abrir_navegador(usar_chrome=True, descargas=None, headless=False, perfil=None):
     """
     Abre un navegador con perfil persistente y devuelve (contexto, pagina).
 
@@ -40,14 +40,20 @@ def abrir_navegador(usar_chrome=True, descargas=None, headless=False):
                   con su perfil. False usa el Chromium de Playwright (para pruebas).
     descargas   : carpeta donde aceptar las descargas (PDF firmado, etc.).
     headless    : False = ventana visible (necesario: la firma la hacés vos a mano).
+    perfil      : carpeta del perfil de Chrome. Por defecto, el de siempre.
+                  Cada persona tiene el suyo (SPEC D24): la sesión de SISFE y
+                  la de FirmAr son personales y no se comparten. Y como un
+                  perfil lo usa un navegador a la vez, dos personas no se
+                  pisan entre sí.
     """
     carpeta_descargas = descargas or CARPETA_DESCARGAS
-    os.makedirs(PERFIL_CHROME, exist_ok=True)
+    carpeta_perfil = perfil or PERFIL_CHROME
+    os.makedirs(carpeta_perfil, exist_ok=True)
     os.makedirs(carpeta_descargas, exist_ok=True)
 
     with sync_playwright() as p:
         kwargs = dict(
-            user_data_dir=PERFIL_CHROME,
+            user_data_dir=carpeta_perfil,
             headless=headless,
             accept_downloads=True,
             downloads_path=carpeta_descargas,

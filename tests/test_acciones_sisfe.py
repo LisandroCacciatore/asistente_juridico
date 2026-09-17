@@ -19,6 +19,7 @@ sys.path.insert(0, RAIZ)
 
 import acciones  # noqa: E402
 import estado  # noqa: E402
+import sesion  # noqa: E402
 import sisfe_notificar  # noqa: E402
 
 CUIJ = "21-04253894-6"
@@ -27,9 +28,10 @@ CARATULA = "RIVAS JESUS IGNACIO C/ ASOCIART ART SA S/ ENFERMEDAD LABORAL"
 
 @pytest.fixture(autouse=True)
 def _archivos_temporales(tmp_path, monkeypatch):
-    """Ningún test toca el estado.json/log reales del repo."""
+    """Ningún test toca el estado.json/log/sesión reales del repo."""
     monkeypatch.setattr(estado, "ARCHIVO", str(tmp_path / "estado.json"))
     monkeypatch.setattr(estado, "ARCHIVO_LOG", str(tmp_path / "log_acciones.jsonl"))
+    monkeypatch.setattr(sesion, "ARCHIVO", str(tmp_path / "sesion.json"))
     yield tmp_path
 
 
@@ -56,8 +58,9 @@ def _subida_falsa(monkeypatch, resultado):
     llamadas = {}
 
     def falso(ruta_pdf, cuij, caratula=None, descripcion=None,
-              usar_chrome=True, pausar=None, elegir=None):
-        llamadas.update(ruta_pdf=ruta_pdf, cuij=cuij, caratula=caratula, pausar=pausar)
+              usar_chrome=True, pausar=None, elegir=None, perfil=None):
+        llamadas.update(ruta_pdf=ruta_pdf, cuij=cuij, caratula=caratula,
+                        pausar=pausar, perfil=perfil)
         return resultado
 
     monkeypatch.setattr(sisfe_notificar, "subir", falso)
@@ -102,15 +105,47 @@ def test_el_pdf_y_el_cuij_salen_de_la_cedula(monkeypatch, tmp_path):
     assert r["notificado"] is False                   # el clic es del abogado
 
 
-def test_le_pasa_la_pausa_del_dashboard_a_la_subida(monkeypatch, tmp_path):
-    """Las puertas humanas del portal las destraba el dashboard."""
+def test_la_pausa_del_portal_confirma_con_que_identidad_se_actua(monkeypatch, tmp_path):
+    """Antes de abrir el SISFE, la pausa dice con qué identidad se va a actuar
+    (SPEC D19): no se vuelve a preguntar quién sos, se confirma en pantalla."""
     id_cedula, _ = _cedula_firmada(tmp_path)
+    sesion.declarar("Jr", identidad="Santiago")
     llamadas = _subida_falsa(monkeypatch, _resultado_ok())
-    mi_pausa = lambda mensaje: None
+    mensajes = []
 
-    acciones.ejecutar("notificar_sisfe", {"id_cedula": id_cedula}, pausar=mi_pausa)
+    acciones.ejecutar("notificar_sisfe", {"id_cedula": id_cedula}, pausar=mensajes.append)
 
-    assert llamadas["pausar"] is mi_pausa
+    assert llamadas["pausar"] is not None
+    llamadas["pausar"]("Ingresá tu contraseña de SISFE.")   # así la llama el módulo
+    assert "identidad de Santiago" in mensajes[0]
+    assert "Operador registrado: Jr" in mensajes[0]
+
+
+def test_a_la_subida_le_llega_el_perfil_de_la_identidad(monkeypatch, tmp_path):
+    """Cada uno entra a los portales con su perfil (SPEC D24): la sesión del
+    SISFE es personal, no de la máquina."""
+    id_cedula, _ = _cedula_firmada(tmp_path)
+    sesion.declarar("Jr")
+    llamadas = _subida_falsa(monkeypatch, _resultado_ok())
+
+    acciones.ejecutar("notificar_sisfe", {"id_cedula": id_cedula})
+
+    assert llamadas["perfil"].endswith("chrome_profile_jr")
+
+
+def test_la_identidad_del_acto_queda_en_el_log(monkeypatch, tmp_path):
+    """El caso que motivó todo esto: operó Jr, se notificó con la identidad de
+    Santiago. Las dos cosas tienen que poder leerse después."""
+    id_cedula, _ = _cedula_firmada(tmp_path)
+    sesion.declarar("Jr", identidad="Santiago")
+    _subida_falsa(monkeypatch, _resultado_ok())
+
+    r = acciones.ejecutar("notificar_sisfe", {"id_cedula": id_cedula})
+
+    assert r["identidad"] == "Santiago"
+    entrada = [l for l in estado.leer_log() if l["accion"] == "cargada_en_sisfe"][0]
+    assert entrada["operador"] == "Jr"
+    assert entrada["identidad"] == "Santiago"
 
 
 def test_sin_pdf_firmado_no_arranca(monkeypatch, tmp_path):

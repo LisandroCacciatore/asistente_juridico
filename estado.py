@@ -96,7 +96,7 @@ def _quien():
 
 
 # --- Log de acciones (append-only, sobrevive a los archivos) ------
-def registrar_log(accion, id_cedula, caratula="", cuij="", detalle=""):
+def registrar_log(accion, id_cedula, caratula="", cuij="", detalle="", identidad=None):
     """
     Agrega una línea al log de acciones. No se pisa nunca — cada llamada
     suma una entrada nueva. `accion` típicas: "generada", "firmada",
@@ -107,6 +107,15 @@ def registrar_log(accion, id_cedula, caratula="", cuij="", detalle=""):
     para saber de dónde salió; con varias, el usuario distingue quién.
     """
     usuario, maquina = _quien()
+    # Quién operó y con qué identidad se ejecutó (SPEC D18). Si no hay
+    # jornada declarada, el operador cae al usuario de Windows: es el único
+    # dato que hay, y así el log nunca queda con el campo vacío.
+    try:
+        import sesion
+        jornada = sesion.actual() or {}
+    except Exception:
+        jornada = {}
+    operador = jornada.get("operador") or usuario
     entrada = {
         "fecha_hora": _ahora(),
         "accion": accion,
@@ -116,6 +125,8 @@ def registrar_log(accion, id_cedula, caratula="", cuij="", detalle=""):
         "detalle": detalle,
         "usuario": usuario,
         "maquina": maquina,
+        "operador": operador,
+        "identidad": identidad or jornada.get("identidad") or operador,
     }
     with _lock:
         with open(ARCHIVO_LOG, "a", encoding="utf-8") as f:
@@ -138,6 +149,8 @@ def leer_log(limite=None):
     for e in lineas:
         e.setdefault("usuario", "")
         e.setdefault("maquina", "")
+        e.setdefault("operador", e.get("usuario", ""))
+        e.setdefault("identidad", "")
     lineas.reverse()
     return lineas[:limite] if limite else lineas
 
@@ -194,13 +207,14 @@ def marcar_atencion(id_cedula, motivo, etiqueta="Solicita Revisión"):
     registrar_log("atencion", id_cedula, cedula.get("caratula", ""), cedula.get("cuij", ""), motivo)
 
 
-def marcar_firmada(id_cedula, ruta_firmada):
+def marcar_firmada(id_cedula, ruta_firmada, identidad=None):
     cedula = obtener_cedula(id_cedula) or {}
     _actualizar(id_cedula, estado="firmada", ruta_firmada=ruta_firmada, fecha_firmada=_ahora())
-    registrar_log("firmada", id_cedula, cedula.get("caratula", ""), cedula.get("cuij", ""), ruta_firmada or "")
+    registrar_log("firmada", id_cedula, cedula.get("caratula", ""), cedula.get("cuij", ""),
+                  ruta_firmada or "", identidad=identidad)
 
 
-def marcar_cargada_sisfe(id_cedula, detalle="", descripcion=""):
+def marcar_cargada_sisfe(id_cedula, detalle="", descripcion="", identidad=None):
     """La cédula quedó cargada en el SISFE, esperando el clic en NOTIFICAR.
 
     OJO: no se cambia `estado`. El dashboard dibuja tres estados (generada
@@ -213,10 +227,10 @@ def marcar_cargada_sisfe(id_cedula, detalle="", descripcion=""):
     _actualizar(id_cedula, sisfe_cargada=True, sisfe_fecha=_ahora(),
                 sisfe_descripcion=descripcion)
     registrar_log("cargada_en_sisfe", id_cedula, cedula.get("caratula", ""),
-                  cedula.get("cuij", ""), detalle or descripcion)
+                  cedula.get("cuij", ""), detalle or descripcion, identidad=identidad)
 
 
-def marcar_presentada(id_cedula):
+def marcar_presentada(id_cedula, identidad=None):
     """
     Marca la cédula como presentada Y borra los PDF locales (original y
     firmado) — ya cumplieron su función. El registro de que existieron
@@ -224,7 +238,8 @@ def marcar_presentada(id_cedula):
     """
     cedula = obtener_cedula(id_cedula) or {}
     _actualizar(id_cedula, estado="presentada", fecha_presentada=_ahora())
-    registrar_log("presentada", id_cedula, cedula.get("caratula", ""), cedula.get("cuij", ""))
+    registrar_log("presentada", id_cedula, cedula.get("caratula", ""), cedula.get("cuij", ""),
+                  identidad=identidad)
 
     for campo in ("ruta_pdf", "ruta_firmada"):
         ruta = cedula.get(campo)

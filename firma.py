@@ -89,7 +89,7 @@ def _volver_a_firmar_documento(page):
 #  Modo individual (ya validado en producción)
 # ============================================================
 
-def firmar(ruta_pdf, usar_chrome=True, headless=False, pausar=None):
+def firmar(ruta_pdf, usar_chrome=True, headless=False, pausar=None, perfil=None):
     pausar = pausar or pausa_humana
     if not os.path.isfile(ruta_pdf):
         print(f"  ✗ No encuentro el archivo: {ruta_pdf}")
@@ -103,7 +103,7 @@ def firmar(ruta_pdf, usar_chrome=True, headless=False, pausar=None):
     )
     print(f"\n  Firmando: {nombre}")
 
-    with abrir_navegador(usar_chrome=usar_chrome, headless=headless) as (ctx, page):
+    with abrir_navegador(usar_chrome=usar_chrome, headless=headless, perfil=perfil) as (ctx, page):
         print("  Abriendo portal de firma…")
         page.goto(FIRMA_URL)
 
@@ -136,7 +136,8 @@ def firmar(ruta_pdf, usar_chrome=True, headless=False, pausar=None):
 #  Modo lote — NUEVO: varios documentos, una sola ventana
 # ============================================================
 
-def firmar_lote(items, usar_chrome=True, headless=False, pausar=None, on_resultado=None):
+def firmar_lote(items, usar_chrome=True, headless=False, pausar=None, on_resultado=None,
+                perfil=None):
     """
     items: lista de dicts [{"id_cedula": ..., "ruta_pdf": ...}, ...]
     on_resultado: callback opcional on_resultado(id_cedula, ruta_firmada_o_None),
@@ -166,7 +167,7 @@ def firmar_lote(items, usar_chrome=True, headless=False, pausar=None, on_resulta
         print("  ⚠ Ningún documento válido para firmar en el lote.")
         return resultados
 
-    with abrir_navegador(usar_chrome=usar_chrome, headless=headless) as (ctx, page):
+    with abrir_navegador(usar_chrome=usar_chrome, headless=headless, perfil=perfil) as (ctx, page):
         print(f"\n  Firmando en lote: {len(validos)} documento(s).")
         print("  Abriendo portal de firma…")
         page.goto(FIRMA_URL)
