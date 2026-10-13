@@ -1500,7 +1500,13 @@ function continuarAccion(jobId){
   setTimeout(()=>pollAccion(jobId, {ic:"⏳", titulo:"Procesando…"}), 800);
 }
 
-/* ---------- Firmar el lote entero (una sola ventana de firma) ---------- */
+/* ---------- Firmar el lote entero (una sola ventana de firma) ----------
+   Un lote es UNA sesión de FirmAr: el mismo acto repetido, no actos
+   distintos. Por eso lleva UNA identidad, y se elige acá (spec Fase 10a).
+   Si las cédulas ya salieron del SISFE con la sesión de alguien, esa es su
+   identidad y queda fija (D25). Si son de personas distintas no se pueden
+   firmar juntas: se dice ANTES de abrir el portal, en vez de dejar que el
+   servidor las vaya frenando una por una. */
 async function firmarLote(){
   const items = cedulas.filter(c=>c.estado==="generada" && c.ruta_pdf);
   if(!items.length){ toast("⚠ No hay cédulas con PDF para firmar"); return; }
@@ -1514,9 +1520,59 @@ async function firmarLote(){
       <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
     return;
   }
+  elegirIdentidadLote(items);
+}
+
+/* Con qué identidad se firma el lote: la misma lógica que elegirIdentidad()
+   para una sola cédula, pero sobre todas las del lote a la vez. */
+function elegirIdentidadLote(items){
+  const fijas = [...new Set(items.map(c=>c.identidad_cadena).filter(Boolean))];
+  const ops = (SESION.opciones||[]).filter(Boolean);
+
+  if(fijas.length > 1){
+    openModal(`
+      <div class="modal-body"><div class="gate-box">
+        <div class="gate-icon">⚠</div>
+        <h4>No se pueden firmar juntas</h4>
+        <p>Estas cédulas salieron del SISFE con identidades distintas
+           (<b>${fijas.map(esc).join("</b>, <b>")}</b>). Un lote es una sola
+           sesión de FirmAr, así que no se pueden mezclar: firmalas en lotes
+           separados, una identidad por vez. Nadie abrió FirmAr.</p>
+      </div></div>
+      <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
+    return;
+  }
+
+  const fija = fijas[0] || "";
+  const filas = fija
+    ? `<button class="btn primary" style="display:block;width:100%"
+         onclick="mandarLote('${esc(fija)}')">${esc(fija)} · la de estas cédulas</button>`
+    : ops.map(n=>`<button class="btn ghost" style="display:block;width:100%;margin-bottom:8px"
+         onclick="mandarLote('${esc(n)}')">${esc(n)}</button>`).join("");
+
+  openModal(`
+    <div class="modal-body"><div class="gate-box">
+      <div class="gate-icon">🔑</div>
+      <h4>¿Con qué identidad se firman las ${items.length}?</h4>
+      <p>${fija
+        ? `Estas cédulas salieron del SISFE con la sesión de <b>${esc(fija)}</b>:
+           se firman y se notifican con la misma. No se puede cruzar.`
+        : `Una sola ventana de firma para las ${items.length}: podés usar tus claves
+           o las de un compañero. La que elijas vale para todo el lote, y cada
+           cédula queda a nombre de esa identidad.`}</p>
+      ${filas || `<div class="hint">No hay identidades cargadas (config.py).</div>`}
+    </div></div>
+    <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cancelar</button></div>`);
+}
+
+async function mandarLote(identidad){
+  const items = cedulas.filter(c=>c.estado==="generada" && c.ruta_pdf);
+  if(!items.length){ toast("⚠ No hay cédulas con PDF para firmar"); return; }
+  closeModal();
   try{
     const r = await fetch("/api/firmar_lote",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({items: items.map(c=>({id_cedula:c.id, ruta_pdf:c.ruta_pdf}))})});
+      body:JSON.stringify({identidad: identidad||null,
+        items: items.map(c=>({id_cedula:c.id, ruta_pdf:c.ruta_pdf}))})});
     const {job_id} = await r.json();
     poll(job_id, "lote", "firma");
   }catch(e){ toast("⚠ No pude contactar al servidor"); }

@@ -142,6 +142,10 @@ class ItemLote(BaseModel):
 
 class DatosFirmaLote(BaseModel):
     items: list[ItemLote]
+    # Con que identidad se firma el lote ENTERO (spec Fase 10a). Es una sola:
+    # un lote es una sola ventana de FirmAr, o sea el mismo acto repetido, no
+    # actos distintos. Si no viene ninguna, vale la de la jornada (D19).
+    identidad: str | None = None
 
 class DatosGenerarDesdePendiente(BaseModel):
     id_pendiente: str
@@ -302,7 +306,12 @@ def api_firmar_lote(d: DatosFirmaLote):
     items = [{"id_cedula": it.id_cedula, "ruta_pdf": it.ruta_pdf} for it in d.items]
 
     def trabajo(pausar):
-        identidad = sesion.identidad_para_el_acto()
+        # La identidad del lote la elige el panel (Fase 10a). Antes esto era
+        # `identidad_para_el_acto()` sin argumento: el lote entero usaba
+        # siempre la identidad de la jornada, y `ItemLote.identidad` existia
+        # en el modelo pero se descartaba al armar `items`. No habia forma de
+        # decir "esto se firma con la sesion de un companero".
+        identidad = sesion.identidad_para_el_acto(d.identidad)
 
         # Cada cédula del lote tiene que ser de la misma identidad (D25): se
         # firman todas en una sola sesión de FirmAr, así que no se puede
