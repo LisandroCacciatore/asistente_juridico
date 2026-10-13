@@ -58,10 +58,31 @@ adorno, es la puerta de entrada"*.
 - Vence al cambiar el día o a las 12 h sin actividad. No se vuelve a preguntar
   en la misma jornada.
 
-### 1.2 El panel: "revisé N expedientes esta mañana"
+### 1.2 La bienvenida y el panel
 
-Las cuatro listas: **Pendientes de clasificar · Listas para firmar · Listas para
-presentar · Requiere revisión**. Y abajo **Actividad del secretario** y **Mail**.
+Al entrar arranca una **secuencia de bienvenida**: fondo azul tinta, *"Buenos
+días, Santiago"* y cuatro líneas que se van tildando solas — sesión iniciada
+(perfil de Chrome), expedientes con novedades, decretos clasificados, cédulas
+listas para revisar. Dura unos segundos, se puede cortar con **"Saltar →"**, y
+**vale la pena dejarla correr**: es el momento en que el sistema lo recibe a él,
+y usa el nombre que acaba de declarar en la puerta.
+
+Después queda el panel:
+
+- **"Revisé 8 expedientes esta mañana."** y el resumen en una línea (*"5 esperan
+  tu firma, 1 para subir al SISFE, 1 decreto para clasificar y 1 requiere
+  atención."*)
+- las **cuatro tarjetas de métricas**: Listas para firmar · Listas para presentar
+  · Pendientes de clasificar · Requieren atención
+- **Acciones del secretario** (Cédula desde texto, y la aclaración de que las
+  otras cuatro se corren desde la carpeta del cliente)
+- **Listas para firmar** con las cédulas y, más abajo, **Listas para presentar**,
+  **Pendientes de clasificar**, **Requiere revisión**
+- al final, **Mail** y **Actividad del secretario**
+
+Cada cédula es una tarjeta con **su riel de 6 pasos** (Detectado · Generado ·
+Firma · Firmado · Subida · Presentado), la barra de AVANCE (ej. 2/6), los
+PRÓXIMOS pasos y el botón **"Revisar y firmar"**.
 
 La barra de estado ahora dice la verdad:
 
