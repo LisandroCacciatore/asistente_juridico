@@ -12,7 +12,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  :root{
+    :root{
+    /* Neutros base: tinta, papel y líneas */
     --ink:#182338;          /* azul tinta institucional */
     --ink-2:#2a3a57;
     --paper:#eef1f5;        /* gris frío / papel */
@@ -21,15 +22,54 @@
     --line-strong:#c3ccd9;
     --muted:#6a7686;
     --muted-2:#8b96a5;
-    --escudo:#1f8a5b;       /* verde escudo = trámite/listo */
+
+    /* Superficies suaves (antes: 4 grises casi iguales) */
+    --hover:#f5f7fa;        /* hover de botones fantasma */
+    --sunken:#f7f9fb;       /* chips, cajas y filas cerradas */
+    --neutro-texto:#4a5768; /* texto de la etiqueta «estándar» */
+
+    /* Sobre el azul tinta (barra superior) */
+    --on-ink:#eaeef4;       /* texto principal */
+    --on-ink-2:#c3cedd;     /* texto secundario */
+    --on-ink-3:#9fb0c6;     /* texto terciario */
+    --on-ink-off:#5a6577;   /* punto apagado */
+
+    /* Verde escudo = trámite / listo */
+    --escudo:#1f8a5b;
     --escudo-soft:#e6f4ec;
-    --martillo:#4a5a8a;     /* resolución */
-    --ambar:#c07d1a;        /* pendiente */
+    --escudo-texto:#186b47;
+    --escudo-claro:#6fe0a8; /* ícono sobre fondo oscuro */
+
+    /* Azul martillo = resolución.
+       El tinte tiene que LEERSE azul: antes era #e9edf6, prácticamente el
+       mismo gris que --paper, y en la lista «Traslado de demanda» se
+       confundía con «Cédula estándar» (decisión del 24/09/2026). */
+    --martillo:#4a5a8a;
+    --martillo-soft:#d7e1f6;
+    --martillo-texto:#2f3f75;
+
+    /* Ámbar = pendiente (--ambar es para fondos, -texto para texto) */
+    --ambar:#c07d1a;
     --ambar-soft:#fbf1de;
-    --rojo:#b0384a;         /* requiere atención / puerta humana */
+    --ambar-texto:#b45309;
+
+    /* Rojo = requiere atención / puerta humana */
+    --rojo:#b0384a;
     --rojo-soft:#f8e8ea;
+    --rojo-texto:#8a2f3d;
+    --rojo-linea:#eccdd2;
+
+    /* Candado = bus / fuera de circuito */
     --lock:#8a5a2a;
     --lock-soft:#f6ecdf;
+
+    /* Honorarios = familia propia (violeta) */
+    --honorarios-soft:#f0ecf6;
+    --honorarios-texto:#5a4a78;
+
+    /* Degradé verde de marca (marca + barra de avance) */
+    --brand-a:#2f7d5a;
+    --brand-b:#2f9d6f;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
@@ -46,40 +86,40 @@
     display:flex;align-items:center;justify-content:space-between;
     padding:14px 28px;
     background:var(--ink);
-    color:#eaeef4;
+    color:var(--on-ink);
     position:sticky;top:0;z-index:20;
   }
   .brand{display:flex;align-items:center;gap:11px;font-weight:600;letter-spacing:.2px}
   .brand .mark{
     width:26px;height:26px;border-radius:6px;
-    background:linear-gradient(135deg,#2f7d5a,#1f8a5b);
+    background:linear-gradient(135deg,var(--brand-a),var(--escudo));
     display:grid;place-items:center;color:#fff;font-size:14px;
     box-shadow:inset 0 0 0 1px rgba(255,255,255,.15);
   }
-  .brand small{display:block;font-weight:400;font-size:11px;color:#9fb0c6;letter-spacing:.3px}
+  .brand small{display:block;font-weight:400;font-size:11px;color:var(--on-ink-3);letter-spacing:.3px}
   .status{display:flex;gap:20px;align-items:center;font-size:12.5px}
-  .status .item{display:flex;align-items:center;gap:7px;color:#c3cedd}
+  .status .item{display:flex;align-items:center;gap:7px;color:var(--on-ink-2)}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--escudo);box-shadow:0 0 0 3px rgba(31,138,91,.18)}
-  .dot.off{background:#5a6577}
+  .dot.off{background:var(--on-ink-off)}
   .dot.warn{background:var(--ambar);box-shadow:0 0 0 3px rgba(192,125,26,.18)}
 
   /* ---------- Secuencia de barrido ---------- */
   #sweep{
     position:fixed;inset:0;z-index:40;background:var(--ink);
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:26px;color:#dfe6ef;transition:opacity .5s ease;
+    gap:26px;color:var(--on-ink-2);transition:opacity .5s ease;
   }
   #sweep.hide{opacity:0;pointer-events:none}
   .sweep-mark{
     width:54px;height:54px;border-radius:13px;
-    background:linear-gradient(135deg,#2f7d5a,#1f8a5b);
+    background:linear-gradient(135deg,var(--brand-a),var(--escudo));
     display:grid;place-items:center;color:#fff;font-size:26px;
     box-shadow:0 8px 30px rgba(31,138,91,.4);
   }
   .sweep-hello{font-family:'Spectral',serif;font-size:26px;font-weight:500;color:#fff}
   .sweep-log{width:min(420px,84vw);display:flex;flex-direction:column;gap:11px}
   .sweep-line{
-    display:flex;align-items:center;gap:12px;font-size:14px;color:#93a3ba;
+    display:flex;align-items:center;gap:12px;font-size:14px;color:var(--on-ink-3);
     opacity:0;transform:translateY(6px);transition:all .4s ease;
   }
   .sweep-line.show{opacity:1;transform:none}
@@ -90,8 +130,8 @@
     animation:spin .7s linear infinite;
   }
   @keyframes spin{to{transform:rotate(360deg)}}
-  .sweep-skip{position:absolute;bottom:26px;font-size:12px;color:#6d7d94;background:none;border:none;cursor:pointer;letter-spacing:.3px}
-  .sweep-skip:hover{color:#a9b8cc}
+  .sweep-skip{position:absolute;bottom:26px;font-size:12px;color:var(--on-ink-3);background:none;border:none;cursor:pointer;letter-spacing:.3px}
+  .sweep-skip:hover{color:var(--on-ink-3)}
 
   /* ---------- Contenido ---------- */
   .wrap{max-width:1060px;margin:0 auto;padding:34px 28px 70px}
@@ -135,16 +175,16 @@
     padding:3px 9px;border-radius:20px;white-space:nowrap;
   }
   .tipo .ic{font-size:12px}
-  .tipo.aud{background:var(--escudo-soft);color:#186b47}
-  .tipo.traslado{background:#e9edf6;color:#3a4a78}
-  .tipo.estandar{background:#eef1f5;color:#4a5768}
-  .tipo.honorarios{background:#f0ecf6;color:#5a4a78}
+  .tipo.aud{background:var(--escudo-soft);color:var(--escudo-texto)}
+  .tipo.traslado{background:var(--martillo-soft);color:var(--martillo-texto)}
+  .tipo.estandar{background:var(--paper);color:var(--neutro-texto)}
+  .tipo.honorarios{background:var(--honorarios-soft);color:var(--honorarios-texto)}
   .tipo.bus{background:var(--lock-soft);color:var(--lock)}
 
   .dest{margin-top:11px;font-size:12.5px;color:var(--muted)}
   .dest b{color:var(--ink-2);font-weight:500}
   .dest .chip{
-    display:inline-block;background:#f2f5f9;border:1px solid var(--line);
+    display:inline-block;background:var(--sunken);border:1px solid var(--line);
     border-radius:6px;padding:2px 8px;margin:2px 5px 2px 0;font-size:11.5px;color:var(--ink-2);
   }
 
@@ -158,7 +198,7 @@
   }
   .rail .track .fill{
     height:100%;
-    background:linear-gradient(90deg,var(--escudo),#2f9d6f);
+    background:linear-gradient(90deg,var(--escudo),var(--brand-b));
     border-radius:3px;transition:width .45s ease;
   }
   .node{
@@ -192,7 +232,7 @@
   .progress{margin-top:14px;display:flex;align-items:center;gap:10px}
   .progress .pill{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;flex:0 0 auto}
   .progress .bar{flex:1;height:5px;background:var(--line);border-radius:5px;overflow:hidden}
-  .progress .bar .fill{height:100%;background:linear-gradient(90deg,var(--escudo),#2f9d6f);border-radius:5px;transition:width .45s ease}
+  .progress .bar .fill{height:100%;background:linear-gradient(90deg,var(--escudo),var(--brand-b));border-radius:5px;transition:width .45s ease}
   .progress .pct{font-size:11px;color:var(--muted-2);font-variant-numeric:tabular-nums;flex:0 0 auto}
 
   /* próximos pasos */
@@ -219,15 +259,15 @@
   .btn.upload{background:var(--escudo);color:#fff}
   .btn.upload:hover{filter:brightness(1.06)}
   .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line-strong)}
-  .btn.ghost:hover{background:#f5f7fa}
+  .btn.ghost:hover{background:var(--hover)}
   .btn:disabled{opacity:.55;cursor:default}
   .done-tag{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--escudo)}
 
   /* fila de atención */
   .row.attn{background:linear-gradient(90deg,var(--rojo-soft),#fff 60%)}
   .attn-note{
-    margin-top:12px;font-size:12.5px;color:#8a2f3d;background:#fff;
-    border:1px solid #eccdd2;border-radius:8px;padding:9px 12px;display:flex;gap:9px;align-items:flex-start;
+    margin-top:12px;font-size:12.5px;color:var(--rojo-texto);background:#fff;
+    border:1px solid var(--rojo-linea);border-radius:8px;padding:9px 12px;display:flex;gap:9px;align-items:flex-start;
   }
   .attn-note .ic{color:var(--rojo);font-weight:700}
 
@@ -244,7 +284,7 @@
   .modal-head p{font-size:12.5px;color:var(--muted);margin-top:4px}
   .modal-body{padding:18px 22px}
   .preview{
-    background:#f7f9fb;border:1px solid var(--line);border-radius:10px;padding:16px 18px;
+    background:var(--sunken);border:1px solid var(--line);border-radius:10px;padding:16px 18px;
     font-size:12.5px;color:var(--ink-2);line-height:1.65;max-height:230px;overflow:auto;
   }
   .preview .ttl{text-align:center;font-weight:700;letter-spacing:1px;margin-bottom:10px;color:var(--ink)}
@@ -273,7 +313,7 @@
     pointer-events:none;
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-  .toast .ic{color:#6fe0a8}
+  .toast .ic{color:var(--escudo-claro)}
 
   .footnote{margin-top:38px;text-align:center;font-size:11.5px;color:var(--muted-2)}
   .footnote b{color:var(--muted)}
@@ -349,7 +389,7 @@
   }
   .draft .drow{display:flex;align-items:center;gap:10px;margin-top:10px}
   .btn.gmail{background:#fff;color:var(--ink);border:1px solid var(--line-strong);padding:7px 13px;font-size:12.5px}
-  .btn.gmail:hover{background:#f5f7fa}
+  .btn.gmail:hover{background:var(--hover)}
   .lockline{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted-2);margin-top:7px}
   .lockline .ic{color:var(--lock)}
   .mail-hint{
@@ -360,7 +400,7 @@
   .mail-empty{padding:16px;font-size:12.5px;color:var(--muted-2)}
 
   /* filas presentadas (cerradas, atenuadas) */
-  .row.closed{background:#fafbfc}
+  .row.closed{background:var(--sunken)}
   .row.closed .caratula{color:var(--muted);font-weight:500}
 
   @media (max-width:720px){
@@ -680,7 +720,7 @@ function rail(estado){
 
 /* ---------------- Render ---------------- */
 // Escapa texto antes de interpolar en HTML. Los datos (carátulas,
-// destinatarios, razones) vienen de SISFE/Meta — texto de terceros que
+// destinatarios, razones) vienen del SISFE — texto de terceros que
 // no debe poder inyectar HTML/JS en el dashboard.
 function esc(v){
   return String(v ?? "").replace(/[&<>"']/g, ch => ({
@@ -917,7 +957,7 @@ async function renderActividad(){
         <span style="font-weight:600;font-size:13px">${esc(e.accion)}</span>
         ${e.caratula?`<span style="color:var(--muted);font-size:12.5px"> — ${esc(e.caratula)}</span>`:""}
         ${e.detalle?`<div style="color:var(--muted-2);font-size:11.5px;margin-top:2px">${esc(e.detalle)}</div>`:""}
-        ${(e.operador||e.usuario||e.maquina)?`<div style="color:var(--muted-2);font-size:11px;margin-top:2px">👤 ${esc(e.operador||e.usuario||"?")}${e.maquina?` · 🖥 ${esc(e.maquina)}`:""}${(e.identidad && e.operador && e.identidad!==e.operador)?` · <b style="color:#b45309">actuó con la identidad de ${esc(e.identidad)}</b>`:""}</div>`:""}
+        ${(e.operador||e.usuario||e.maquina)?`<div style="color:var(--muted-2);font-size:11px;margin-top:2px">👤 ${esc(e.operador||e.usuario||"?")}${e.maquina?` · 🖥 ${esc(e.maquina)}`:""}${(e.identidad && e.operador && e.identidad!==e.operador)?` · <b style="color:var(--ambar-texto)">actuó con la identidad de ${esc(e.identidad)}</b>`:""}</div>`:""}
       </span>
       <span style="flex:0 0 auto;font-size:11.5px;color:var(--muted-2);font-variant-numeric:tabular-nums">${esc(cuando)}</span>
     </div>`;
@@ -957,12 +997,56 @@ function review(id){
         <div style="height:8px"></div>
         <div class="fld">Hago saber a Ud. que en los autos de referencia se ha dictado el decreto que se notifica, quedando debidamente notificado/a del mismo…</div>
       </div>
-      <p class="hint">Vista previa del PDF generado. Ya guardado en la carpeta del cliente.</p>
+      <p class="hint">Estos son los datos que van al PDF. Para ver el archivo tal
+         como se va a firmar, apretá «Ver el PDF».</p>
+      <div id="pdfBox" style="display:none;margin-top:14px">
+        <div class="hint" id="pdfCap" style="margin:0 0 7px"></div>
+        <iframe id="pdfFrame" title="PDF de la cédula"
+                style="width:100%;height:62vh;border:1px solid var(--line);border-radius:10px;background:var(--surface)"></iframe>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" onclick="closeModal()">Cerrar</button>
+      <button class="btn ghost" onclick="verPdf('${id}')">📄 Ver el PDF</button>
       <button class="btn sign" onclick="elegirIdentidad('${id}','firmar')">🔒 Firmar digitalmente</button>
     </div>`);
+}
+
+/* ---------- Ver el PDF de verdad (no la vista de datos) ----------
+   El navegador no puede abrir una ruta del disco, así que el servidor
+   sirve el archivo de ESA cédula en /api/cedula/<id>/pdf. El iframe se
+   carga recién cuando se aprieta el botón: si cargara al abrir el modal,
+   cada mirada a una cédula bajaría un PDF entero.
+
+   Si la cédula ya está firmada muestra la FIRMADA (es la que se sube al
+   SISFE); si todavía no, el borrador generado. Un segundo clic lo esconde.
+
+   En modo demo no hay servidor: avisa en vez de dejar un marco vacío. */
+function verPdf(id){
+  const c = getCed(id);
+  const box = document.getElementById("pdfBox");
+  const frame = document.getElementById("pdfFrame");
+  const cap = document.getElementById("pdfCap");
+  if(!box || !frame) return;
+
+  if(!SERVER){
+    toast("En la demo no hay servidor: el PDF se ve cuando corre servidor.py");
+    return;
+  }
+  const tieneFirmado = !!c.ruta_firmada;
+  const cual = tieneFirmado ? "firmada" : "original";
+  const dir = `/api/cedula/${encodeURIComponent(id)}/pdf?cual=${cual}`;
+
+  if(box.style.display !== "none"){        // segundo clic: lo esconde
+    box.style.display = "none";
+    frame.removeAttribute("src");
+    return;
+  }
+  cap.textContent = tieneFirmado
+    ? "Cédula FIRMADA (la que se sube al SISFE)."
+    : "Cédula generada — todavía sin firmar.";
+  frame.src = dir;
+  box.style.display = "";
 }
 
 /* ---------- Puerta de espera genérica (modo servidor) ---------- */
@@ -1590,7 +1674,7 @@ function abrirPuertaSesion(){
                style="width:100%;letter-spacing:0"
                onkeydown="if(event.key==='Enter')declararSesion(this.value)">
         <div class="hint" id="errorSesion"
-             style="display:none;color:#b45309;margin-top:8px;font-weight:600"></div>
+             style="display:none;color:var(--ambar-texto);margin-top:8px;font-weight:600"></div>
         ${atajos ? `<div class="hint" style="margin-top:10px">Atajos (mientras no tengas el mail cargado): ${atajos}</div>` : ""}
         ${ops.length ? "" : `<div class="hint">No hay personas cargadas: agregalas en config.py.</div>`}
       </div>

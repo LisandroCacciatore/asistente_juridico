@@ -27,13 +27,12 @@ for _flujo in (sys.stdout, sys.stderr):
         pass
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
 from firma import firmar, firmar_lote
-from meta_juridico import subir, ExpedienteNoEncontrado
 import estado
 import sesion
 import generar_cedula
@@ -136,12 +135,6 @@ class DatosFirma(BaseModel):
     ruta_pdf: str
     identidad: str | None = None
 
-class DatosSubida(BaseModel):
-    id_cedula: str
-    ruta_pdf: str
-    cuij: str
-    caratula: str | None = None
-
 class ItemLote(BaseModel):
     id_cedula: str
     ruta_pdf: str
@@ -178,6 +171,47 @@ def dashboard():
 @app.get("/api/cedulas")
 def api_cedulas():
     return estado.cargar()
+
+
+# --- El PDF de una cédula, para verlo en el panel -----------------
+# Hasta ahora el modal «Revisar cédula» mostraba los DATOS de la cédula y
+# decía «vista previa del PDF», que era mentira: el navegador no puede
+# abrir una ruta del disco del servidor. Esta ruta sirve el archivo real.
+#
+# SEGURIDAD: la ruta del archivo sale SIEMPRE del registro (estado.json),
+# nunca de lo que manda el navegador. Así el panel no puede pedir un
+# archivo que no sea el de una cédula suya: no hay forma de armar un
+# "../" desde afuera.
+#
+# `cual`: "firmada" (la que baja de FirmAr), "original" (el borrador) o
+# "auto" (el firmado si existe, si no el original). Se sirve inline para
+# que el navegador lo muestre en el visor en vez de bajarlo.
+@app.get("/api/cedula/{id_cedula}/pdf")
+def api_cedula_pdf(id_cedula: str, cual: str = "auto"):
+    cedula = estado.obtener_cedula(id_cedula)
+    if not cedula:
+        return JSONResponse(
+            {"error": "No encuentro esa cédula en el registro."}, status_code=404)
+
+    original = cedula.get("ruta_pdf") or ""
+    firmada = cedula.get("ruta_firmada") or ""
+    if cual == "original":
+        ruta = original
+    elif cual == "firmada":
+        ruta = firmada
+    else:
+        ruta = firmada or original          # auto: el firmado manda
+
+    if not ruta or not os.path.isfile(ruta):
+        # Los PDF son transitorios: al notificar la cédula, se borran.
+        return JSONResponse(
+            {"error": "El PDF no está en el disco. Puede haberse borrado al "
+                      "cerrar la cédula, o todavía no se generó."},
+            status_code=404)
+
+    return FileResponse(ruta, media_type="application/pdf",
+                        filename=os.path.basename(ruta),
+                        content_disposition_type="inline")
 
 
 # --- Quién está trabajando (SPEC D18 y D19) -----------------------
@@ -295,24 +329,26 @@ def api_firmar_lote(d: DatosFirmaLote):
     return {"job_id": job_id}
 
 
-# --- Subir a Meta Jurídico -----------------------------------------
-@app.post("/api/subir")
-def api_subir(d: DatosSubida):
-    def trabajo(pausar):
-        try:
-            ok = subir(d.ruta_pdf, d.cuij, caratula=d.caratula, pausar=pausar)
-        except ExpedienteNoEncontrado as e:
-            # No es un tropiezo de automatización: el expediente no
-            # existe en Meta Jurídico. No caer al modo manual — marcar
-            # "Solicita Revisión" para que el abogado lo resuelva a
-            # mano, sin riesgo de crear un expediente duplicado.
-            estado.marcar_atencion(d.id_cedula, str(e), etiqueta="Solicita Revisión")
-            return {"ok": False, "requiere_revision": True, "motivo": str(e)}
-        if ok:
-            estado.marcar_presentada(d.id_cedula)
-        return {"ok": ok}
-    job_id = _lanzar("subida", d.id_cedula, trabajo)
-    return {"job_id": job_id}
+# --- Subir la cédula al SISFE --------------------------------------
+# Acá NO hay ruta propia: la subida es la acción `notificar_sisfe` y su
+# único camino es POST /api/skill/<accion>, que es el que usa el panel.
+#
+# La ruta vieja POST /api/subir (Meta Jurídico, con su `DatosSubida` y el
+# import de `meta_juridico`) se eliminó el 24/09/2026: desde que Meta salió
+# del circuito (spec D1) el panel no la llamaba nunca, así que era código
+# muerto que igual importaba el módulo dormido al arrancar el servidor.
+#
+# OJO con una cosa que se malinterpreta: esa ruta era el único lugar que
+# marcaba "Solicita Revisión" (`estado.marcar_atencion`). NO es una red de
+# seguridad que se pierde al sacarla — es una decisión del 16/09/2026 que
+# la reemplazó, y está fijada por test. Ver
+# tests/test_acciones_sisfe.py::test_si_el_portal_no_quedo_listo_avisa_y_no_marca_nada
+# y el docstring de test_cargarla_en_el_sisfe_no_la_saca_de_la_pantalla:
+# si el paso del SISFE le cambiara el estado a la cédula, desaparecería de
+# todas las secciones del panel y el abogado se quedaría sin dónde apretar
+# «ya la notifiqué». Por eso un fallo del portal AVISA y deja la cédula
+# como estaba (en «firmada», lista para reintentar), en vez de esconderla
+# en «Solicita Revisión».
 
 
 # --- Destinatarios de una cédula (paso previo, sin generar nada) ---

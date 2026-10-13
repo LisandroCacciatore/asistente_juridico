@@ -3,6 +3,10 @@ estado.json
 estado_expedientes.json
 cedulas_procesadas.json
 log_acciones.jsonl
+# sesion.json = quién está trabajando, con su máquina y su usuario de
+# Windows (spec D11/D18/D19). Es dato de auditoría por máquina, igual que
+# el estado: no se sube. Faltaba acá (agregado el 24/09/2026).
+sesion.json
 cedulas_temp/
 ExpedientesDigitales/
 PDFs_decretos/
