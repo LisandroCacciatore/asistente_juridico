@@ -1,8 +1,15 @@
 # ADD ONs — Asistente Jurídico (Estudio Segovia)
 
 **Fecha:** 13/09/2026
-**Producto base:** asistente_juridio (`C:\Users\Torso\asistente_juridico\`)
+**Producto base:** asistente_juridico (`C:\Users\Torso\asistente_juridico\`)
 **Autor:** Lisandro Cacciatore (agentic-sdlc + octalysis-core)
+
+> ⚠️ **Este documento es ROADMAP COMERCIAL, no estado del repo.** El estado real
+> lo dice `SPEC_CIRCUITO_v0.2.md`; los pendientes son sus `- [ ]`.
+> **Actualizado el 24/09/2026** para corregir dos diagnósticos que ya eran
+> falsos: Meta Jurídico **no** es una dependencia crítica (salió del circuito el
+> 16/09/2026, spec D1, y su módulo está dormido) y el monitor de SISFE refresca
+> **cada 10 minutos** (spec D13), no cada 30.
 
 ---
 
@@ -16,7 +23,7 @@
 | Servidor local FastAPI + pausa humana HTTP | ✅ productivo | `servidor.py` |
 | Generación de cédulas sin IA (multi-destinatario, clasificación) | ✅ probado | `generar_cedula.py`, `cedulas.py`, `cedulas_pdf.py` |
 | Firma en FirmAr (login → adjuntar → PIN+firmar → descarga) | ✅ probado | `firma.py` (PRUEBA TÉCNICA real OK) |
-| Búsqueda en Meta Jurídico (reescrita con grabación real) | ✅ probado | `meta_juridico.py` |
+| ~~Búsqueda y subida en Meta Jurídico~~ | ➖ **fuera del circuito** (16/09/2026, spec D1) | `meta_juridico.py` queda dormido y no lo importa nadie |
 | Persistencia en `estado.json` + circuito completo | ✅ validado | `estado.py` |
 | Arranque portable en 1 clic (`Iniciar_Asistente.bat`) | ✅ verificado | bat dinámico |
 | Migración skills Claude → repo (6/6 migradas, 4 con scripts) | ✅ completo | `skills/`, `scripts/` |
@@ -30,8 +37,8 @@
 |---|---|---|
 | SISFE | reCAPTCHA matriculado | Seguridad externa |
 | FirmAr | CUIL + contraseña + OTP + PIN + FIRMAR | Firma digital, responsabilidad civil |
-| Meta Jurídico | Login + código email (2FA) | 2FA por diseño |
-| Meta Jurídico | Clic final en "Presentar" | Acto irreversible |
+| SISFE (cédula) | Login: contraseña + reCAPTCHA | Seguridad del acceso matriculado |
+| SISFE (cédula) | Clic final en **Notificar** | Acto irreversible, y es de Santiago |
 
 ---
 
@@ -52,7 +59,7 @@
 
 | Add-On | Estado actual | Con el Add-OF |
 |---|---|---|
-| **Monitor de SISFE (decretos)** | ⬅️ VALIDAR en vivo. Selectores marcados. | Una vez validados los selectores, el sistema revisa SISFE periódicamente (cada 30 min), detecta decretos nuevos, dispara la generación automática de cédula, y deja todo firmado y presentado (con las pausas humanas correspondientes). |
+| **Monitor de SISFE (decretos)** | ⬅️ VALIDAR en vivo. Selectores marcados. | Una vez validados los selectores, el sistema revisa SISFE periódicamente (**cada 10 min**, spec D13), detecta decretos nuevos, dispara la generación automática de cédula, y deja todo listo para firmar y notificar (con las pausas humanas correspondientes). |
 | **Descarga automática de cédulas presentadas** | No existe. Se busca manualmente en Meta. | Una vez que una cédula queda presentada, el sistema descarga el comprobante y lo asocia al expediente. |
 | **Estado en tiempo real de un expediente** | No existe. Se pregunta al cliente. | El sistema hace raspado periódico de Meta/SISFE y reporta: "Tu expediente Gonzalez pasó a etapa X". |
 
@@ -136,10 +143,11 @@
 
 ## 6. Dependencias críticas (lo que falta validar en vivo)
 
-1. **SISFE** → selectores del monitor (⬅️ VALIDAR). Sin esto, el monitor judicial no arranca.
-2. **Meta Jurídico** → confirmar subida con caso real (gonzalez). Sin esto, la presentación no está cerrada.
-3. **Firma en lote** → hoy es 1 por 1. Si el estudio sube 5 cédulas, tarda 5×. Optimizable.
-4. **Credenciales** → el cliente las maneja en su `.config.py` local. Nunca viaja al servidor ni al chat.
+1. **SISFE** → (a) los selectores del monitor y (b) los **5 selectores de la subida de la cédula firmada** (spec, Fase 6). Mientras no se validen, ni el monitor ni la notificación automática arrancan.
+2. ~~**Meta Jurídico** → confirmar subida con caso real (gonzalez).~~ **Ya no:** salió del circuito el 16/09/2026 (spec D1).
+3. **Firma en lote** → el código existe y está wireado, pero **nunca se corrió contra FirmAr real**. Es el otro tramo del circuito principal sin validar.
+4. **Credenciales** → el cliente las maneja en su `config.py` local, que **no está en el repo**. Nunca viaja al servidor ni al chat.
+5. **Casilla de Gmail del estudio** → falta autorizar el token en la máquina de Santiago (se probó contra una casilla de prueba).
 
 ---
 

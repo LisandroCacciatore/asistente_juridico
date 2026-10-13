@@ -382,15 +382,15 @@ de carpetas del estudio. Se prefirió no publicarlo.
 | Persistencia y ciclo de vida (`estado.py`) | ✅ | `ESTADO_DEL_PROYECTO.md` §4 + `tests/test_estado.py` |
 | **Firma en FirmAr — cédula individual** | ✅ | `ESTADO_DEL_PROYECTO.md` §4: *"circuito real completo… Login → adjuntar → PIN+firmar → descarga automática. Funcionó de punta a punta"*, corrido por Santiago con la cédula `PRUEBA TECNICA` (`prueba_tecnica.json`). `ADDONS.md` lo repite. |
 | **Firma en lote (`firmar_lote`)** | ❌ | Existe (`firma.py:139`, `/api/firmar_lote`) pero **toda la evidencia es contra dummies, nunca contra FirmAr real** (`PENDIENTES.feature.md`). |
-| Búsqueda en Meta Jurídico | ⚠️ | Reescrita con la grabación real; probada con dummies que replican los dos casos. **Falta la confirmación en el portal real** (`ESTADO_DEL_PROYECTO.md` §4). |
-| **Subida/presentación completa en Meta Jurídico** | ❌ | `ESTADO_DEL_PROYECTO.md` §5.1: *"es el único eslabón sin probar en el portal de verdad"*. Sin esto, el circuito principal no está cerrado. |
+| ~~Búsqueda y subida en Meta Jurídico~~ | ➖ | **Eliminado del circuito el 16/09/2026 (spec D1):** la cédula firmada va directo al SISFE. `meta_juridico.py` queda guardado y dormido, y ya no lo importa nadie (lo congela `tests/test_circuito_sin_meta.py`). |
+| **Subir la cédula firmada al SISFE** | ⚠️ | Construido (`sisfe_notificar.py`) y cubierto por tests contra una pantalla de mentira. **Falta la pasada en vivo**: confirmar los 5 selectores (spec, Fase 6). |
 | Monitor de SISFE | ⚠️ | Estructura lista, pero los selectores del login (`#circunscripcion`, `#colegio`) están marcados `⬅ VALIDAR` (`PENDIENTES.feature.md`). |
 | Modo continuo del monitor | ⚠️ | La lógica de horario se probó aislada (4 casos); nunca una corrida sostenida de una jornada. |
 | Skill `raeo` (oficio RAEO vía Hermes) | ✅ (caso ficticio) | Corrida en la sesión de desarrollo: generó PDF de 3 páginas + Word + **borrador de Gmail con el Word adjunto**, y la bandeja de enviados quedó **vacía**. Evidencia en carpeta temporal, no versionada. |
 | Skills `art`, `boletas`, `transferencia` | ⚠️ | Registradas y cableadas; no hay corrida real registrada. |
 | Capa de mail (código) | ✅ | `mail_gmail.py` sin función de envío; `/api/mail/bandeja` y `/api/mail/borradores` responden. |
 | Capa de mail **contra la casilla del estudio** | ❌ | Se probó contra **una casilla de Gmail de prueba**, no la del estudio. Falta autorizar la casilla real en la máquina de Santiago. |
-| Tests sin portal | ✅ | `tests/` existe: `python -m pytest tests/ -q` → **33/33 en 0,46 s**, sin portal ni login. |
+| Tests sin portal | ✅ | `python -m pytest tests/ -q` → **259 passing, 0 skipped** (~16 s), sin portal ni login. Los 5 que antes se salteaban por no tener Chromium instalado ahora corren, incluido el blindaje de D17 (`test_no_aprieta_notificar_ni_con_todo_cargado`). |
 | Formularios SRT de `cliente-art-nuevo` | ✅ | Los **4** Anexos oficiales vigentes (Res. SRT 5/2026) presentes, con el mapeo de campos verificado (36/36, 37/37, 34/34 y 27/27). El **Anexo IV se agregó el 16/09/2026**, junto con el arreglo del bug que hacía que el PDF saliera vacío al abrirlo. |
 | Dashboard (riel, listas, acciones, mail) | ✅ | Renderizado y verificado por captura; los GET traen datos reales. |
 
@@ -398,12 +398,14 @@ de carpetas del estudio. Se prefirió no publicarlo.
 
 En orden de impacto (`PENDIENTES.feature.md` prioriza los dos primeros):
 
-1. **Presentación real en Meta Jurídico, de punta a punta** con un caso que
-   exista de verdad en el portal. Es el tramo que cierra el circuito.
+1. **La pasada en vivo del SISFE** con Santiago: confirmar los 5 selectores
+   (búsqueda por CUIJ, «Nueva Cédula», Descripción genérica, input de archivo
+   y tabla de Partes). Es el tramo que cierra el circuito ahora que Meta salió.
 2. **Firma en lote con documentos reales** (dos cédulas en una sola sesión
-   de FirmAr).
-3. **Validar los selectores de SISFE** en el portal real y sacarles el
-   `⬅ VALIDAR`.
+   de FirmAr). El código está y está wireado: falta la corrida real.
+3. **Validar los selectores del monitor de SISFE** en el portal real y sacarles
+   el `⬅ VALIDAR` (son 10 marcas en todo el repo, incluida la skill de apertura
+   de cuenta judicial).
 4. **Autorizar la casilla de Gmail del estudio** en la máquina de Santiago.
 5. **Corrida sostenida del monitor** durante una jornada.
 
@@ -421,20 +423,26 @@ En orden de impacto (`PENDIENTES.feature.md` prioriza los dos primeros):
    *"Suite de pruebas automatizada (no existe todavía)"* y que el único test
    era `dev/test_rail.js`. Ahora está marcada como hecha en `0140f77`, con
    el texto original conservado como registro.
-3. **Los juzgados están duplicados.** `skills/juzgados_rosario.json` (44) y
-   `config.JUZGADOS` son la misma información, y **ningún código lee el
-   JSON**: se mantiene a mano en `config.py`. Van a divergir.
+3. ✅ **Los juzgados — CORREGIDO el 24/09/2026: no estaban duplicados.** Acá
+   decía que `skills/juzgados_rosario.json` (44) no lo leía ningún código y
+   que la lista se mantenía a mano en `config.py`, así que las dos copias iban
+   a divergir. **Era falso.** `expediente_utils._juzgados()` **sí lee el JSON**
+   (`expediente_utils.py:69`) y `config.JUZGADOS` solo lo pisa si tiene datos,
+   a propósito (una máquina puede querer pisar alguno). El JSON es la fuente y
+   tiene los 44 juzgados.
 4. **Los snippets `bloque_firma_lote.html` y
    `bloque_pendientes_clasificar.html` traen instrucciones de "pegá esto
    en tu HTML"** y el dashboard ya tiene esas funciones adentro. Son una
-   segunda versión de la misma UI: **[A VERIFICAR]** si todavía se usan
-   para algo o son huérfanos.
+   segunda versión de la misma UI. ✅ **VERIFICADO el 24/09/2026: son
+   huérfanos** — 0 referencias en todo el repo (`.py`, `.html`, `.js`, `.bat`).
+   Se pueden borrar cuando alguien quiera; no se borraron acá para no mezclar
+   la limpieza con el resto.
 5. ✅ **`requirements.txt` — AGREGADO.** Ya no hace falta leer este documento para
    instalar: `python -m pip install -r requirements.txt`. Además
    `preparar_maquina.py` crea el `config.py` con la matrícula y avisa si falta
    instalar algo o si Hermes no está en el PATH.
-6. **`package.json`** es resto de un scaffold de Node/Playwright, sin uso
-   aparente.
+6. **`package.json`** es resto de un scaffold de Node/Playwright. ✅ **Verificado
+   el 24/09/2026: no lo usa nada** (0 referencias en `.py` y `.bat`).
 7. **`_error_mail()` traduce bien los errores de Gmail**, pero ese camino
    nunca se probó con un token realmente vencido (solo se leyó el código).
 
@@ -496,9 +504,10 @@ Reglas que se sostienen:
 6. Abre FirmAr, se loguea, y el sistema **adjunta el PDF**; él pone PIN y
    firma. Puede firmar varias en una ventana (**firmar en lote**).
 7. El sistema **descarga el firmado** y la cédula pasa a **Listas para presentar**.
-8. Abre Meta Jurídico, se loguea (2FA), y el sistema busca el expediente y
-   adjunta el archivo.
-9. Él revisa y aprieta **Presentar**.
+8. Abre el SISFE, se loguea (contraseña + reCAPTCHA), y el sistema busca el
+   expediente por CUIJ, **verifica que sea el mismo** (carátula + CUIJ), carga
+   la descripción, adjunta la cédula **firmada** y tilda las Partes.
+9. Él revisa y aprieta **Notificar**.
 10. La cédula queda **Presentada** y el PDF temporal se borra.
 11. Todo queda en `log_acciones.jsonl` y se ve en **Actividad del secretario**.
 
@@ -556,9 +565,9 @@ confirmarlos contra la versión instalada.
 - El **comando y los flags vigentes de Hermes** (los del código están en §5).
 - La **versión de Python** objetivo (hay `requirements.txt`, pero ningún
   `.python-version`; se probó con 3.11).
-- Si `bloque_firma_lote.html` y `bloque_pendientes_clasificar.html` siguen
-  teniendo algún uso.
-- Si `package.json` es basura reciclable.
+- ~~Si `bloque_firma_lote.html` y `bloque_pendientes_clasificar.html` siguen
+  teniendo algún uso.~~ ✅ **Resuelto el 24/09/2026: no tienen ninguno.**
+- ~~Si `package.json` es basura reciclable.~~ ✅ **Resuelto: no lo usa nada.**
 - **[MEMORIA]** El `ADDONS.md` local menciona sprints, precios y add-ons
   (bot de Telegram, Docker, backup). Eso es **roadmap**, no estado del
   repo: nada de eso está implementado acá.
@@ -579,5 +588,10 @@ confirmarlos contra la versión instalada.
 
 ---
 
-*Escrito el 16/09/2026 contra el commit `0140f77` de `main`. Todo cambio
-posterior a esa fecha no está reflejado acá.*
+*Escrito el 16/09/2026 contra el commit `0140f77` de `main`.*
+
+*Actualizado el 24/09/2026: se corrigieron los puntos que habían quedado
+falsos o viejos — la deuda de los juzgados (era falsa), los contadores de
+tests, el flujo del abogado (seguía nombrando Meta Jurídico) y los huérfanos
+(quedaron verificados). **Lo que dice la spec manda sobre este documento:
+`SPEC_CIRCUITO_v0.2.md`.***

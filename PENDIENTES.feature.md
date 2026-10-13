@@ -1,3 +1,17 @@
+> ⚠️ **SNAPSHOT VIEJO — NO lo uses como lista de pendientes.**
+>
+> Se generó contra el commit `beb7f72`, que está **25 commits atrás** de `main`.
+> Varias de sus `Feature` ya están hechas (están marcadas adentro) y varias ya no
+> van: **Meta Jurídico salió del circuito el 16/09/2026** (spec D1), así que las
+> dos que este archivo priorizaba como «de mayor impacto» son justo las que no se
+> trabajan.
+>
+> **La lista de pendientes son los `- [ ]` de `SPEC_CIRCUITO_v0.2.md`.** Este
+> archivo se conserva como registro de qué se pidió y por qué.
+> Estado al 24/09/2026: `python -m pytest tests/ -q` → **259 passing**.
+
+---
+
 # Asistente Jurídico — Pendientes reales (Gherkin)
 
 Generado contra el repo real (https://github.com/LisandroCacciatore/asistente_juridico),
@@ -335,14 +349,13 @@ Feature: Suite de pruebas automatizada (HECHA en 0140f77 — ver nota)
   cualquiera de estos escenarios hace falta copiar `config.example.py`
   a `config.py` y completarlo — ahí están documentadas todas las claves
   que el código realmente importa.
-- **El repo puede estar en privado.** Si no se puede clonar, es porque
-  Lisandro lo puso en privado a propósito (dato de esta sesión) — pedir
-  que lo pase a público un rato, no asumir que el repo dejó de existir.
-- Los escenarios de "Meta Jurídico sin cortes" y "firma en lote real"
-  son los de mayor impacto si hay que priorizar: son los dos únicos
-  tramos del circuito principal (no de las skills satélite) que
-  todavía no se vieron funcionar de punta a punta con casos reales.
-- **Hallazgo confirmado en esta vuelta, no una duda:** falta el
-  **Anexo IV** de la SRT (Resolución 5/2026, vigente desde 02/02/2026).
-  No es "hay que validar si cambió" — es "falta directamente, hay que
-  agregarlo". Ver el detalle en la Feature de vigencia SRT.
+- **El repo está en PRIVADO desde el 24/09/2026** (el historial tiene datos de
+  causas reales). Si no se puede clonar, es por eso: hay que pedir acceso, no
+  asumir que el repo dejó de existir.
+- ~~Los escenarios de «Meta Jurídico sin cortes» y «firma en lote real» son los
+  de mayor impacto.~~ **Corregido el 24/09/2026:** Meta salió del circuito (D1).
+  El mayor impacto hoy es **la pasada en vivo del SISFE** (Fase 6) y la **firma
+  en lote con documentos reales**.
+- ~~Hallazgo confirmado: falta el Anexo IV de la SRT.~~ **Ya no: está hecho**
+  (commit `a7da75e`, 16/09/2026 — los 4 Anexos están en `assets/` con el mapeo
+  verificado). Lo que sigue valiendo es el **control de vigencia**, no agregarlo.
