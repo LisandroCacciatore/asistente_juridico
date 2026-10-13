@@ -29,9 +29,18 @@ TOKEN_PATH = os.path.join(
     os.environ.get("HERMES_HOME", os.path.expanduser("~/AppData/Local/hermes")),
     "google_token.json",
 )
+# Los scopes que el codigo USA de verdad (verificado el 24/09/2026):
+#   - readonly: leer la bandeja y el detalle de un mensaje.
+#   - modify:   crear y listar borradores (drafts().create / drafts().list).
+# 'gmail.send' estaba declarado y no lo usa NADA: este modulo no tiene —ni
+# debe tener— una sola llamada de envio.
+#
+# OJO con lo que esto NO es: 'gmail.modify' ya habilita enviar, asi que sacar
+# el literal no le quita el permiso de mandar. La garantia de que el asistente
+# nunca manda no es el scope: es que NO HAY ninguna llamada de envio en el
+# codigo, sostenida por revision (spec D12 y D17: el envio es del abogado).
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.modify",
 ]
 
