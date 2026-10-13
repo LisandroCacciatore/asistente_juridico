@@ -466,6 +466,13 @@ Reglas que se sostienen:
   hay clave de contraseña en `config.example.py`.)
 - **El token OAuth de Gmail vive fuera del repo**, en el perfil de Hermes
   de esa máquina, y es de una sola casilla.
+- **Los datos de casos reales no se transcriben (regla del 24/09/2026).** Los
+  ejemplos de carátula, CUIJ, CUIT, partes y correos que aparecen en el código,
+  los tests y estos documentos son **ficticios**. Si alguna vez se citó un caso
+  real como origen de un texto (por ejemplo, el de la Bus Federal o la tabla de
+  Partes del SISFE), quedó el *hecho* —que se verificó contra el portal— pero no
+  los datos: se reemplazaron por valores de ejemplo. Un CUIJ real en un repo es
+  la puerta a un expediente de un cliente.
 - **Los datos de prueba del repo son ficticios a propósito**: `prueba_tecnica.json`
   y `gonzalez_prueba.json` dicen "PRUEBA TÉCNICA" / "ART EJEMPLO" y su
   texto aclara que no son decretos reales y no deben presentarse. Usalos

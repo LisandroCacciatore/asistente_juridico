@@ -234,8 +234,12 @@ destinatarios detectados **antes** de generar, con todos tildados, y que él des
 |---|---|---|---|
 | ☐ | AUXILIAR DE JUSTICIA | CAJA DE SEG.SOCIAL DE ABOGADOS Y PROCURA (CS01) | |
 | ☐ | AUXILIAR DE JUSTICIA | CAJA FORENSE-ROSARIO (CF02) | |
-| ☐ | REPRESENTANTE | LAMAS, ERICA GISELA (6372) | |
-| ☐ | REPRESENTANTE | PEREYRA, FABIAN CARLOS (XXI100) | FCPEREYRA@GMAIL.COM |
+| ☐ | REPRESENTANTE | DUARTE, SILVIA NOEMI (6372) | |
+| ☐ | REPRESENTANTE | BENITEZ, MARIO ALBERTO (XXI100) | REPRESENTANTE@EJEMPLO.COM |
+
+*(Nota de privacidad: los nombres, las matrículas y el correo de esta tabla son
+ficticios. Se transcribió de la pantalla real del SISFE el 16/09/2026 y después
+se reemplazaron las partes por valores de ejemplo.)*
 
 ### Lo que existe hoy
 

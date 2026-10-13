@@ -26,8 +26,8 @@ Guardar las rutas de estos dos PDF: se usan para el paquete completo (Opción 2)
 ## Paso 1 — Extraer datos de los dos archivos
 
 **Del Informe de Saldos (banco de ORIGEN):**
-- `caratula`: la del informe, **expandiendo abreviaturas** y normalizando ("C" suelto → "C/", agregar "S/ {Motivo}" si la carátula no trae el objeto; ej. "BAUER ANIBAL JOSE C PONZIO OSCAR HECTOR" + Motivo "COBRO DE PESOS" → "BAUER ANIBAL JOSE C/ PONZIO OSCAR HECTOR S/ COBRO DE PESOS").
-- `cuij`: los 11 dígitos del CUIJ con formato `21-XXXXXXXX-X` (ej. `21262695821` → `21-26269582-1`).
+- `caratula`: la del informe, **expandiendo abreviaturas** y normalizando ("C" suelto → "C/", agregar "S/ {Motivo}" si la carátula no trae el objeto; ej. "ARCE ANIBAL TOMAS C PONCE OSCAR RUBEN" + Motivo "COBRO DE PESOS" → "ARCE ANIBAL TOMAS C/ PONCE OSCAR RUBEN S/ COBRO DE PESOS").
+- `cuij`: los 11 dígitos del CUIJ con formato `21-XXXXXXXX-X` (ej. `21000000155` → `21-00000015-5`).
 - `cuenta_judicial`: "Nro. de cuenta".
 - `cbu_origen`: el CBU del informe.
 - `banco_origen_nombre`: nombre del banco del informe, tal como se escribe en el cuerpo (ej. "Banco Municipal de Rosario", "Nuevo Banco de Santa Fe S.A."). También se usa en mayúsculas como destinatario del oficio.
@@ -47,7 +47,7 @@ Guardar las rutas de estos dos PDF: se usan para el paquete completo (Opción 2)
 - `cbu_destino`: CBU de destino (22 dígitos).
 - `titular`: titular de la cuenta (debe coincidir con el actor de la carátula; si no, avisar a Santiago antes de generar).
 - `cuil`: si la constancia trae CUIL/CUIT, formatear `XX-XXXXXXXX-X`. Si solo trae DNI, dejar `cuil` en `""` (el script omite el campo CUIL).
-- `dni`: con puntos (ej. `23.422.977`). Si la constancia trae "DU"/DNI con ceros a la izquierda, quitarlos.
+- `dni`: con puntos (ej. `30.123.456`). Si la constancia trae "DU"/DNI con ceros a la izquierda, quitarlos.
 
 **Verificación clave:** el titular del CBU destino debe corresponder al actor de la carátula. Si no coinciden, avisar a Santiago — transferir al CBU equivocado es un error grave.
 
@@ -88,20 +88,20 @@ Ejemplo de `datos.json` (caso fuera de Rosario, otro banco, sin CUIL):
 
 ```json
 {
-  "caratula": "BAUER ANIBAL JOSE C/ PONZIO OSCAR HECTOR S/ COBRO DE PESOS",
-  "cuij": "21-26269582-1",
+  "caratula": "ARCE ANIBAL TOMAS C/ PONCE OSCAR RUBEN S/ COBRO DE PESOS",
+  "cuij": "21-00000015-5",
   "expte_interno": "", "omitir_expte": true,
   "juzgado_desc": "Juzgado de Primera Instancia de Distrito en lo Civil, Comercial y Laboral de San Jorge",
   "juez": "", "cargo_juez": "JUEZ", "secretario": "", "cargo_secretario": "SECRETARIO",
   "ciudad": "San Jorge",
   "monto_letras": "OCHOCIENTOS MIL", "monto_num": "800.000",
-  "cuenta_judicial": "105346", "cbu_origen": "3300544530000001053462",
+  "cuenta_judicial": "000000", "cbu_origen": "0000000000000000000001",
   "banco_origen_nombre": "Nuevo Banco de Santa Fe S.A.",
   "sucursal_origen_desc": "Sucursal San Jorge", "sucursal_origen_linea": "Sucursal San Jorge",
   "banco_destino": "de la Nación Argentina",
   "tipo_cuenta_destino": "Caja de ahorro",
-  "cuenta_destino": "1957334314", "cbu_destino": "0110195530019573343147",
-  "titular": "Bauer Anibal Jose", "dni": "23.422.977", "cuil": "",
+  "cuenta_destino": "0000000002", "cbu_destino": "0000000000000000000002",
+  "titular": "Arce Anibal Tomas", "dni": "30.123.456", "cuil": "",
   "concepto": "capital por cobro de pesos",
   "fecha_dia": "", "fecha_mes": "Julio", "fecha_anio": "2026",
   "abogado": "SANTIAGO A. SEGOVIA", "abogado_apellido": "Segovia",

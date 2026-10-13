@@ -6,7 +6,7 @@
 #  ACÁ. Meta Jurídico salió del circuito (SPEC D1).
 #
 #  USO (desde CMD):
-#     python sisfe_notificar.py "ruta\a\cedula_FIRMADO.pdf" "21-04253894-6" ["CARATULA..."]
+#     python sisfe_notificar.py "ruta\a\cedula_FIRMADO.pdf" "21-00000011-1" ["CARATULA..."]
 #
 #  QUÉ HACE (la secuencia que dictó Santiago, 16/09/2026):
 #     1) Abre el SISFE en Chrome con perfil persistente.
@@ -50,7 +50,8 @@ SISFE_LOGIN = "https://sisfe.justiciasantafe.gov.ar/login-matriculado"
 SISFE_BUSCAR = "https://sisfe.justiciasantafe.gov.ar/buscar-expediente"
 # La URL que pasó Santiago: el buscador del módulo de notificaciones
 # resuelve el CUIJ en esta dirección, con un id PROPIO DEL SISFE (que
-# NO es el CUIJ: 10067855763 para el CUIJ 21-04253894-6).
+# NO es el CUIJ: es un número propio del portal, de la misma longitud que
+# un DNI. Verificado contra el portal, con valores ficticios acá).
 SISFE_NOTIF_ENTRADA = "https://sisfe.justiciasantafe.gov.ar/buscar-notificacion-expediente/{id}"
 # El formulario en sí. Ya lo usaba el monitor para leer las Partes.
 SISFE_NOTIF_NUEVA = "https://sisfe.justiciasantafe.gov.ar/nueva-notificacion-expediente/{id}"
@@ -76,7 +77,7 @@ _RE_CUIJ = re.compile(r"\b(\d{2}-\d{8}-\d)\b")
 
 
 def normalizar_cuij(texto):
-    """Devuelve el CUIJ con el formato 21-04253894-6, o "" si no hay.
+    """Devuelve el CUIJ con el formato 21-00000011-1, o "" si no hay.
 
     Acepta el texto suelto, con espacios o sin los guiones: lo que se
     escribe a mano casi nunca viene prolijo, y comparar el CUIJ es la
@@ -591,7 +592,7 @@ def subir(ruta_pdf, cuij, caratula=None, descripcion=None, usar_chrome=True,
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print('  Uso: python sisfe_notificar.py "ruta\\a\\cedula_FIRMADO.pdf" "21-04253894-6" ["CARATULA"]')
+        print('  Uso: python sisfe_notificar.py "ruta\\a\\cedula_FIRMADO.pdf" "21-00000011-1" ["CARATULA"]')
         sys.exit(1)
     r = subir(sys.argv[1], sys.argv[2], caratula=(sys.argv[3] if len(sys.argv) > 3 else None))
     if not r["ok"]:

@@ -90,9 +90,9 @@ def test_extraer_caratula_entre_comillas():
 
 
 def test_extraer_caratula_sin_comillas_primera_linea():
-    texto = "PEREZ WALTER JOSE C/ GALENO ART SA S/ ENFERMEDADES DEL TRABAJO\nJuzg. 1ra. Inst. Laboral 1ra. Nom."
+    texto = "MOLINA WALTER JOSE C/ GALENO ART SA S/ ENFERMEDADES DEL TRABAJO\nJuzg. 1ra. Inst. Laboral 1ra. Nom."
     car = extraer_caratula(texto)
-    assert car == "PEREZ WALTER JOSE C/ GALENO ART SA S/ ENFERMEDADES DEL TRABAJO"
+    assert car == "MOLINA WALTER JOSE C/ GALENO ART SA S/ ENFERMEDADES DEL TRABAJO"
 
 
 def test_extraer_caratula_vacio_si_no_hay_patron():

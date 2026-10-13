@@ -291,12 +291,13 @@ def extraer_destinatarios(texto, caratula=None):
 # La cédula de peritos no va a las partes: va AL PERITO designado. El nombre
 # sale del acta del sorteo, que los nombra así:
 #
-#   'resulta sorteado el profesional MUÑOZ MARCELO ALFREDO con domicilio sito
-#    en calle Obligado N° 457 y CHAVEZ LISANDRO ADRIAN con domicilio en
-#    Olessio n° 823 y NOBILE VERÓNICA PAOLA con domicilio en calle Mitre 1035'
+#   'resulta sorteado el profesional PERITO DEMO ALFA con domicilio sito
+#    en calle Demostrada N° 100 y PERITO DEMO BETA con domicilio en
+#    Ejemplar n° 200 y PERITO DEMO GAMMA con domicilio en calle Muestra 300'
 #
-# Verificado contra una cédula real del SISFE (Reconquista). El acta puede
-# traer más de un profesional sorteado.
+# Verificado contra el acta real de una cédula del SISFE (Reconquista), que
+# puede traer mas de un profesional sorteado. Los nombres y los domicilios
+# de este ejemplo son FICTICIOS: los del acta real no se copian aca.
 _RE_SORTEO = re.compile(
     r"result(?:a|ó)\s+sorteado\s+(?:el|la)\s+profesional\s+(.+?)(?=\.\s|\.\s*No\s+siendo|$)",
     re.I | re.S,

@@ -22,8 +22,8 @@ import estado  # noqa: E402
 import sesion  # noqa: E402
 import sisfe_notificar  # noqa: E402
 
-CUIJ = "21-04253894-6"
-CARATULA = "RIVAS JESUS IGNACIO C/ ASOCIART ART SA S/ ENFERMEDAD LABORAL"
+CUIJ = "21-00000011-1"
+CARATULA = "QUIROGA DAMIAN SERGIO C/ DEMOART ART SA S/ ENFERMEDAD LABORAL"
 
 
 @pytest.fixture(autouse=True)
@@ -44,13 +44,13 @@ def _cedula_firmada(tmp_path, con_firmado=True, con_cuij=True):
         firmada.write_bytes(b"%PDF-1.4\n% firmada\n")
 
     estado.registrar_cedula({
-        "id": "rivas_000001", "caratula": CARATULA,
+        "id": "quiroga_000001", "caratula": CARATULA,
         "cuij": CUIJ if con_cuij else "",
         "ruta_pdf": str(ruta_pdf),
         "ruta_firmada": str(firmada) if con_firmado else None,
         "estado": "firmada",
     })
-    return "rivas_000001", str(firmada)
+    return "quiroga_000001", str(firmada)
 
 
 def _subida_falsa(monkeypatch, resultado):
@@ -70,14 +70,14 @@ def _subida_falsa(monkeypatch, resultado):
 def _resultado_ok(**extra):
     r = {
         "ok": True, "cuij": CUIJ, "caratula_portal": CARATULA,
-        "id_sisfe": "10067855763", "descripcion": "16/09/2026",
+        "id_sisfe": "10000000000", "descripcion": "16/09/2026",
         "adjuntado": True,
         "partes": [
             {"fila": 0, "caracter": "AUXILIAR DE JUSTICIA",
              "parte": "CAJA DE SEG.SOCIAL DE ABOGADOS Y PROCURA", "codigo": "CS01", "correo": ""},
             {"fila": 3, "caracter": "REPRESENTANTE",
-             "parte": "PEREYRA, FABIAN CARLOS", "codigo": "XXI100",
-             "correo": "FCPEREYRA@GMAIL.COM"},
+             "parte": "BENITEZ, MARIO ALBERTO", "codigo": "XXI100",
+             "correo": "REPRESENTANTE@EJEMPLO.COM"},
         ],
         "tildadas": [0, 3], "avisos": [], "notificado": False,
     }
@@ -100,7 +100,7 @@ def test_el_pdf_y_el_cuij_salen_de_la_cedula(monkeypatch, tmp_path):
     assert llamadas["cuij"] == CUIJ
     assert llamadas["caratula"] == CARATULA
     assert r["ok"] is True
-    assert r["id_sisfe"] == "10067855763"
+    assert r["id_sisfe"] == "10000000000"
     assert r["tildadas"] == 2
     assert r["notificado"] is False                   # el clic es del abogado
 
@@ -198,7 +198,7 @@ def test_si_el_portal_no_quedo_listo_avisa_y_no_marca_nada(monkeypatch, tmp_path
     id_cedula, _ = _cedula_firmada(tmp_path)
     _subida_falsa(monkeypatch, _resultado_ok(
         ok=False, id_sisfe="",
-        avisos=["El expediente abierto es 21-99999999-9 y la cédula es de 21-04253894-6."],
+        avisos=["El expediente abierto es 21-99999999-9 y la cédula es de 21-00000011-1."],
     ))
 
     with pytest.raises(acciones.AccionError) as e:

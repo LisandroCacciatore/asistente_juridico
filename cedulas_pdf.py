@@ -326,7 +326,7 @@ def generar_pdf_audiencia_51(datos, ruta):
 #  Bus Federal (Ley 22.172)
 # ------------------------------------------------------------
 #  Es un formulario, no una carta: el modelo es de una cédula real del SISFE
-#  (RIVAS C/ ASOCIART ART SA, notificación a una empresa de CABA, 2 páginas).
+#  (QUIROGA C/ DEMOART ART SA, notificación a una empresa de CABA, 2 páginas).
 # ============================================================
 
 # Domicilio de los tribunales para el exhorto. Verificado: Rosario, Balcarce
@@ -468,7 +468,7 @@ def generar_pdf_bus_federal(datos, ruta):
     dom = _esc(datos.get("destinatario_domicilio", ""))
     cuit = _esc(datos.get("destinatario_cuit", ""))
 
-    # 'BETTER CATERING S.A. — CUIT 30-70821868-1', como en la cédula real.
+    # 'NOMBRE DE LA EMPRESA — CUIT 30-XXXXXXXX-X', como en la cédula real.
     notificar_a = f"{dest} — CUIT {cuit}" if dest and cuit else dest
 
     elementos = [

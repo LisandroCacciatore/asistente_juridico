@@ -26,7 +26,7 @@ cambia, se cambia acá primero.
 | **D13** | Refresco | **Monitor de SISFE: 10 min.** Dashboard: 60 s. |
 | **D14** | Tarjetas | **Se sacan las 5 tarjetas**; las skills **quedan** y se siguen pudiendo invocar. |
 | **D15** | Partes en SISFE (confirmado) | **16/09/2026, contra la pantalla real.** La tabla trae 4 filas: 2 **cajas fijas** (CS01, CF02) + los **representantes del expediente**. El sistema **las lee del portal y las muestra**; el abogado destilda lo que no va. **Ninguna parte se fija en el código.** |
-| **D16** | El correo de las partes | **Lo trae cargado el SISFE.** Se lee y se muestra tal cual; no se completa ni se inventa (coherente con D10: va solo donde existe — en la tabla real, solo Pereyra). |
+| **D16** | El correo de las partes | **Lo trae cargado el SISFE.** Se lee y se muestra tal cual; no se completa ni se inventa (coherente con D10: va solo donde existe — en la tabla real, uno solo de los representantes lo tenía). |
 | **D17** | El clic en NOTIFICAR | **Es del abogado.** El sistema deja todo cargado (descripción, adjunto, partes tildadas) y **se detiene**. Está blindado: un test lee el código y **falla si alguien agrega un clic en Notificar / Presentar / Confirmar / Enviar**, y otro test corre el flujo contra una pantalla de mentira y comprueba que el botón quedó sin apretar. Misma regla que el mail. |
 | **D18** | Dos identidades | El sistema registra **operador** (quién maneja el asistente) y **identidad del acto** (con qué matrícula/sesión y con qué firma se ejecutó). Son **independientes a propósito**: el operador puede usar sus claves **o las de un compañero** — eso está permitido y es normal, no es una excepción. Lo que los une es la regla de la cadena (**D25**). Las dos van en cada línea del log, más `usuario_windows` como control cruzado. |
 | **D19** | La puerta de identidad | **Al abrir el asistente**, obligatoria una vez por jornada y cambiable. Se ve siempre en la barra de arriba. **Antes del portal no se vuelve a preguntar**: se confirma en pantalla en la pausa que ya existe ("vas a actuar con la identidad de Santiago"). |
@@ -155,7 +155,7 @@ La secuencia es la que dictó Santiago el 16/09/2026:
 
 1. **Entrar al expediente por CUIJ.** El buscador del SISFE resuelve el CUIJ en una URL
    propia del portal — `.../buscar-notificacion-expediente/<id>` — donde `<id>` es de
-   SISFE y **no** es el CUIJ (caso real: `10067855763` para el CUIJ `21-04253894-6`).
+   SISFE y **no** es el CUIJ (caso real: `10000000000` para el CUIJ `21-00000011-1`).
    Se busca por CUIJ; el id no se adivina. Verificar **carátula + CUIJ** antes de seguir.
 2. **Nueva Cédula.**
 3. **Descripción genérica** — texto libre; la convención es la fecha.
@@ -166,12 +166,17 @@ La secuencia es la que dictó Santiago el 16/09/2026:
    |---|---|---|
    | AUXILIAR DE JUSTICIA | CAJA DE SEG.SOCIAL DE ABOGADOS Y PROCURA (CS01) | — |
    | AUXILIAR DE JUSTICIA | CAJA FORENSE-ROSARIO (CF02) | — |
-   | REPRESENTANTE | LAMAS, ERICA GISELA (6372) | — |
-   | REPRESENTANTE | PEREYRA, FABIAN CARLOS (XXI100) | FCPEREYRA@GMAIL.COM |
+   | REPRESENTANTE | DUARTE, SILVIA NOEMI (6372) | — |
+   | REPRESENTANTE | BENITEZ, MARIO ALBERTO (XXI100) | REPRESENTANTE@EJEMPLO.COM |
+
+   *(Nota de privacidad: los nombres, las matrículas y el correo son ficticios.
+   La tabla se transcribió de la pantalla real del SISFE el 16/09/2026 y después
+   se reemplazaron las partes por valores de ejemplo. Lo que sí trae el portal
+   por su cuenta —y no se inventa— es el correo donde existe: D10/D16.)*
 
    Las **dos cajas son fijas** (D9). Los **representantes se leen del expediente**
    (no se fijan a mano: son los que el SISFE muestra). El correo va **solo donde
-   existe** (D10) — en esta tabla lo tiene únicamente Pereyra.
+   existe** (D10) — en esta tabla lo tiene únicamente Benítez.
 6. **Notificar.**
 
 Mismo `_navegador.py` (perfil de Chrome persistente) que ya usan `firma.py` y

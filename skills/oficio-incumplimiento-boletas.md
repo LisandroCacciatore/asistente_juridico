@@ -21,7 +21,7 @@ Formato obligatorio de todos los PDF (preferencia fija de Santiago): **texto jus
 
 Del texto que pega Santiago, extraer:
 
-- **Carátula**: formato "ACTOR C/ DEMANDADO S/ OBJETO CUIJ" (ej.: "BARROZO AILEN NEREA C/ PROVINCIA DE SANTA FE S/ ACCIDENTES DEL TRABAJO 21-04255346-5"). Usar la carátula completa tal como va en el encabezado del oficio y como **asunto** de los mails.
+- **Carátula**: formato "ACTOR C/ DEMANDADO S/ OBJETO CUIJ" (ej.: "SOSA MARIANA BELEN C/ PROVINCIA DE SANTA FE S/ ACCIDENTES DEL TRABAJO 21-00000012-2"). Usar la carátula completa tal como va en el encabezado del oficio y como **asunto** de los mails.
 - **CUIJ / Nº expediente**: formato `21-XXXXXXXX-X`.
 - **Juzgado** y localidad. Escribirlo en el oficio en forma desarrollada, ej.: "Juzgado de 1ra. Instancia de Distrito en lo Laboral de la 5ta. Nominación de Rosario". Si el decreto lo trae abreviado ("Juzg. 1ra. Inst. Laboral 5ta. Nom. ROSARIO"), desarrollarlo.
 - **Decreto a transcribir**: es el decreto que ordena oficiar/informar, y va transcripto **textual** dentro del oficio (sección "Asimismo, se transcribe el siguiente decreto: ..."). Copiarlo íntegro y sin corregir la redacción; solo limpiar saltos de línea rotos del copy-paste. Si Santiago pega un decreto que claramente NO es el que ordena oficiar (p. ej. un decreto de audiencia del art. 56, que intima a acompañar boletas pero no dice "Ofíciese"), no volcar ese texto largo: usar el texto estándar `Informativa: Ofíciese a sus efectos, a los organismos mencionados. Autorízase al Dr. Santiago A. Segovia y/o a quien éste designe a la confección y diligenciamiento conforme Art. 25 CPCC.` y avisarle a Santiago que se usó ese, por si prefiere pegar el decreto de "Ofíciese".
@@ -36,7 +36,7 @@ Cargar las herramientas de Claude in Chrome vía ToolSearch (una sola llamada co
 El camino rápido: **buscar por CUIJ → sacar el id interno del href → ir directo a la pantalla "Nueva Cédula" por URL**, que muestra la tabla PARTES con el carácter de cada uno.
 
 1. `tabs_context_mcp{createIfEmpty:true}` y navegar a `https://sisfe.justiciasantafe.gov.ar/buscar-expediente`. Si no hay sesión iniciada, aplicar el fallback de abajo.
-2. La página suele abrir ya con la lista de expedientes de Santiago. Buscar la fila del CUIJ del decreto directamente en el texto (`get_page_text`); si no está, expandir "FILTROS DE BÚSQUEDA", cargar el CUIJ completo (ej. `21-04255346-5`) en el campo **CUIJ** con `form_input` y accionar **"Efectuar la búsqueda"**.
+2. La página suele abrir ya con la lista de expedientes de Santiago. Buscar la fila del CUIJ del decreto directamente en el texto (`get_page_text`); si no está, expandir "FILTROS DE BÚSQUEDA", cargar el CUIJ completo (ej. `21-00000012-2`) en el campo **CUIJ** con `form_input` y accionar **"Efectuar la búsqueda"**.
 3. Con la fila del expediente, usar `find` con "enlace del expediente {CUIJ}": el href tiene la forma `/detalle-expediente/{id}`. **No clickear la fila**: tomar el `{id}` del href.
 4. Navegar DIRECTO a `https://sisfe.justiciasantafe.gov.ar/nueva-notificacion-expediente/{id}` — pantalla "Nueva Cédula" con la tabla **PARTES** (Seleccionar / Caracter / Parte / Correo Electrónico).
 5. Leer con `get_page_text` y extraer **cada parte con su carácter, nombre y código entre paréntesis** (REPRESENTANTE, AUXILIAR DE JUSTICIA, PERITO, etc.). El código entre paréntesis (ej. `XXI011`, `FE01`, `6372`) es la matrícula/código de caja que va en el INFORMAR — así no hace falta preguntarla. Ignorar como profesionales los AUXILIAR DE JUSTICIA que son las propias cajas (CS01, CF02): esos son los organismos destinatarios, no incumplidores.
@@ -59,8 +59,8 @@ Armar un JSON de datos con esta forma exacta:
 
 ```json
 {
-  "caratula": "BARROZO AILEN NEREA C/ PROVINCIA DE SANTA FE S/ ACCIDENTES DEL TRABAJO 21-04255346-5",
-  "cuij": "21-04255346-5",
+  "caratula": "SOSA MARIANA BELEN C/ PROVINCIA DE SANTA FE S/ ACCIDENTES DEL TRABAJO 21-00000012-2",
+  "cuij": "21-00000012-2",
   "juzgado": "Juzgado de 1ra. Instancia de Distrito en lo Laboral de la 5ta. Nominación de Rosario",
   "fecha_mes": "JULIO",
   "fecha_anio": "2026",
@@ -257,7 +257,7 @@ Para cada organismo, crear un **borrador** (no enviar) con la herramienta de Gma
 
 Para cada borrador:
 - `to`: el correo del organismo (uno solo por borrador).
-- `subject`: la **carátula/autos** completa (ej. "BARROZO AILEN NEREA C/ PROVINCIA DE SANTA FE S/ ACCIDENTES DEL TRABAJO 21-04255346-5").
+- `subject`: la **carátula/autos** completa (ej. "SOSA MARIANA BELEN C/ PROVINCIA DE SANTA FE S/ ACCIDENTES DEL TRABAJO 21-00000012-2").
 - `body`: el texto de abajo, reemplazando `{NOMBRES}` por los **mismos profesionales elegidos para el INFORMAR** (Paso 3). Para personas usar el apellido (de "GENTILE QUARANTA, LEONARDO EUGENIO" → "Gentile Quaranta"); para entidades (Fiscalía de Estado) su nombre. Unir con comas y "y".
 
 ```

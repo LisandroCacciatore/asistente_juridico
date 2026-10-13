@@ -47,10 +47,10 @@ def _aislado(tmp_path, monkeypatch):
     yield tmp_path
 
 
-def _cedula(id_cedula="rivas_000001", cadena=""):
+def _cedula(id_cedula="quiroga_000001", cadena=""):
     estado.registrar_cedula({
-        "id": id_cedula, "caratula": "RIVAS C/ ASOCIART ART SA S/ ENFERMEDAD LABORAL",
-        "cuij": "21-04253894-6", "ruta_pdf": "", "ruta_firmada": "", "estado": "generada",
+        "id": id_cedula, "caratula": "QUIROGA C/ DEMOART ART SA S/ ENFERMEDAD LABORAL",
+        "cuij": "21-00000011-1", "ruta_pdf": "", "ruta_firmada": "", "estado": "generada",
         "identidad_cadena": cadena,
     })
     return id_cedula
@@ -211,7 +211,7 @@ def _subida_falsa(monkeypatch, resultado):
 
 
 def _ok():
-    return {"ok": True, "cuij": "21-04253894-6", "id_sisfe": "1", "descripcion": "16/09/2026",
+    return {"ok": True, "cuij": "21-00000011-1", "id_sisfe": "1", "descripcion": "16/09/2026",
             "adjuntado": True, "partes": [], "tildadas": [], "avisos": [],
             "notificado": False}
 

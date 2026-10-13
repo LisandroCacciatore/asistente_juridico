@@ -208,11 +208,11 @@ def test_un_solo_destinatario_da_una_sola_cedula(tmp_path, monkeypatch):
 # ============================================================
 ACTA_PERITO = (
     'ACTA DE SORTEO. En la ciudad de Reconquista, siendo dia y hora de audiencia y por '
-    'estar asi ordenado en los autos caratulados: "FERRERO HECTOR ALFREDO C/ PREVENCION '
-    'ART SA S/ ENFERMEDAD PROFESIONAL" 21-16746052-3, se procede al sorteo de un Perito '
+    'estar asi ordenado en los autos caratulados: "LUCERO RAMON ANIBAL C/ PREVENCION '
+    'ART SA S/ ENFERMEDAD PROFESIONAL" 21-00000014-4, se procede al sorteo de un Perito '
     'Médico y Contador de la lista para nombramientos de oficio, acto seguido resulta '
-    'sorteado el profesional MUÑOZ MARCELO ALFREDO con domicilio sito en calle Obligado '
-    'N° 457 y CHAVEZ LISANDRO ADRIAN con domicilio en Olessio n° 823. '
+    'sorteado el profesional PERITO DEMO ALFA con domicilio sito en calle Demostrada '
+    'N° 100 y PERITO DEMO BETA con domicilio en Ejemplar n° 200. '
     'Todo por ante mi que doy fe.-'
 )
 
@@ -242,20 +242,20 @@ def test_mencionar_el_sorteo_no_alcanza_para_ser_peritos():
 def test_extrae_los_peritos_del_acta_con_su_domicilio():
     from cedula_desde_texto import extraer_peritos
     peritos = extraer_peritos(ACTA_PERITO)
-    assert [p["nombre"] for p in peritos] == ["MUÑOZ MARCELO ALFREDO",
-                                             "CHAVEZ LISANDRO ADRIAN"]
-    assert peritos[0]["domicilio"] == "Obligado N° 457"
-    assert peritos[1]["domicilio"] == "Olessio n° 823"
+    assert [p["nombre"] for p in peritos] == ["PERITO DEMO ALFA",
+                                             "PERITO DEMO BETA"]
+    assert peritos[0]["domicilio"] == "Demostrada N° 100"
+    assert peritos[1]["domicilio"] == "Ejemplar n° 200"
 
 
 def test_el_destinatario_de_la_cedula_de_peritos_es_el_perito():
     """No las partes: si se ofrecieran, saldría una cédula a nombre de quien no va."""
     r = acciones.detectar_destinatarios({"texto": ACTA_PERITO})
     assert r["tipo"] == "peritos"
-    assert r["caratula"] == "FERRERO HECTOR ALFREDO C/ PREVENCION ART SA S/ ENFERMEDAD PROFESIONAL"
+    assert r["caratula"] == "LUCERO RAMON ANIBAL C/ PREVENCION ART SA S/ ENFERMEDAD PROFESIONAL"
     assert [d["nombre"] for d in r["destinatarios"]] == [
-        "MUÑOZ MARCELO ALFREDO", "CHAVEZ LISANDRO ADRIAN"]
-    assert r["destinatarios"][0]["domicilio"] == "Obligado N° 457"
+        "PERITO DEMO ALFA", "PERITO DEMO BETA"]
+    assert r["destinatarios"][0]["domicilio"] == "Demostrada N° 100"
     assert "perito" in r["destinatarios"][0]["rol"].lower()
     # y la parte demandada NO aparece entre los candidatos
     assert not any("PREVENCION" in d["nombre"] for d in r["destinatarios"])
@@ -268,13 +268,13 @@ def test_la_cedula_de_peritos_sale_a_nombre_del_perito(tmp_path, monkeypatch):
 
     r = acciones.cedula({
         "texto": ACTA_PERITO,
-        "destinatarios": [{"nombre": "MUÑOZ MARCELO ALFREDO",
-                           "domicilio": "Olessio N° 1577 - Reconquista"}],
+        "destinatarios": [{"nombre": "PERITO DEMO ALFA",
+                           "domicilio": "Ejemplar N° 400 - Reconquista"}],
     })
 
     assert len(r["archivos"]) == 1
     texto = _texto(r["archivos"][0])
-    assert "Señor: MUÑOZ MARCELO ALFREDO" in texto
+    assert "Señor: PERITO DEMO ALFA" in texto
     assert "ARTÍCULO 78" in texto and "ARTÍCULO 79" in texto
     assert "ACEPTAR EL CARGO" in texto
     assert "ARTICULO 51" not in texto

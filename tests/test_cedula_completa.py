@@ -168,7 +168,7 @@ def test_pdf_imprime_el_domicilio_tambien_en_persona_juridica(tmp_path, base):
     Antes se suprimía por ser persona jurídica. En el Art. 51 ese domicilio no
     es decorativo: el artículo manda citar a las partes "en el real".
     """
-    base["destinatario_nombre"] = "CHICHILO'S PIZZAS SRL"
+    base["destinatario_nombre"] = "DEMANDADO DEMO'S PIZZAS SRL"
     base["destinatario_domicilio"] = "CATAMARCA Nº 2501 DE LA CIUDAD ROSARIO"
     ruta = tmp_path / "c.pdf"
     generar_pdf_estandar(base, str(ruta))
@@ -235,7 +235,7 @@ def test_extraer_fuero(texto, esperado):
 #  Modelo del SISFE para el Art. 51 (16/09/2026)
 # ------------------------------------------------------------
 #  Comparado contra una cédula real del portal: Juzgado en lo Laboral Nº 8
-#  de Rosario, "PALOMEQUE YAIR MILTON C/ CHICHILO'S PIZZAS SRL", 07/04/2026.
+#  de Rosario, "ESCOBAR YAMIL MARTIN C/ DEMANDADO DEMO'S PIZZAS SRL", 07/04/2026.
 #  Los datos de acá abajo son los de ese caso.
 # ============================================================
 def _plano(ruta):
@@ -247,12 +247,12 @@ def _plano(ruta):
 def caso51():
     return {
         "nominacion": "8", "ciudad": "Rosario", "fuero": "LABORAL",
-        "caratula": "PALOMEQUE YAIR MILTON C/ CHICHILO'S PIZZAS SRL S/ COBRO DE PESOS",
-        "cuij": "21-04267528-5",
+        "caratula": "ESCOBAR YAMIL MARTIN C/ DEMANDADO DEMO'S PIZZAS SRL S/ COBRO DE PESOS",
+        "cuij": "21-00000013-3",
         "juez": "Silvana Laura Quagliatti", "secretario": "Pedro Daniel Herrero",
         "fecha_decreto": "07/04/2026",
         "texto_decreto": "Téngase al compareciente por presentado. Notifíquese por cédula.",
-        "destinatario_nombre": "CHICHILO'S PIZZAS SRL",
+        "destinatario_nombre": "DEMANDADO DEMO'S PIZZAS SRL",
         "destinatario_domicilio": "CATAMARCA Nº 2501 DE LA CIUDAD ROSARIO",
         "fecha_audiencia": "29/05/2026", "hora_audiencia": "09:45",
     }
@@ -266,7 +266,7 @@ def test_c51_es_la_comun_mas_los_articulos(tmp_path, caso51):
     # el encabezado, el destinatario y la frase son los de la común
     assert ("JUZGADO DE PRIMERA INSTANCIA DE DISTRITO EN LO LABORAL "
             "DE LA 8 NOMINACIÓN DE ROSARIO") in texto
-    assert "Señor: CHICHILO'S PIZZAS SRL" in texto
+    assert "Señor: DEMANDADO DEMO'S PIZZAS SRL" in texto
     assert "Domicilio: CATAMARCA" in texto
     assert "dentro de los autos caratulados" in texto
     assert "se ha dictado lo siguiente" in texto
@@ -311,22 +311,23 @@ def test_c51_no_imprime_la_fecha_arriba_ni_la_duplica(tmp_path, caso51):
 # ============================================================
 #  Cédula de peritos: la común + los arts. 78 y 79 (16/09/2026)
 # ------------------------------------------------------------
-#  Comparada contra una cédula real del SISFE: designación del perito
-#  MUÑOZ MARCELO ALFREDO (Juzgado de Primera Instancia de Distrito en lo
-#  Laboral de la Localidad de Reconquista, "FERRERO C/ PREVENCION ART SA").
+#  Comparada contra una cédula real del SISFE (designación de un perito,
+#  Juzgado de Primera Instancia de Distrito en lo Laboral de la Localidad de
+#  Reconquista). Los datos del caso real no se copian: los de abajo son
+#  ficticios.
 # ============================================================
 @pytest.fixture
 def caso_perito():
     return {
         "nominacion": "", "ciudad": "Reconquista", "fuero": "LABORAL",
-        "caratula": "FERRERO HECTOR ALFREDO C/ PREVENCION ART SA S/ ENFERMEDAD PROFESIONAL",
-        "cuij": "21-16746052-3", "fecha_decreto": "",
+        "caratula": "LUCERO RAMON ANIBAL C/ PREVENCION ART SA S/ ENFERMEDAD PROFESIONAL",
+        "cuij": "21-00000014-4", "fecha_decreto": "",
         "juez": "Jorgelina Yedro", "secretario": "Leonardo Cristófoli",
         "texto_decreto": ("En la ciudad de Reconquista, siendo dia y hora de audiencia, "
-                          "resulta sorteado el profesional MUÑOZ MARCELO ALFREDO. "
+                          "resulta sorteado el profesional PERITO DEMO ALFA. "
                           "Todo por ante mi que doy fe.-"),
-        "destinatario_nombre": "MUÑOZ MARCELO ALFREDO",
-        "destinatario_domicilio": "Olessio N° 1577 - Reconquista",
+        "destinatario_nombre": "PERITO DEMO ALFA",
+        "destinatario_domicilio": "Ejemplar N° 400 - Reconquista",
     }
 
 
@@ -337,8 +338,8 @@ def test_peritos_encabezado_de_localidad(tmp_path, caso_perito):
     texto = _plano(ruta)
     assert ("JUZGADO DE PRIMERA INSTANCIA DE DISTRITO EN LO LABORAL "
             "DE LA LOCALIDAD DE RECONQUISTA") in texto
-    assert "Señor: MUÑOZ MARCELO ALFREDO" in texto
-    assert "Domicilio: Olessio N° 1577 - Reconquista" in texto
+    assert "Señor: PERITO DEMO ALFA" in texto
+    assert "Domicilio: Ejemplar N° 400 - Reconquista" in texto
 
 
 def test_peritos_agrega_la_intimacion_y_los_arts_78_y_79(tmp_path, caso_perito):
@@ -372,8 +373,8 @@ def test_peritos_cierra_como_la_comun(tmp_path, caso_perito):
 # ============================================================
 #  Bus Federal (Ley 22.172), alineada el 16/09/2026
 # ------------------------------------------------------------
-#  Modelo: cédula real del SISFE (RIVAS C/ ASOCIART ART SA, notificación a
-#  BETTER CATERING S.A. en CABA). Era un documento distinto: ahora es el
+#  Modelo: cédula real del SISFE (QUIROGA C/ DEMOART ART SA, notificación a
+#  EMPRESA DEMO S.A. en CABA). Era un documento distinto: ahora es el
 #  formulario del portal, con el exhorto, la clave de acceso, el objeto y en
 #  la segunda página el bloque del oficial notificador.
 # ============================================================
@@ -410,10 +411,10 @@ def test_bus_federal_arma_el_formulario_del_portal(tmp_path):
         "secretario": "Dra. Paula Nydia Hechem",
         "prosecretario": "Dra. Aldana Lucrecia Viele",
         "clave_acceso": "3864",
-        "caratula": "RIVAS JESUS IGNACIO C/ ASOCIART ART SA S/ ENFERMEDAD LABORAL",
-        "cuij": "21-04253894-6",
-        "destinatario_nombre": "BETTER CATERING S.A.",
-        "destinatario_cuit": "30-70821868-1",
+        "caratula": "QUIROGA DAMIAN SERGIO C/ DEMOART ART SA S/ ENFERMEDAD LABORAL",
+        "cuij": "21-00000011-1",
+        "destinatario_nombre": "EMPRESA DEMO S.A.",
+        "destinatario_cuit": "30-00000044-4",
         "destinatario_domicilio": "Av. Corrientes 1386, Piso 9°, Dpto. 912 — CABA",
         "texto_decreto": "ROSARIO, 21 de Mayo de 2026: Téngase presente.",
     }, str(tmp_path / "bus.pdf"))
@@ -426,7 +427,7 @@ def test_bus_federal_arma_el_formulario_del_portal(tmp_path):
     assert "CLAVE DE ACCESO AL EXPEDIENTE: 3864" in texto
     assert "TRIBUNAL RECEPTOR: (Ley 22.172 / Bus Federal de Justicia)" in texto
     assert "CARÁTULA:" in texto
-    assert "NOTIFICAR A: BETTER CATERING S.A. — CUIT 30-70821868-1" in texto
+    assert "NOTIFICAR A: EMPRESA DEMO S.A. — CUIT 30-00000044-4" in texto
     assert "OBJETO DE LA NOTIFICACIÓN" in texto
     assert "PARA EL OFICIAL NOTIFICADOR" in texto
     assert "Firma del Oficial Notificador" in texto

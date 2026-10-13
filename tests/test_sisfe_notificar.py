@@ -34,10 +34,10 @@ import sisfe_notificar as sn  # noqa: E402
 # ============================================================
 
 @pytest.mark.parametrize("entrada, esperado", [
-    ("21-04253894-6", "21-04253894-6"),
-    ("CUIJ 21-04253894-6 (RIVAS)", "21-04253894-6"),
-    ("21042538946", "21-04253894-6"),          # sin guiones, como se escribe a mano
-    ("  21-04253894-6  ", "21-04253894-6"),
+    ("21-00000011-1", "21-00000011-1"),
+    ("CUIJ 21-00000011-1 (QUIROGA)", "21-00000011-1"),
+    ("21000000111", "21-00000011-1"),          # sin guiones, como se escribe a mano
+    ("  21-00000011-1  ", "21-00000011-1"),
     ("", ""),
     (None, ""),
     ("123", ""),
@@ -48,8 +48,8 @@ def test_normalizar_cuij(entrada, esperado):
 
 def test_verificar_expediente_el_mismo_no_avisa_nada():
     ok, avisos = sn.verificar_expediente(
-        "21-04253894-6", "RIVAS JESUS IGNACIO C/ ASOCIART ART SA S/ ENFERMEDAD LABORAL",
-        "21-04253894-6", "RIVAS JESUS IGNACIO C/ ASOCIART ART SA S/ ENFERMEDAD LABORAL",
+        "21-00000011-1", "QUIROGA DAMIAN SERGIO C/ DEMOART ART SA S/ ENFERMEDAD LABORAL",
+        "21-00000011-1", "QUIROGA DAMIAN SERGIO C/ DEMOART ART SA S/ ENFERMEDAD LABORAL",
     )
     assert ok is True
     assert avisos == []
@@ -58,14 +58,14 @@ def test_verificar_expediente_el_mismo_no_avisa_nada():
 def test_verificar_expediente_bloquea_si_el_cuij_no_coincide():
     """Notificar el expediente equivocado no se deshace con un botón."""
     ok, avisos = sn.verificar_expediente(
-        "21-04253894-6", "RIVAS C/ ASOCIART", "21-99999999-9", "OTRO C/ OTRO",
+        "21-00000011-1", "QUIROGA C/ DEMOART", "21-99999999-9", "OTRO C/ OTRO",
     )
     assert ok is False
-    assert "21-99999999-9" in avisos[0] and "21-04253894-6" in avisos[0]
+    assert "21-99999999-9" in avisos[0] and "21-00000011-1" in avisos[0]
 
 
 def test_verificar_expediente_bloquea_si_no_puedo_leer_el_cuij_de_la_pantalla():
-    ok, avisos = sn.verificar_expediente("21-04253894-6", "RIVAS C/ ASOCIART", "", "")
+    ok, avisos = sn.verificar_expediente("21-00000011-1", "QUIROGA C/ DEMOART", "", "")
     assert ok is False
     assert "No pude leer el CUIJ" in avisos[0]
 
@@ -74,8 +74,8 @@ def test_verificar_expediente_la_caratula_distinta_avisa_pero_no_bloquea():
     """El portal escribe la carátula a su manera; bloquear por eso trabaría
     casos válidos. Avisa y decide el abogado."""
     ok, avisos = sn.verificar_expediente(
-        "21-04253894-6", "RIVAS JESUS IGNACIO C/ ASOCIART ART SA S/ ENFERMEDAD LABORAL",
-        "21-04253894-6", "RIVAS c/ ASOCIART ART S.A.",
+        "21-00000011-1", "QUIROGA DAMIAN SERGIO C/ DEMOART ART SA S/ ENFERMEDAD LABORAL",
+        "21-00000011-1", "QUIROGA c/ DEMOART ART S.A.",
     )
     assert ok is True
     assert len(avisos) == 1 and "carátula" in avisos[0].lower()
@@ -83,15 +83,15 @@ def test_verificar_expediente_la_caratula_distinta_avisa_pero_no_bloquea():
 
 def test_verificar_expediente_la_puntuacion_no_cuenta_como_diferencia():
     ok, avisos = sn.verificar_expediente(
-        "21-04253894-6", "RIVAS, JESÚS IGNACIO C/ ASOCIART ART SA S/ ENFERMEDAD LABORAL",
-        "21-04253894-6", "RIVAS JESUS IGNACIO C/ ASOCIART ART SA S/ ENFERMEDAD LABORAL",
+        "21-00000011-1", "QUIROGA, DAMIÁN SERGIO C/ DEMOART ART SA S/ ENFERMEDAD LABORAL",
+        "21-00000011-1", "QUIROGA DAMIAN SERGIO C/ DEMOART ART SA S/ ENFERMEDAD LABORAL",
     )
     assert ok is True and avisos == []
 
 
 @pytest.mark.parametrize("texto, nombre, codigo", [
     ("CAJA FORENSE-ROSARIO (CF02)", "CAJA FORENSE-ROSARIO", "CF02"),
-    ("PEREYRA, FABIAN CARLOS (XXI100)", "PEREYRA, FABIAN CARLOS", "XXI100"),
+    ("BENITEZ, MARIO ALBERTO (XXI100)", "BENITEZ, MARIO ALBERTO", "XXI100"),
     ("CAJA DE SEG.SOCIAL DE ABOGADOS Y PROCURA (CS01)",
      "CAJA DE SEG.SOCIAL DE ABOGADOS Y PROCURA", "CS01"),
     ("ART EJEMPLO S.A.", "ART EJEMPLO S.A.", ""),
@@ -111,8 +111,8 @@ FILAS_REALES = [
     # [tildar] | Carácter | Parte | Correo Electrónico  — tal cual la pantalla
     ["", "AUXILIAR DE JUSTICIA", "CAJA DE SEG.SOCIAL DE ABOGADOS Y PROCURA (CS01)", ""],
     ["", "AUXILIAR DE JUSTICIA", "CAJA FORENSE-ROSARIO (CF02)", ""],
-    ["", "REPRESENTANTE", "LAMAS, ERICA GISELA (6372)", ""],
-    ["", "REPRESENTANTE", "PEREYRA, FABIAN CARLOS (XXI100)", "FCPEREYRA@GMAIL.COM"],
+    ["", "REPRESENTANTE", "DUARTE, SILVIA NOEMI (6372)", ""],
+    ["", "REPRESENTANTE", "BENITEZ, MARIO ALBERTO (XXI100)", "REPRESENTANTE@EJEMPLO.COM"],
 ]
 
 
@@ -122,8 +122,8 @@ def test_leer_partes_la_tabla_real_del_expediente():
     assert [p["codigo"] for p in partes] == ["CS01", "CF02", "6372", "XXI100"]
     assert [p["caracter"] for p in partes] == [
         "AUXILIAR DE JUSTICIA", "AUXILIAR DE JUSTICIA", "REPRESENTANTE", "REPRESENTANTE"]
-    # El correo va solo donde existe (D10): en esta tabla, solo Pereyra.
-    assert [p["correo"] for p in partes] == ["", "", "", "FCPEREYRA@GMAIL.COM"]
+    # El correo va solo donde existe (D10): en esta tabla, solo Benítez.
+    assert [p["correo"] for p in partes] == ["", "", "", "REPRESENTANTE@EJEMPLO.COM"]
     assert [p["fila"] for p in partes] == [0, 1, 2, 3]
 
 
@@ -131,7 +131,7 @@ def test_leer_partes_si_la_tabla_no_trae_columna_de_tilde():
     filas = [[c for c in f[1:]] for f in FILAS_REALES]   # sin la celda del tilde
     partes = sn.leer_partes(filas)
     assert len(partes) == 4
-    assert partes[3]["correo"] == "FCPEREYRA@GMAIL.COM"
+    assert partes[3]["correo"] == "REPRESENTANTE@EJEMPLO.COM"
     assert partes[0]["codigo"] == "CS01"
 
 
@@ -151,7 +151,7 @@ def test_resumen_partes_marca_las_tildadas():
     partes = sn.leer_partes(FILAS_REALES)
     texto = sn.resumen_partes(partes, tildadas={0, 2})
     assert "☑ AUXILIAR DE JUSTICIA: CAJA DE SEG.SOCIAL DE ABOGADOS Y PROCURA (CS01)" in texto
-    assert "☐ REPRESENTANTE: PEREYRA, FABIAN CARLOS (XXI100) → FCPEREYRA@GMAIL.COM" in texto
+    assert "☐ REPRESENTANTE: BENITEZ, MARIO ALBERTO (XXI100) → REPRESENTANTE@EJEMPLO.COM" in texto
 
 
 # ============================================================
@@ -215,10 +215,10 @@ PAGINA_FALSA = """<!DOCTYPE html>
       <tr><td><input type="checkbox" id="p1"></td>
           <td>AUXILIAR DE JUSTICIA</td><td>CAJA FORENSE-ROSARIO (CF02)</td><td></td></tr>
       <tr><td><input type="checkbox" id="p2"></td>
-          <td>REPRESENTANTE</td><td>LAMAS, ERICA GISELA (6372)</td><td></td></tr>
+          <td>REPRESENTANTE</td><td>DUARTE, SILVIA NOEMI (6372)</td><td></td></tr>
       <tr><td><input type="checkbox" id="p3"></td>
-          <td>REPRESENTANTE</td><td>PEREYRA, FABIAN CARLOS (XXI100)</td>
-          <td>FCPEREYRA@GMAIL.COM</td></tr>
+          <td>REPRESENTANTE</td><td>BENITEZ, MARIO ALBERTO (XXI100)</td>
+          <td>REPRESENTANTE@EJEMPLO.COM</td></tr>
     </tbody>
   </table>
 

@@ -24,7 +24,7 @@ ARTICULO 66. Además de la notificación a su apoderado en el domicilio legal, e
 # La cédula al perito designado es LA COMÚN + este bloque. Lo definió
 # Santiago el 16/09/2026 y sale de una cédula real del SISFE (Juzgado de
 # Primera Instancia de Distrito en lo Laboral de la Localidad de Reconquista,
-# "FERRERO HECTOR ALFREDO C/ PREVENCION ART SA S/ ENFERMEDAD PROFESIONAL").
+# "LUCERO RAMON ANIBAL C/ PREVENCION ART SA S/ ENFERMEDAD PROFESIONAL").
 # La frase de la designación es de la plantilla del portal, no del decreto:
 # el decreto (el acta del sorteo) termina en "Todo por ante mi que doy fe.-".
 PERITOS_INTIMACION = (
@@ -41,10 +41,14 @@ ARTÍCULO 79. (Plazo) El plazo para expedirse será de diez días desde la últi
 
 
 # --- Bus Federal (Ley 22.172): el texto fijo de la cédula -----------------
-# Copiado tal cual de una cédula real del SISFE (RIVAS JESUS IGNACIO C/
-# ASOCIART ART SA S/ ENFERMEDAD LABORAL, CUIJ 21-04253894-6, notificación a
-# BETTER CATERING S.A. en CABA, 2 páginas). Son los párrafos que no dependen
-# del caso: el cierre, el instructivo de acceso al expediente y el pie.
+# Copiado tal cual de una cédula real del SISFE (enfermedad laboral, dos
+# páginas, notificación a una empresa en CABA). Son los párrafos que no
+# dependen del caso: el cierre, el instructivo de acceso al expediente y el
+# pie.
+#
+# PRIVACIDAD: los datos de esa cédula (carátula, CUIJ, partes) no se copian
+# acá. Si hace falta un ejemplo de carátula, va uno ficticio, como los de
+# los tests: "ACTOR EJEMPLO C/ DEMANDADA EJEMPLO S/ OBJETO".
 BUSFEDERAL_CIERRE = (
     "En consecuencia queda Ud. debidamente notificado/a de los decretos que "
     "anteceden, quedando a disposición del Tribunal receptor para su "

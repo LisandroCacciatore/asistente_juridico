@@ -15,8 +15,8 @@
 #  google-workspace) arme el borrador en Gmail.
 #
 #  Uso:
-#    python apertura_cuenta_judicial.py --cuij 21-04255346-5 \
-#        --out "C:/ruta/salida" [--caratula "BARROZO C/ ..." ]
+#    python apertura_cuenta_judicial.py --cuij 21-00000012-2 \
+#        --out "C:/ruta/salida" [--caratula "SOSA C/ ..." ]
 #
 #  ⚠ Selectores de SISFE marcados ⬅ VALIDAR: verificar contra el
 #    portal real en la primera corrida (misma política que el
