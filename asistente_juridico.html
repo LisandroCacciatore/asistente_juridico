@@ -442,9 +442,21 @@
          title="Cambiar quién está trabajando" onclick="abrirPuertaSesion()">
       <span class="dot warn" id="sesionDot"></span><span id="sesionTexto">Trabajando: —</span>
     </div>
-    <div class="item"><span class="dot"></span><span>SISFE conectado</span></div>
-    <div class="item"><span class="dot"></span><span>Firma disponible</span></div>
-    <div class="item"><span class="dot warn"></span><span>SISFE · login</span></div>
+    <!-- Los estados de la barra. Los dos primeros dicen lo ÚNICO que el panel
+         puede saber de verdad (si habló con servidor.py, y de dónde salen los
+         datos). El tercero no es un estado: es la puerta humana. Ver
+         pintarConexion(). -->
+    <div class="item" title="Si el panel pudo hablar con servidor.py">
+      <span class="dot warn" id="dotServidor"></span>
+      <span id="txtServidor">Servidor: sin conexión</span>
+    </div>
+    <div class="item" title="Si lo que estás viendo son las cédulas reales o la demo">
+      <span class="dot warn" id="dotDatos"></span>
+      <span id="txtDatos">Datos: demo (ficticios)</span>
+    </div>
+    <div class="item" title="SISFE, FirmAr y el clic final en Notificar los hace una persona">
+      <span class="dot warn"></span><span>SISFE y FirmAr: los abrís vos</span>
+    </div>
   </div>
 </div>
 
@@ -1707,6 +1719,27 @@ async function cargarSesion(){
   if(!SESION.declarada && !scrim.classList.contains("show")) abrirPuertaSesion();
 }
 
+/* Los estados de la barra: SOLO lo que el panel puede saber de verdad.
+   Si hay servidor es porque el panel habló con él — nada más que eso, y alcanza
+   para saber si lo que se ve son las cédulas reales o la demo.
+   Lo que NO se puede saber desde acá es si el SISFE tiene una sesión viva: eso
+   vive en el perfil de Chrome de cada uno, no en el servidor. Por eso no se
+   afirma. Hasta el 24/09/2026 la barra decía "SISFE conectado" y "Firma
+   disponible" en texto FIJO y con el punto verde, aunque no hubiera nadie
+   logueado: era una afirmación falsa en la cara del abogado. */
+function pintarConexion(){
+  const pintar = (txtId, dotId, texto, bien) => {
+    const t = document.getElementById(txtId);
+    const d = document.getElementById(dotId);
+    if(t) t.textContent = texto;
+    if(d) d.className = "dot" + (bien ? "" : " warn");
+  };
+  pintar("txtServidor", "dotServidor",
+         SERVER ? "Servidor: conectado" : "Servidor: sin conexión", SERVER);
+  pintar("txtDatos", "dotDatos",
+         SERVER ? "Datos: reales" : "Datos: demo (ficticios)", SERVER);
+}
+
 function pintarSesion(){
   const t = document.getElementById("sesionTexto");
   if(!t) return;
@@ -1813,13 +1846,19 @@ async function loadData(){
     const r = await fetch('/api/cedulas');
     if(r.ok){
       const j = await r.json();
-      if(j.cedulas && j.cedulas.length){
-        cedulas = j.cedulas.filter(c=>c.estado!=='atencion');
-        atencion = j.cedulas.filter(c=>c.estado==='atencion');
-        SERVER = true;
-      }
+      // Si el servidor CONTESTA, no estamos en demo: lo que se ve es lo que hay.
+      // Antes esto se decidía por la CANTIDAD de cédulas, así que un registro
+      // vacío (recién reseteado, o antes de generar la primera) dejaba el panel
+      // en "modo demo" y seguía mostrando las cédulas ficticias como si fueran
+      // reales. En un panel que se usa para decidir qué firmar, ese es el peor
+      // error posible: mostrar una cédula que no existe.
+      SERVER = true;
+      const todas = Array.isArray(j.cedulas) ? j.cedulas : [];
+      cedulas  = todas.filter(c=>c.estado!=='atencion');
+      atencion = todas.filter(c=>c.estado==='atencion');
     }
   }catch(e){ /* sin servidor: queda la demo cargada arriba */ }
+  pintarConexion();
   renderListas();
   renderAtencion();
   renderPendientes();
