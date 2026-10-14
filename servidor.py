@@ -431,13 +431,34 @@ def _error_mail(e):
     return "No pude leer la casilla: " + t[:180]
 
 
+def _avisar_mail(e):
+    """Un mail sin autorizar NO es un error inesperado: es lo normal en una
+    maquina que todavia no dio el permiso, y en la maquina nueva lo va a ver
+    TODAS las veces hasta que lo de (el panel refresca el mail cada 60 s).
+
+    Por eso no se imprime la traza completa: la ventana del servidor es lo
+    unico que el abogado tiene a la vista, y una traza de 30 lineas cada minuto
+    se lee como "esto esta roto". Se deja una linea. La traza queda para lo que
+    si es raro y hay que investigar.
+    """
+    t = str(e)
+    conocido = ("No hay token" in t
+                or isinstance(e, FileNotFoundError)
+                or "invalid_grant" in t
+                or "RefreshError" in type(e).__name__)
+    if conocido:
+        print("  (mail) " + _error_mail(e))
+    else:
+        traceback.print_exc()
+
+
 @app.get("/api/mail/bandeja")
 def api_mail_bandeja(max: int = 8):
     try:
         return {"cuenta": mail_gmail.cuenta(),
                 "mails": mail_gmail.buscar(CONSULTA_BANDEJA, max)}
     except Exception as e:
-        traceback.print_exc()
+        _avisar_mail(e)
         return {"error": _error_mail(e)}
 
 
@@ -447,7 +468,7 @@ def api_mail_borradores(max: int = 8):
         return {"cuenta": mail_gmail.cuenta(),
                 "borradores": mail_gmail.listar_borradores(max)}
     except Exception as e:
-        traceback.print_exc()
+        _avisar_mail(e)
         return {"error": _error_mail(e)}
 
 
