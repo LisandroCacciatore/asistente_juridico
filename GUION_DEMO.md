@@ -105,6 +105,13 @@ En una cédula, **"Revisar y firmar"**. El modal muestra primero **los datos**
 Apretá **"📄 Ver el PDF"**: se carga el visor de Chrome con la cédula tal como se
 va a firmar, y el epígrafe aclara si es la generada o la ya firmada.
 
+> ⚠️ **Elegí bien la cédula.** El PDF es transitorio: se borra al cerrar la
+> cédula, así que sólo lo tienen las que se generaron en esta máquina y siguen
+> abiertas. Hoy lo muestran **GONZALEZ** y **las tres de FERRERO (los peritos)**.
+> En las otras el panel **no te ofrece el botón** y te explica por qué — y eso
+> también vale mostrarlo: *"no te dejo mirar un marco vacío; te digo de dónde
+> salen los PDF"*.
+
 Dos detalles que valen la pena decir en voz alta:
 
 - El visor carga **sólo cuando lo pedís**: si cargara al abrir el modal, cada
@@ -185,6 +192,7 @@ comprueba que el botón quedó sin apretar. No es una promesa, es un candado.
 | **Notificar en el SISFE** | Los 5 selectores están `⬅ VALIDAR`: nunca se vio el portal | Si lo dispara, frena y pide que lo hagas a mano |
 | **El monitor de SISFE** | Los selectores del login sin validar | No arrancarlo |
 | **La bandeja de mail** | Token de Google vencido (§4) | Muestra el mensaje claro |
+| **El PDF de las cédulas viejas** | El archivo se borra al cerrar la cédula (son transitorios) | El panel no ofrece el botón y explica por qué |
 | **La firma en lote real** | Código listo, nunca corrido contra FirmAr | Mostrar sólo la puerta de identidad |
 
 Nada de esto se rompe ni queda colgado: **frena y avisa**. Ese es el diseño.

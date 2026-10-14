@@ -992,6 +992,10 @@ let SERVER = false;
 /* ---------- Paso 1: revisar el PDF (igual en ambos modos) ---------- */
 function review(id){
   const c = getCed(id);
+  // ¿Queda el archivo en el disco? Los PDF son transitorios: se borran al
+  // cerrar la cédula. Si no hay ninguno, ofrecer "Ver el PDF" hace que el
+  // visor muestre el JSON crudo del 404 — se ve como que el panel está roto.
+  const tienePdf = !!(c.ruta_firmada || c.ruta_pdf);
   const fldDest = (c.dest||[]).map(d=>`<div class="fld"><b>Sr./es:</b> ${esc(d.n)}</div><div class="fld"><b>Domicilio:</b> ${esc(d.d)}</div>`).join("");
   openModal(`
     <div class="modal-head">
@@ -1009,8 +1013,13 @@ function review(id){
         <div style="height:8px"></div>
         <div class="fld">Hago saber a Ud. que en los autos de referencia se ha dictado el decreto que se notifica, quedando debidamente notificado/a del mismo…</div>
       </div>
-      <p class="hint">Estos son los datos que van al PDF. Para ver el archivo tal
-         como se va a firmar, apretá «Ver el PDF».</p>
+      <p class="hint">${tienePdf
+        ? `Estos son los datos que van al PDF. Para ver el archivo tal como se va
+           a firmar, apretá «Ver el PDF».`
+        : `Estos son los datos que van al PDF. De esta cédula no queda el archivo
+           en el disco: los PDF son transitorios y se borran al cerrarla. Lo que
+           ves arriba es el contenido; para tener el archivo hay que generarla de
+           nuevo.`}</p>
       <div id="pdfBox" style="display:none;margin-top:14px">
         <div class="hint" id="pdfCap" style="margin:0 0 7px"></div>
         <iframe id="pdfFrame" title="PDF de la cédula"
@@ -1019,7 +1028,7 @@ function review(id){
     </div>
     <div class="modal-foot">
       <button class="btn ghost" onclick="closeModal()">Cerrar</button>
-      <button class="btn ghost" onclick="verPdf('${id}')">📄 Ver el PDF</button>
+      ${tienePdf?`<button class="btn ghost" onclick="verPdf('${id}')">📄 Ver el PDF</button>`:""}
       <button class="btn sign" onclick="elegirIdentidad('${id}','firmar')">🔒 Firmar digitalmente</button>
     </div>`);
 }
@@ -1036,6 +1045,12 @@ function review(id){
    En modo demo no hay servidor: avisa en vez de dejar un marco vacío. */
 function verPdf(id){
   const c = getCed(id);
+  // Red de seguridad: sin archivo no se navega. Si el iframe va a una URL que
+  // contesta 404, el navegador muestra el JSON de error adentro del visor.
+  if(!c.ruta_firmada && !c.ruta_pdf){
+    toast("⚠ De esta cédula no queda el PDF en el disco");
+    return;
+  }
   const box = document.getElementById("pdfBox");
   const frame = document.getElementById("pdfFrame");
   const cap = document.getElementById("pdfCap");
