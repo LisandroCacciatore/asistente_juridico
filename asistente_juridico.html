@@ -979,9 +979,58 @@ async function renderActividad(){
 /* ---------------- Modales / puertas humanas ---------------- */
 const scrim = document.getElementById("scrim");
 const modal = document.getElementById("modal");
-function openModal(html){ modal.innerHTML=html; scrim.classList.add("show"); }
+
+/* El fondo (scrim) cierra el modal al clic, y eso está bien —pero el botón que
+   acabás de apretar queda DEBAJO de la capa: un segundo clic en el mismo lugar
+   (doble clic, o volver a apretar porque pareció que no respondió) caía en el
+   fondo y cerraba el modal en el acto. Medido: se abría y se cerraba en
+   ~150 ms, invisible al ojo. Se veía como si el botón no hiciera nada.
+
+   Por eso el fondo cierra solo ante un clic DELIBERADO en el fondo. Las cuatro
+   condiciones, del síntoma a la causa:
+     1. el clic empezó y terminó en el fondo (si arrastrás desde el modal, no),
+     2. no es parte de un doble/triple clic,
+     3. el puntero se movió desde donde estaba cuando el modal se abrió: quien
+        vuelve a apretar el mismo lugar no movió nada, y no quiere cerrar,
+     4. pasó un instante desde que se abrió (el clic que abre nunca cierra).
+   "Cerrar"/"Cancelar" cierran siempre, sin pasar por acá. */
+const MS_ANTES_DE_CERRAR = 150;
+const PX_MOVIMIENTO = 10;
+let modalAbiertoEn = 0;
+let clicEmpezoEnFondo = false;
+let ultimoPuntoPuntero = null;   // última posición conocida del puntero
+let puntoAlAbrir = null;         // dónde estaba el puntero al abrir el modal
+let punteroSeMovio = false;
+
+document.addEventListener("mousemove", e => {
+  ultimoPuntoPuntero = { x: e.clientX, y: e.clientY };
+  if (puntoAlAbrir && !punteroSeMovio) {
+    const dx = e.clientX - puntoAlAbrir.x, dy = e.clientY - puntoAlAbrir.y;
+    if (dx * dx + dy * dy > PX_MOVIMIENTO * PX_MOVIMIENTO) punteroSeMovio = true;
+  }
+}, { passive: true });
+
+function openModal(html){
+  modal.innerHTML = html;
+  scrim.classList.add("show");
+  modalAbiertoEn = performance.now();
+  puntoAlAbrir = ultimoPuntoPuntero
+    ? { x: ultimoPuntoPuntero.x, y: ultimoPuntoPuntero.y }
+    : null;
+  punteroSeMovio = false;
+}
 function closeModal(){ scrim.classList.remove("show"); }
-scrim.addEventListener("click", e=>{ if(e.target===scrim) closeModal(); });
+
+scrim.addEventListener("mousedown", e => { clicEmpezoEnFondo = (e.target === scrim); });
+scrim.addEventListener("click", e => {
+  const empezoEnFondo = clicEmpezoEnFondo;
+  clicEmpezoEnFondo = false;
+  if (e.target !== scrim || !empezoEnFondo) return;
+  if (e.detail > 1) return;
+  if (puntoAlAbrir && !punteroSeMovio) return;
+  if (performance.now() - modalAbiertoEn < MS_ANTES_DE_CERRAR) return;
+  closeModal();
+});
 
 function getCed(id){ return cedulas.find(c=>c.id===id); }
 
