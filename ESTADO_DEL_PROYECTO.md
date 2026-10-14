@@ -52,6 +52,46 @@ firmada y leer y tildar las Partes.
 
 **Meta Jurídico ya no está en este circuito** (se sacó el 16/09/2026, spec D1).
 
+### Cómo llega la puerta a la persona: hay dos vías, y no son equivalentes
+
+| Vía | Cómo se ve | Cuándo funciona |
+|---|---|---|
+| **Panel** (HTTP) | el panel muestra el cartel y el botón «Ya está, continuar» destraba el trabajo (`POST /api/continuar/<job_id>`) | siempre |
+| **Consola** (`input()`) | el script imprime el pedido y espera un **ENTER en la consola que lo lanzó** | **solo si el servidor tiene consola** |
+
+La puerta de «Subir al SISFE» (`notificar_sisfe`) va **por el panel**:
+`sisfe_notificar.subir(..., pausar=pausar)`. La de **apertura de cuenta judicial
+(`cuenta`) todavía va por consola**: `skills/apertura-cuenta-judicial-banco-municipal/
+scripts/apertura_cuenta_judicial.py` llama a `pausa_humana()`, que es un `input()`
+(línea 58), y `acciones.py` lo lanza con `Popen` **sin `stdin=`** (línea 48), así que
+el hijo hereda el stdin del servidor.
+
+Consecuencia, verificada el 14/10/2026: si el servidor **no tiene consola** —por
+ejemplo si se lo levantó como proceso de fondo, o desde un shell no interactivo—
+ese `input()` no espera. Muere en el acto:
+
+```
+hijo: esperando ENTER >>> Traceback ...
+EOFError: EOF when reading a line
+codigo de salida: 1
+```
+
+Y el navegador del SISFE no queda abierto: el script abre Chrome con el perfil
+`chrome_profile_sisfe`, y en la primera puerta (login pendiente, o un selector
+que no encontró) el `input()` lo mata. Se ve como «el SISFE no abre».
+
+Prueba de que **no** se había lanzado: el 14/10 el perfil `chrome_profile_sisfe`
+tenía **0 archivos tocados**, con último uso el **16/09/2026**. El script no había
+corrido ni una vez ese día.
+
+Para abrirlo a mano (y que el ENTER sí aparezca), en **una consola propia**:
+
+```bash
+cd ~/asistente_juridico
+python "skills/apertura-cuenta-judicial-banco-municipal/scripts/apertura_cuenta_judicial.py" \
+       --cuij 21-00000001-0 --out "$LOCALAPPDATA/Temp/cuenta"
+```
+
 ---
 
 ## 4. Qué está validado, y cómo se sabe
@@ -91,6 +131,28 @@ No se repite acá: **son los `- [ ]` de `SPEC_CIRCUITO_v0.2.md`**. En corto:
    la ficha del cliente. Hoy `estado.py` no tiene ningún control de duplicados:
    solo deduplica por `id` local.
 7. **Decisión pendiente:** elegir la identidad del lote desde el panel.
+8. **La puerta de «Apertura de cuenta judicial» sigue en la consola.** Es la única
+   acción del SISFE que no se migró al panel: su pausa es un `input()`. Con el
+   servidor sin consola esa puerta no se puede contestar (verificado: `EOFError`,
+   salida 1) y el SISFE no queda abierto — ver §3. Dos cosas que hacer:
+   pasarle el `pausar` del panel igual que `notificar_sisfe`, y **partir el cartel
+   en dos y en orden**: primero «voy a abrir el SISFE, apretá continuar», después
+   «iniciá sesión y avisame». Hoy dice las dos cosas juntas y al revés: manda a
+   iniciar sesión *en la ventana* cuando la ventana recién se abre **después** de
+   apretar el botón (`acciones.py`, el `pausar(...)` está antes del `_correr(cmd)`).
+9. **El dato de demo de `fernandez_000003` corta el tramo del SISFE.** Su
+   `ruta_firmada` es `C:/demo/FIRMADO.pdf`, que **no existe** (`C:/demo/` no
+   existe), así que «Subir al SISFE» se frena antes de abrir nada:
+
+   ```
+   status : error
+   error  : No encuentro el PDF firmado en el disco: C:/demo/FIRMADO.pdf
+   ```
+
+   Reproducido el 14/10/2026 contra el endpoint real. Es la **única** cédula que
+   hoy ofrece ese botón (las demás no están en estado `firmada`), así que el tramo
+   no se puede mostrar de punta a punta. Hacer coherente el dato: o un PDF de
+   mentira que exista de verdad, o que la cédula de demo no figure como firmada.
 
 ---
 
