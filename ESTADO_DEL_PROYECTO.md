@@ -108,6 +108,8 @@ porque entre esas está el blindaje de D17 (que el flujo no apriete NOTIFICAR).
 | Documento | Para qué sirve | Estado |
 |---|---|---|
 | `SPEC_CIRCUITO_v0.2.md` | **Fuente de verdad**: decisiones y criterios por fase. **Los pendientes son sus `- [ ]`** | vigente |
+| `INSTALACION.md` | Dejar el asistente andando en una **máquina nueva** (la de Santiago, o cualquier otra) | vigente (14/10/2026) |
+| `GUION_DEMO.md` | El recorrido para mostrarlo: paso a paso, qué decir, qué no tocar | vigente (14/10/2026) |
 | `HANDOFF.md` | Cómo está armado todo, tramo por tramo, y qué no se pudo verificar | vigente (corregido el 24/09/2026) |
 | `ESTADO_DEL_PROYECTO.md` | Este mapa | reescrito el 24/09/2026 |
 | `PENDIENTES.feature.md` | Registro de qué se pidió y por qué | **snapshot viejo** (commit `beb7f72`, 25 commits atrás): no es la lista de pendientes |
