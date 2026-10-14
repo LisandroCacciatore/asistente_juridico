@@ -14,3 +14,8 @@ requests
 google-auth-oauthlib
 google-api-python-client
 pytest
+# El TestClient de FastAPI —que usan test_servidor_pdf.py y test_lote_identidad.py—
+# necesita httpx, y fastapi NO lo trae. En la máquina de desarrollo estaba igual
+# porque lo instala Hermes, así que la suite pasaba ahí y fallaba en una
+# instalación limpia. Lo encontró la prueba del paquete en un venv desde cero.
+httpx
