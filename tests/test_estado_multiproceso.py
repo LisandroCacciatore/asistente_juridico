@@ -2,12 +2,13 @@
 """Dos procesos reales escribiendo el mismo estado.json.
 
 El test de hilos de test_estado.py no alcanza: el portal y la consola local
-son procesos separados. Acá se lanzan dos procesos de Python y se verifica
-que el FileLock + os.replace no pierdan ninguna actualización.
+son procesos separados. Acá se usa multiprocessing con start method "spawn",
+que es el modo de Windows, y se verifica que el FileLock + os.replace no
+pierdan ninguna actualización.
 """
 import json
+import multiprocessing
 import os
-import subprocess
 import sys
 
 import pytest
@@ -18,24 +19,16 @@ sys.path.insert(0, RAIZ)
 import estado  # noqa: E402
 
 
-TRABAJADOR = r"""
-import os
-import sys
+def _agregar_pendientes(ruta_estado, ruta_log, prefijo, cantidad):
+    import estado
 
-sys.path.insert(0, os.getcwd())
-import estado
-
-estado.ARCHIVO = sys.argv[1]
-estado.ARCHIVO_LOG = sys.argv[2]
-prefijo = sys.argv[3]
-cantidad = int(sys.argv[4])
-
-for i in range(cantidad):
-    estado.agregar_pendiente({
-        "id": f"{prefijo}{i}",
-        "caratula": f"CASO {prefijo}{i}",
-    })
-"""
+    estado.ARCHIVO = ruta_estado
+    estado.ARCHIVO_LOG = ruta_log
+    for i in range(cantidad):
+        estado.agregar_pendiente({
+            "id": f"{prefijo}{i}",
+            "caratula": f"CASO {prefijo}{i}",
+        })
 
 
 @pytest.fixture(autouse=True)
@@ -46,20 +39,21 @@ def _archivos_temporales(tmp_path, monkeypatch):
 
 
 def test_dos_procesos_no_pierden_pendientes(_archivos_temporales):
-    procesos = []
-    for prefijo in ("a", "b"):
-        procesos.append(subprocess.Popen(
-            [sys.executable, "-c", TRABAJADOR,
-             estado.ARCHIVO, estado.ARCHIVO_LOG, prefijo, "20"],
-            cwd=RAIZ,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        ))
+    ctx = multiprocessing.get_context("spawn")
+    procesos = [
+        ctx.Process(
+            target=_agregar_pendientes,
+            args=(estado.ARCHIVO, estado.ARCHIVO_LOG, prefijo, 20),
+        )
+        for prefijo in ("a", "b")
+    ]
 
     for proceso in procesos:
-        salida, error = proceso.communicate(timeout=30)
-        assert proceso.returncode == 0, (salida, error)
+        proceso.start()
+    for proceso in procesos:
+        proceso.join(30)
+        assert not proceso.is_alive()
+        assert proceso.exitcode == 0
 
     with open(estado.ARCHIVO, encoding="utf-8") as f:
         data = json.load(f)

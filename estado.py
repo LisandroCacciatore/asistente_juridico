@@ -22,10 +22,11 @@ import getpass
 import platform
 import tempfile
 import threading
+import time
 import datetime
 from contextlib import contextmanager
 
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 ARCHIVO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "estado.json")
 ARCHIVO_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log_acciones.jsonl")
@@ -33,17 +34,42 @@ ARCHIVO_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log_acci
 # entrar al lock desde cargar()/guardar() sin deadlock.
 _lock = threading.RLock()
 
+# FileLock (no SoftFileLock): el sistema operativo libera el lock si el
+# proceso muere. SoftFileLock deja un .lock huérfano y traba todo.
+BLOQUEO_TIMEOUT = 10
+_REINTENTOS_REPLACE = 8
+_ESPERA_REPLACE = 0.075
+
+
+class EstadoBloqueado(RuntimeError):
+    """No se pudo obtener el lock de archivo dentro del timeout."""
+
+
+class ErrorEscrituraEstado(RuntimeError):
+    """No se pudo reemplazar estado.json después de varios reintentos."""
+
 
 @contextmanager
-def _bloqueo_archivo(archivo, timeout=30):
+def _bloqueo_archivo(archivo, timeout=None):
     """Lock interproceso para un archivo de estado o de log.
 
     El RLock de arriba protege hilos dentro del mismo proceso. Desde que la
     consola local y el portal son dos procesos distintos, hace falta además
     un lock de archivo para que no lean y escriban el mismo JSON a la vez.
+
+    Orden fijo en todo el módulo: primero RLock, después FileLock. No
+    invertirlo en ninguna función para evitar deadlocks.
     """
-    with FileLock(f"{archivo}.lock", timeout=timeout):
-        yield
+    timeout = BLOQUEO_TIMEOUT if timeout is None else timeout
+    try:
+        with FileLock(f"{archivo}.lock", timeout=timeout):
+            yield
+    except Timeout as e:
+        raise EstadoBloqueado(
+            f"No pude obtener el lock de {os.path.basename(archivo)} en "
+            f"{timeout} s. Otro proceso puede estar usando el estado; "
+            "probá de nuevo en unos segundos."
+        ) from e
 
 
 def _leer_disco():
@@ -69,6 +95,32 @@ def cargar():
             return _leer_disco()
 
 
+def _reemplazar_con_reintentos(origen, destino):
+    """os.replace con reintentos ante PermissionError de Windows.
+
+    El lock protege contra nuestros procesos, no contra antivirus,
+    indexadores, backups o un lector externo que tenga el archivo abierto.
+    En Windows eso aparece como PermissionError; se reintenta un rato y,
+    si sigue bloqueado, se falla con un mensaje accionable.
+    """
+    ultimo = None
+    for intento in range(1, _REINTENTOS_REPLACE + 1):
+        try:
+            os.replace(origen, destino)
+            return
+        except PermissionError as e:
+            ultimo = e
+            if intento == _REINTENTOS_REPLACE:
+                break
+            time.sleep(_ESPERA_REPLACE)
+    raise ErrorEscrituraEstado(
+        f"No pude reemplazar {os.path.basename(destino)} después de "
+        f"{_REINTENTOS_REPLACE} intentos. Otro programa puede tener el archivo "
+        "abierto (antivirus, indexador, backup). Cerrá ese programa o probá "
+        "de nuevo."
+    ) from ultimo
+
+
 def _guardar_sin_lock(data):
     """Escribe el JSON de forma atómica: temporal + fsync + os.replace.
 
@@ -85,7 +137,7 @@ def _guardar_sin_lock(data):
             json.dump(data, f, ensure_ascii=False, indent=2)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(temporal, ARCHIVO)
+        _reemplazar_con_reintentos(temporal, ARCHIVO)
     except Exception:
         try:
             os.remove(temporal)
