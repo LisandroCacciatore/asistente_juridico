@@ -12,26 +12,42 @@
 #  el archivo ya no exista.
 #
 #  Concurrencia (Fase 0): toda secuencia cargar → modificar → guardar
-#  corre bajo un mismo lock (RLock), para que dos trabajos en paralelo
-#  (ej: firma en lote + subida a Meta) no se pisen actualizaciones.
+#  corre bajo un RLock (hilos) y un FileLock (procesos), para que dos
+#  trabajos en paralelo (ej: consola local + portal) no se pisen.
 # ============================================================
 
 import os
 import json
 import getpass
 import platform
+import tempfile
 import threading
 import datetime
+from contextlib import contextmanager
+
+from filelock import FileLock
 
 ARCHIVO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "estado.json")
 ARCHIVO_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log_acciones.jsonl")
-# RLock: las operaciones compuestas (cargar → modificar → guardar) vuelven
-# a entrar al lock desde cargar()/guardar() sin deadlock.
+# RLock: las operaciones compuestas (cargar → modificar → guardar) vuelven a
+# entrar al lock desde cargar()/guardar() sin deadlock.
 _lock = threading.RLock()
 
 
+@contextmanager
+def _bloqueo_archivo(archivo, timeout=30):
+    """Lock interproceso para un archivo de estado o de log.
+
+    El RLock de arriba protege hilos dentro del mismo proceso. Desde que la
+    consola local y el portal son dos procesos distintos, hace falta además
+    un lock de archivo para que no lean y escriban el mismo JSON a la vez.
+    """
+    with FileLock(f"{archivo}.lock", timeout=timeout):
+        yield
+
+
 def _leer_disco():
-    """Lee el JSON sin lock (solo para uso interno de cargar())."""
+    """Lee el JSON sin lock (solo para uso interno de cargar()/_mutar())."""
     if not os.path.isfile(ARCHIVO):
         return {"cedulas": [], "pendientes": []}
     with open(ARCHIVO, encoding="utf-8") as f:
@@ -42,30 +58,61 @@ def _leer_disco():
 
 
 def cargar():
-    """Devuelve el estado completo. Lectura bajo lock: aunque sea de solo
-    lectura, evita leer a mitad de una escritura de otro hilo."""
+    """Devuelve el estado completo bajo lock de hilo y de archivo.
+
+    El lock de archivo también evita que un lector tenga abierto el JSON
+    justo cuando otro proceso lo reemplaza con os.replace (en Windows eso
+    puede hacer fallar el reemplazo).
+    """
     with _lock:
-        return _leer_disco()
+        with _bloqueo_archivo(ARCHIVO):
+            return _leer_disco()
+
+
+def _guardar_sin_lock(data):
+    """Escribe el JSON de forma atómica: temporal + fsync + os.replace.
+
+    Si el proceso muere a mitad de la escritura, el archivo original queda
+    intacto. El temporal vive en la misma carpeta para que os.replace sea
+    atómico también en Windows.
+    """
+    carpeta = os.path.dirname(ARCHIVO) or "."
+    os.makedirs(carpeta, exist_ok=True)
+    fd, temporal = tempfile.mkstemp(
+        prefix=os.path.basename(ARCHIVO) + ".", suffix=".tmp", dir=carpeta)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporal, ARCHIVO)
+    except Exception:
+        try:
+            os.remove(temporal)
+        except OSError:
+            pass
+        raise
 
 
 def guardar(data):
     with _lock:
-        with open(ARCHIVO, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        with _bloqueo_archivo(ARCHIVO):
+            _guardar_sin_lock(data)
 
 
 def _mutar(modificador):
     """Aplica modificador(data) en una operación atómica y persiste.
 
     Es la ÚNICA vía para cambiar el estado: el lock cubre la secuencia
-    completa cargar → modificar → guardar, así dos hilos no pierden
-    actualizaciones (cada uno lee el resultado del anterior).
+    completa cargar → modificar → guardar, así dos hilos o dos procesos no
+    pierden actualizaciones (cada uno lee el resultado del anterior).
     """
     with _lock:
-        data = _leer_disco()
-        modificador(data)
-        guardar(data)
-        return data
+        with _bloqueo_archivo(ARCHIVO):
+            data = _leer_disco()
+            modificador(data)
+            _guardar_sin_lock(data)
+            return data
 
 
 def _ahora():
@@ -96,7 +143,8 @@ def _quien():
 
 
 # --- Log de acciones (append-only, sobrevive a los archivos) ------
-def registrar_log(accion, id_cedula, caratula="", cuij="", detalle="", identidad=None):
+def registrar_log(accion, id_cedula, caratula="", cuij="", detalle="", identidad=None,
+                  operador=None, usuario=None, maquina=None):
     """
     Agrega una línea al log de acciones. No se pisa nunca — cada llamada
     suma una entrada nueva. `accion` típicas: "generada", "firmada",
@@ -105,8 +153,14 @@ def registrar_log(accion, id_cedula, caratula="", cuij="", detalle="", identidad
     Cada entrada queda sellada con el usuario de Windows y la máquina
     (D11). Si el estudio tiene una sola persona, alcanza con la máquina
     para saber de dónde salió; con varias, el usuario distingue quién.
+
+    `operador`, `identidad`, `usuario` y `maquina` se pueden pasar
+    explícitos cuando el que registra no es la consola local (por ejemplo,
+    el portal, que tiene su propio login y no comparte `sesion.json`).
     """
-    usuario, maquina = _quien()
+    usuario_win, maquina_win = _quien()
+    usuario = usuario or usuario_win
+    maquina = maquina or maquina_win
     # Quién operó y con qué identidad se ejecutó (SPEC D18). Si no hay
     # jornada declarada, el operador cae al usuario de Windows: es el único
     # dato que hay, y así el log nunca queda con el campo vacío.
@@ -115,7 +169,7 @@ def registrar_log(accion, id_cedula, caratula="", cuij="", detalle="", identidad
         jornada = sesion.actual() or {}
     except Exception:
         jornada = {}
-    operador = jornada.get("operador") or usuario
+    operador = operador or jornada.get("operador") or usuario
     entrada = {
         "fecha_hora": _ahora(),
         "accion": accion,
@@ -129,8 +183,11 @@ def registrar_log(accion, id_cedula, caratula="", cuij="", detalle="", identidad
         "identidad": identidad or jornada.get("identidad") or operador,
     }
     with _lock:
-        with open(ARCHIVO_LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entrada, ensure_ascii=False) + "\n")
+        with _bloqueo_archivo(ARCHIVO_LOG):
+            with open(ARCHIVO_LOG, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entrada, ensure_ascii=False) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
     return entrada
 
 
@@ -142,10 +199,12 @@ def leer_log(limite=None):
     consumidor — el dashboard, un informe, una auditoría — tiene que
     acordarse de que el campo puede faltar.
     """
-    if not os.path.isfile(ARCHIVO_LOG):
-        return []
-    with open(ARCHIVO_LOG, encoding="utf-8") as f:
-        lineas = [json.loads(l) for l in f if l.strip()]
+    with _lock:
+        with _bloqueo_archivo(ARCHIVO_LOG):
+            if not os.path.isfile(ARCHIVO_LOG):
+                return []
+            with open(ARCHIVO_LOG, encoding="utf-8") as f:
+                lineas = [json.loads(l) for l in f if l.strip()]
     for e in lineas:
         e.setdefault("usuario", "")
         e.setdefault("maquina", "")

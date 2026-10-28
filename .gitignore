@@ -7,6 +7,9 @@ log_acciones.jsonl
 # Windows (spec D11/D18/D19). Es dato de auditoría por máquina, igual que
 # el estado: no se sube. Faltaba acá (agregado el 24/09/2026).
 sesion.json
+# --- Locks interproceso de estado.py (filelock) ---
+estado.json.lock
+log_acciones.jsonl.lock
 cedulas_temp/
 ExpedientesDigitales/
 PDFs_decretos/
