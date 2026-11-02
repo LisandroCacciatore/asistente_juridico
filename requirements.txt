@@ -20,3 +20,13 @@ filelock
 # porque lo instala Hermes, así que la suite pasaba ahí y fallaba en una
 # instalación limpia. Lo encontró la prueba del paquete en un venv desde cero.
 httpx
+
+# --- Portal (Fase 10b) ---------------------------------------
+# Hash de contraseñas del login del portal (argon2id). Verificado en
+# Python 3.14.6: argon2-cffi 25.1.0 instala y hashea sin problema. Si en
+# una máquina no instalara, la alternativa es bcrypt (ver docs/PORTAL.md).
+argon2-cffi
+# FastAPI/Starlette lo necesitan para parsear formularios multipart, que es
+# como llegan los PDF de las cédulas al portal. Sin esto, el upload falla
+# con "Form data requires python-multipart to be installed".
+python-multipart
