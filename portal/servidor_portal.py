@@ -78,6 +78,21 @@ async def _proteger_csrf(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def _cabeceras_seguridad(request: Request, call_next):
+    """Cabeceras que el navegador no puede dejar de recibir.
+
+    `nosniff` evita que el navegador adivine el tipo de archivo y ejecute
+    como HTML algo que se sirvió como PDF. `DENY` impide embeber el portal
+    en un iframe ajeno (clickjacking). Se agregan al final, así también
+    cubren las respuestas de error.
+    """
+    respuesta = await call_next(request)
+    respuesta.headers.setdefault("X-Content-Type-Options", "nosniff")
+    respuesta.headers.setdefault("X-Frame-Options", "DENY")
+    return respuesta
+
+
 # --- Errores ------------------------------------------------------
 @app.exception_handler(permisos.ErrorPermiso)
 async def _error_permiso(request: Request, exc: permisos.ErrorPermiso):
@@ -197,9 +212,21 @@ def _nombre_seguro(nombre):
     return nombre[:120]
 
 
+def _cuij_seguro(cuij):
+    """CUIJ apto para nombrar una carpeta: solo letras, números y guiones."""
+    limpio = re.sub(r"[^0-9A-Za-z-]+", "", str(cuij or ""))
+    return limpio[:80]
+
+
 def _dentro_de_uploads(ruta):
-    raiz = os.path.abspath(db.ruta_uploads())
-    destino = os.path.abspath(ruta)
+    """True solo si `ruta` queda dentro de PORTAL_UPLOADS.
+
+    Se resuelven symlinks y se normaliza el caso (Windows) antes de
+    comparar: una metadata vieja o un nombre armado con `..` no puede
+    hacer que el servidor lea o escriba fuera de la carpeta de subidas.
+    """
+    raiz = os.path.normcase(os.path.realpath(db.ruta_uploads()))
+    destino = os.path.normcase(os.path.realpath(ruta))
     try:
         return os.path.commonpath([destino, raiz]) == raiz
     except ValueError:
@@ -426,16 +453,30 @@ def api_subir_documento(
     nombre = _nombre_seguro(archivo.filename)
     if not nombre.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF.")
+
+    cabecera = archivo.file.read(5)
+    archivo.file.seek(0)
+    if cabecera != b"%PDF-":
+        raise HTTPException(
+            status_code=400,
+            detail="El archivo no empieza con la cabecera PDF (%PDF-).",
+        )
+
     try:
         max_mb = int(db.config_portal("PORTAL_MAX_SUBIDA_MB", 25))
     except (TypeError, ValueError):
         max_mb = 25
     max_bytes = max(1, max_mb) * 1024 * 1024
 
-    carpeta = os.path.join(db.ruta_uploads(), str(cuij or "").strip() or "sin_cuij")
-    os.makedirs(carpeta, exist_ok=True)
+    carpeta = os.path.join(db.ruta_uploads(), _cuij_seguro(cuij) or "sin_cuij")
     documento_id = secrets.token_hex(8)
     destino = os.path.join(carpeta, f"{documento_id}_{nombre}")
+    if not _dentro_de_uploads(carpeta) or not _dentro_de_uploads(destino):
+        raise HTTPException(
+            status_code=400,
+            detail="El CUIJ no es válido para armar la carpeta de subida.",
+        )
+    os.makedirs(carpeta, exist_ok=True)
 
     sha = hashlib.sha256()
     total = 0

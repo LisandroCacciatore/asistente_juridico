@@ -279,6 +279,58 @@ def test_nombre_peligroso_no_sale_de_uploads(portal):
     assert os.path.commonpath([ruta, os.path.abspath(portal.uploads)]) == os.path.abspath(portal.uploads)
 
 
+def test_cuij_peligroso_no_sale_de_uploads(portal):
+    _login(portal)
+    r = portal.cliente.post(
+        "/api/documentos",
+        files={"archivo": ("cedula.pdf", PDF, "application/pdf")},
+        data={"cuij": "../../fuera/CUIJ-1"},
+    )
+    assert r.status_code == 200
+    documento = r.json()["documento"]
+    ruta = os.path.abspath(documento["ruta"])
+    assert os.path.commonpath([ruta, os.path.abspath(portal.uploads)]) == os.path.abspath(portal.uploads)
+    assert os.path.basename(os.path.dirname(ruta)) == "fueraCUIJ-1"
+
+
+def test_cuij_se_sanea_a_letras_numeros_y_guiones(portal):
+    _login(portal)
+    r = portal.cliente.post(
+        "/api/documentos",
+        files={"archivo": ("cedula.pdf", PDF, "application/pdf")},
+        data={"cuij": "21-00000001-0 / .."},
+    )
+    assert r.status_code == 200
+    documento = r.json()["documento"]
+    ruta = os.path.abspath(documento["ruta"])
+    assert os.path.basename(os.path.dirname(ruta)) == "21-00000001-0"
+
+
+def test_archivo_sin_cabecera_pdf_da_400(portal):
+    _login(portal)
+    r = portal.cliente.post(
+        "/api/documentos",
+        files={"archivo": ("falso.pdf", b"esto no es un PDF", "application/pdf")},
+    )
+    assert r.status_code == 400
+    assert "%PDF-" in r.json()["detail"]
+
+
+def test_cabeceras_de_seguridad(portal):
+    r = portal.cliente.get("/")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["x-frame-options"] == "DENY"
+
+
+def test_dentro_de_uploads_rechaza_afuera(portal):
+    assert servidor_portal._dentro_de_uploads(
+        os.path.join(portal.uploads, "cedula.pdf")
+    ) is True
+    assert servidor_portal._dentro_de_uploads(
+        os.path.join(str(portal.tmp_path), "fuera.pdf")
+    ) is False
+
+
 def test_solo_pdf(portal):
     _login(portal)
     r = portal.cliente.post(
