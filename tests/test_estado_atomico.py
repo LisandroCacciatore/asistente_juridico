@@ -156,6 +156,27 @@ def test_mutar_permite_llamar_cargar_y_registrar_log_anidados(_archivos_temporal
     assert estado.leer_log()[0]["accion"] == "anidada"
 
 
+def test_lock_anidado_a_tres_niveles_no_resetea_el_contador(_archivos_temporales, monkeypatch):
+    """El nivel interno decrementa; solo el externo suelta el FileLock.
+
+    Si un nivel interno pusiera el contador en 0, el siguiente anidado
+    volvería a pedir el FileLock real y se trabaría hasta el timeout.
+    """
+    estado.guardar({"cedulas": [], "pendientes": []})
+    monkeypatch.setattr(estado, "BLOQUEO_TIMEOUT", 0.3)
+
+    def mod(data):
+        with estado._bloqueo_archivo(estado.ARCHIVO):
+            with estado._bloqueo_archivo(estado.ARCHIVO):
+                estado.cargar()
+        data["cedulas"].append({"id": "c3"})
+
+    estado._mutar(mod)
+
+    with open(estado.ARCHIVO, encoding="utf-8") as f:
+        assert [c["id"] for c in json.load(f)["cedulas"]] == ["c3"]
+
+
 def test_registrar_log_acepta_operador_e_identidad_explicitos(_archivos_temporales):
     entrada = estado.registrar_log(
         "pdf_subido",
