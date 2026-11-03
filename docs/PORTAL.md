@@ -50,12 +50,12 @@ valores de ejemplo.
 |---|---|---|
 | `PORTAL_DB` | `<carpeta>/portal.db` | Base SQLite del hub |
 | `PORTAL_UPLOADS` | `<carpeta>/portal_uploads` | Carpeta de PDFs subidos |
-| `PORTAL_HOST` | `127.0.0.1` | Dónde escucha el portal |
-| `PORTAL_PUERTO` | `8100` | Puerto (no choca con el servidor local, 8000) |
+| `PORTAL_HOST` | `127.0.0.1` | Siempre loopback; se expone con Tailscale Serve |
+| `PORTAL_PUERTO` | `8100` | Puerto; Tailscale Serve apunta acá (no toca el 8000 del `.bat`) |
 | `PORTAL_SECRETO` | `CAMBIAR-EN-CONFIG-PY` | Clave para firmar la cookie de sesión |
-| `PORTAL_COOKIE_SEGURA` | `False` | La cookie solo viaja por HTTPS |
+| `PORTAL_COOKIE_SEGURA` | `False` | En producción con Tailscale Serve: `True` |
 | `PORTAL_SESION_HORAS` | `12` | Vencimiento de la sesión por inactividad |
-| `PORTAL_ORIGENES` | `127.0.0.1:8100`, `localhost:8100` | Orígenes permitidos (CORS) |
+| `PORTAL_ORIGENES` | `[]` | Mismo origen por defecto; agregar solo si hace falta |
 | `PORTAL_MAX_SUBIDA_MB` | `25` | Tope de tamaño de cada PDF |
 | `PORTAL_HASH` | `argon2` | Algoritmo de hash de contraseñas |
 
@@ -65,6 +65,19 @@ placeholder si sigue igual. Se genera con:
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
+
+## Exposición: Tailscale Serve, no `0.0.0.0`
+
+El portal escucha **siempre en `127.0.0.1`**. No se abre a `0.0.0.0` en
+una PC con datos de clientes. Para entrar desde otra máquina se pone
+**Tailscale Serve** (o un proxy con HTTPS) delante, apuntando a
+**`127.0.0.1:8100`**: Tailscale termina el TLS y reenvía al portal.
+
+En producción, con Tailscale Serve, `PORTAL_COOKIE_SEGURA = True` para
+que la cookie de sesión solo viaje por HTTPS. En local queda `False`.
+
+`PORTAL_ORIGENES` arranca en `[]` (mismo origen). Solo se agrega un
+origen si el panel se sirve desde otro dominio.
 
 ## Hash de contraseñas: argon2 verificado en Python 3.14
 
@@ -111,8 +124,14 @@ de cada máquina.
   tipo de cédula. **Eso no se regenera solo.**
 
 El reset vacía `cedulas` y **conserva `pendientes`**. Los otros dos
-registros (`cedulas_procesadas.json`, `estado_expedientes.json`) se vacían
-completos porque son control del monitor. No crea archivos que no existían.
+registros (`cedulas_procesadas.json`, `estado_expedientes.json`) quedan
+como dict vacío `{}`, que es lo que espera el monitor. No crea archivos
+que no existían.
+
+Antes de tocar nada pide confirmación (`s/N`) y avisa que hay que cerrar
+la consola, el portal y el monitor. `estado.json` se escribe con
+`estado._mutar` (RLock + FileLock + `os.replace`), así que no pisa a un
+proceso que esté corriendo.
 
 ```bash
 python reset_registros.py

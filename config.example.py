@@ -85,9 +85,10 @@ SESION_HORAS_INACTIVIDAD = 12            # cubre la máquina que quedó abierta
 PORTAL_DB = _os.path.join(_CARPETA_BASE, "portal.db")
 PORTAL_UPLOADS = _os.path.join(_CARPETA_BASE, "portal_uploads")
 
-# Dónde escucha el portal. En local queda en loopback; si el hub lo sirve
-# en otra máquina, se cambia por "0.0.0.0" y se pone un proxy con HTTPS.
-# El puerto 8100 no choca con el servidor local (8000).
+# Dónde escucha el portal. Siempre en loopback (127.0.0.1): no se abre a
+# 0.0.0.0. Para entrar desde afuera se pone Tailscale Serve (o un proxy con
+# HTTPS) delante, que termina el TLS y reenvía a este puerto. El 8100 no
+# choca con el servidor local (8000); Tailscale Serve apunta a 8100.
 PORTAL_HOST = "127.0.0.1"
 PORTAL_PUERTO = 8100
 
@@ -98,18 +99,16 @@ PORTAL_PUERTO = 8100
 PORTAL_SECRETO = "CAMBIAR-EN-CONFIG-PY"
 
 # La cookie solo viaja por HTTPS. En local (http://127.0.0.1) va en False;
-# detrás de un proxy con TLS, en True.
+# en producción, con Tailscale Serve (HTTPS) delante, va en True.
 PORTAL_COOKIE_SEGURA = False
 
 # Cuánto dura una sesión del portal sin actividad, en horas.
 PORTAL_SESION_HORAS = 12
 
-# Orígenes que pueden hablarle al portal (CORS). En local alcanza con el
-# mismo host; si el panel se sirve desde otro dominio, agregarlo acá.
-PORTAL_ORIGENES = [
-    "http://127.0.0.1:8100",
-    "http://localhost:8100",
-]
+# Orígenes que pueden hablarle al portal (CORS). Por defecto, lista vacía:
+# el panel y la API se sirven desde el mismo origen y no hace falta abrir
+# nada. Solo se agrega un origen si el panel se sirve desde otro dominio.
+PORTAL_ORIGENES = []
 
 # Tope de tamaño para las subidas (PDF de cédulas), en MB.
 PORTAL_MAX_SUBIDA_MB = 25
