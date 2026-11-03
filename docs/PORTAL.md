@@ -1,9 +1,10 @@
-# Portal del estudio — Paso 0 (preparación)
+# Portal del estudio — Paso 1a (base y login)
 
-> **Estado:** Paso 0. Todavía **no hay código de portal**. Este documento
-> fija el contrato de configuración y las reglas de datos/secretos que el
-> Paso 1 va a implementar. La fuente de verdad del circuito sigue siendo
-> `SPEC_CIRCUITO_v0.2.md` (D18–D25 y Fase 10b).
+> **Estado:** Paso 1a. Ya existen `portal/db.py`, `portal/auth.py` y
+> `portal_admin.py`: base SQLite, login/sesiones y administración por
+> consola. El servidor HTTP y los permisos llegan en el Paso 1b. La fuente
+> de verdad del circuito sigue siendo `SPEC_CIRCUITO_v0.2.md` (D18–D25 y
+> Fase 10b).
 
 ## Qué es el portal
 
@@ -137,20 +138,65 @@ proceso que esté corriendo.
 python reset_registros.py
 ```
 
+## Paso 1a: base, login y administración
+
+| Archivo | Qué hace |
+|---|---|
+| `portal/db.py` | Base SQLite: personas, credenciales, sesiones, estado, log, ficha, documentos y presentaciones |
+| `portal/auth.py` | Hash de contraseñas, login, sesiones y cookie firmada |
+| `portal_admin.py` | Consola para crear la base, sembrar personas y manejar claves |
+
+### Qué guarda la base
+
+- **Personas e identidades**: `persona_id` estable, nombre, mail, matrícula
+  y si está activa.
+- **Credenciales**: el hash completo (argon2id o bcrypt), nunca la clave.
+- **Sesiones**: solo el sha256 del token, con vencimiento y datos de la
+  máquina. Una copia de `portal.db` no sirve para entrar.
+- **Estado, log y ficha**: las tres cosas que se centralizan (D21).
+- **Documentos**: metadata de los PDF subidos (ruta, sha256, tamaño).
+- **Presentaciones**: el anti-duplicado central (D22); una cédula no se
+  puede marcar presentada dos veces.
+
+No se guardan `firma`, `perfil` ni rutas de Chrome: eso es de cada máquina
+(D21).
+
+### Poner el portal en marcha (sin servidor todavía)
+
+```bash
+# 1. Crear la base y sembrar PERSONAS de config.py
+python portal_admin.py init
+
+# 2. Ver quién quedó cargado
+python portal_admin.py listar
+
+# 3. Poner la clave de una persona (la pide por consola, no por parámetro)
+python portal_admin.py password santiago
+```
+
+Otros comandos: `sembrar`, `crear`, `activar`, `desactivar` y
+`sesiones-borrar`. `desactivar` también cierra las sesiones abiertas.
+
+`PORTAL_SECRETO` tiene que estar configurado: `auth.py` rechaza el
+placeholder. La cookie se firma con HMAC-SHA256 y lleva `HttpOnly`,
+`SameSite=Lax` y `Secure` según `PORTAL_COOKIE_SEGURA`.
+
 ## Cómo verificar (sin portal)
 
 ```bash
 python -m pytest tests/ -q
 ```
 
-Los tests del Paso 0 son `tests/test_reset_registros.py` y el del lock
-reentrante en `tests/test_estado_atomico.py`.
+Los tests del portal son `tests/test_portal_db.py`,
+`tests/test_portal_auth.py` y `tests/test_portal_admin.py`. Los del Paso 0
+siguen en `tests/test_reset_registros.py` y el del lock reentrante en
+`tests/test_estado_atomico.py`.
 
-## Qué NO hace el Paso 0
+## Qué NO hace el Paso 1a
 
-- No crea `portal.py` ni endpoints.
-- No crea la base ni las tablas.
-- No implementa login, sesiones ni subida de PDFs.
+- No levanta el servidor HTTP ni crea endpoints.
+- No implementa permisos por rol ni la subida de PDFs.
+- No tiene panel HTML: la administración es por consola.
 - No toca `config.py` (es por máquina y no se sube).
 
-Eso es el **Paso 1**.
+Eso es el **Paso 1b**.
