@@ -19,6 +19,9 @@ python -m pytest tests/ -v
   los de otra cédula), el log de acciones, y una prueba de concurrencia
   que confirma que el `RLock` de `_mutar()` no pierde actualizaciones
   cuando dos procesos escriben al mismo tiempo.
+- `test_portal_db.py`, `test_portal_auth.py`, `test_portal_admin.py` — base
+  SQLite del portal (personas, sesiones, estado, log, ficha y documentos),
+  hash argon2, login/sesiones/cookie firmada y consola de administración.
 
 ## Qué NO cubren (y no pueden cubrir así)
 
