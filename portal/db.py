@@ -45,6 +45,14 @@ class YaPresentada(ErrorPortal):
     """La cédula ya fue marcada como presentada (anti-duplicado, D22)."""
 
 
+class CedulaNoEncontrada(ErrorPortal):
+    """No existe la cédula pedida en el estado central."""
+
+
+class ConflictoCadena(ErrorPortal):
+    """La cédula pertenece a otra identidad y no se puede cruzar (D25)."""
+
+
 # --- Configuración ------------------------------------------------
 def config_portal(nombre, default=None):
     """Lee una clave PORTAL_* de config.py, con default si no está."""
@@ -79,6 +87,11 @@ def _quien():
     except Exception:
         maquina = ""
     return usuario, maquina
+
+
+def quien():
+    """Alias público de `_quien` para el servidor."""
+    return _quien()
 
 
 def _conectar(ruta=None):
@@ -426,12 +439,31 @@ def _normalizar_estado(datos):
     return datos
 
 
+def _leer_estado_con(con):
+    """Lee el estado dentro de una conexión ya abierta (para transacciones)."""
+    fila = con.execute("SELECT datos FROM estado WHERE id = 1").fetchone()
+    datos = json.loads(fila["datos"]) if fila else {"cedulas": [], "pendientes": []}
+    return _normalizar_estado(datos)
+
+
+def _buscar_cedula(datos, id_cedula):
+    buscado = str(id_cedula or "").strip()
+    for cedula in datos.get("cedulas", []):
+        if isinstance(cedula, dict) and str(cedula.get("id") or "").strip() == buscado:
+            return cedula
+    return None
+
+
 def leer_estado(ruta=None):
     with conexion(ruta) as con:
-        fila = con.execute("SELECT datos FROM estado WHERE id = 1").fetchone()
-    if fila is None:
-        return {"cedulas": [], "pendientes": []}
-    return _normalizar_estado(json.loads(fila["datos"]))
+        return _leer_estado_con(con)
+
+
+def buscar_cedula(id_cedula, datos=None, ruta=None):
+    """Busca una cédula en el estado (o en `datos` si ya se leyó)."""
+    if datos is None:
+        datos = leer_estado(ruta=ruta)
+    return _buscar_cedula(datos, id_cedula)
 
 
 def version_estado(ruta=None):
@@ -461,13 +493,211 @@ def escribir_estado(datos, persona_id="", ruta=None):
 def mutar_estado(modificador, persona_id="", ruta=None):
     """Lee, modifica en el lugar y guarda en una sola transacción."""
     with conexion(ruta) as con, _transaccion(con):
-        fila = con.execute("SELECT datos FROM estado WHERE id = 1").fetchone()
-        datos = json.loads(fila["datos"]) if fila else {"cedulas": [], "pendientes": []}
-        _normalizar_estado(datos)
+        datos = _leer_estado_con(con)
         modificador(datos)
         _normalizar_estado(datos)
         _guardar_estado(con, datos, persona_id)
     return datos
+
+
+# --- Cédulas en el estado central (D25) --------------------------
+def guardar_cedula(cedula, persona_id="", operador="", ruta=None):
+    """Inserta o actualiza una cédula sin romper la cadena ya fijada.
+
+    Si la cédula ya existe con `identidad_cadena`, esa identidad manda:
+    un pedido con otra identidad se rechaza y uno sin identidad la
+    conserva. Así el candado de D25 no se puede corregir por atrás.
+    """
+    if not isinstance(cedula, dict):
+        raise ValueError("La cédula tiene que ser un objeto JSON.")
+    cedula = dict(cedula)
+    id_cedula = str(cedula.get("id") or "").strip()
+    if not id_cedula:
+        raise ValueError("La cédula necesita un id.")
+    cedula["id"] = id_cedula
+
+    with conexion(ruta) as con, _transaccion(con):
+        datos = _leer_estado_con(con)
+        existente = _buscar_cedula(datos, id_cedula)
+        if existente is None:
+            datos["cedulas"].append(cedula)
+            accion = "cedula_registrada"
+        else:
+            fijada = str(existente.get("identidad_cadena") or "").strip()
+            nueva = str(cedula.get("identidad_cadena") or "").strip()
+            if fijada and nueva and fijada != nueva:
+                raise ConflictoCadena(
+                    f"La cédula {id_cedula!r} ya es de {fijada!r}; no se puede "
+                    f"pasar a {nueva!r} (D25)."
+                )
+            cedula["identidad_cadena"] = fijada or nueva
+            datos["cedulas"] = [
+                cedula if str(c.get("id") or "").strip() == id_cedula else c
+                for c in datos["cedulas"]
+            ]
+            accion = "cedula_actualizada"
+        _guardar_estado(con, datos, persona_id)
+        _insertar_log(con, _entrada_log(
+            accion,
+            id_cedula=id_cedula,
+            caratula=cedula.get("caratula", ""),
+            cuij=cedula.get("cuij", ""),
+            operador=operador,
+            identidad=cedula.get("identidad_cadena", ""),
+            persona_id=persona_id,
+        ))
+    return cedula
+
+
+def sincronizar_estado(datos, persona_id="", operador="", ruta=None):
+    """Sincroniza el estado central sin poder corregir una cadena (D25).
+
+    Las cédulas se agregan o actualizan; las que no vienen en el pedido
+    **no se borran** (el hub es archivo, no una copia efímera de una
+    máquina). Los pendientes sí se reemplazan: son de la corrida actual.
+    Si una cédula ya tenía `identidad_cadena`, esa identidad se conserva
+    y un pedido que intente cambiarla se rechaza.
+    """
+    datos = _normalizar_estado(dict(datos))
+    with conexion(ruta) as con, _transaccion(con):
+        actual = _leer_estado_con(con)
+        por_id = {
+            str(c.get("id") or "").strip(): c
+            for c in actual.get("cedulas", [])
+            if isinstance(c, dict)
+        }
+        for cedula in datos.get("cedulas", []):
+            if not isinstance(cedula, dict):
+                raise ValueError("Cada cédula tiene que ser un objeto JSON.")
+            id_cedula = str(cedula.get("id") or "").strip()
+            if not id_cedula:
+                raise ValueError("Cada cédula necesita un id.")
+            cedula = dict(cedula)
+            cedula["id"] = id_cedula
+            previa = por_id.get(id_cedula)
+            fijada = str((previa or {}).get("identidad_cadena") or "").strip()
+            nueva = str(cedula.get("identidad_cadena") or "").strip()
+            if fijada and nueva and fijada != nueva:
+                raise ConflictoCadena(
+                    f"La cédula {id_cedula!r} ya es de {fijada!r}; no se puede "
+                    f"pasar a {nueva!r} (D25)."
+                )
+            cedula["identidad_cadena"] = fijada or nueva
+            por_id[id_cedula] = cedula
+        datos["cedulas"] = list(por_id.values())
+        _guardar_estado(con, datos, persona_id)
+        _insertar_log(con, _entrada_log(
+            "estado_sincronizado",
+            detalle=f"{len(datos['cedulas'])} cédulas",
+            operador=operador,
+            identidad=operador or persona_id,
+            persona_id=persona_id,
+        ))
+    return datos
+
+
+def fijar_cadena_cedula(id_cedula, identidad, persona_id="", operador="", ruta=None):
+    """Fija la identidad de la cédula en el primer acto del portal (D25)."""
+    id_cedula = str(id_cedula or "").strip()
+    identidad = str(identidad or "").strip()
+    if not id_cedula:
+        raise ValueError("La cédula necesita un id.")
+    if not identidad:
+        raise ValueError("La identidad no puede estar vacía.")
+
+    with conexion(ruta) as con, _transaccion(con):
+        datos = _leer_estado_con(con)
+        cedula = _buscar_cedula(datos, id_cedula)
+        if cedula is None:
+            raise CedulaNoEncontrada(
+                f"No existe la cédula {id_cedula!r} en el estado central."
+            )
+        fijada = str(cedula.get("identidad_cadena") or "").strip()
+        if fijada and fijada != identidad:
+            raise ConflictoCadena(
+                f"La cédula {id_cedula!r} ya es de {fijada!r}; no se puede "
+                f"pasar a {identidad!r} (D25)."
+            )
+        if not fijada:
+            cedula["identidad_cadena"] = identidad
+            _guardar_estado(con, datos, persona_id)
+            _insertar_log(con, _entrada_log(
+                "cadena_fijada",
+                id_cedula=id_cedula,
+                caratula=cedula.get("caratula", ""),
+                cuij=cedula.get("cuij", ""),
+                detalle=f"identidad {identidad}",
+                operador=operador,
+                identidad=identidad,
+                persona_id=persona_id,
+            ))
+    return identidad
+
+
+def presentar_cedula(id_cedula, identidad, persona_id="", operador="",
+                     detalle="", ruta=None):
+    """Marca presentada, actualiza el estado y deja el log, todo junto.
+
+    La cadena se chequea dentro de la misma transacción: si la cédula es
+    de otra identidad, no se inserta la presentación (D25). El
+    anti-duplicado es la PK de `presentaciones` (D22).
+    """
+    id_cedula = str(id_cedula or "").strip()
+    identidad = str(identidad or "").strip()
+    if not id_cedula:
+        raise ValueError("La cédula necesita un id.")
+    if not identidad:
+        raise ValueError("La identidad no puede estar vacía.")
+    fecha = _ahora()
+
+    with conexion(ruta) as con, _transaccion(con):
+        datos = _leer_estado_con(con)
+        cedula = _buscar_cedula(datos, id_cedula)
+        if cedula is None:
+            raise CedulaNoEncontrada(
+                f"No existe la cédula {id_cedula!r} en el estado central."
+            )
+        fijada = str(cedula.get("identidad_cadena") or "").strip()
+        if fijada and fijada != identidad:
+            raise ConflictoCadena(
+                f"La cédula {id_cedula!r} es de {fijada!r} y estás actuando "
+                f"como {identidad!r}. No se puede cruzar la cadena (D25)."
+            )
+        try:
+            con.execute(
+                "INSERT INTO presentaciones (id_cedula, persona_id, fecha_hora, detalle) "
+                "VALUES (?, ?, ?, ?)",
+                (id_cedula, str(persona_id or ""), fecha, str(detalle or "")),
+            )
+        except sqlite3.IntegrityError as e:
+            raise YaPresentada(
+                f"La cédula {id_cedula!r} ya fue marcada como presentada."
+            ) from e
+        cedula["identidad_cadena"] = fijada or identidad
+        cedula["estado"] = "presentada"
+        cedula["fecha_presentada"] = fecha
+        _guardar_estado(con, datos, persona_id)
+        entrada = _entrada_log(
+            "presentada",
+            id_cedula=id_cedula,
+            caratula=cedula.get("caratula", ""),
+            cuij=cedula.get("cuij", ""),
+            detalle=detalle,
+            operador=operador,
+            identidad=cedula["identidad_cadena"],
+            persona_id=persona_id,
+        )
+        _insertar_log(con, entrada)
+    return {
+        "cedula": cedula,
+        "presentacion": {
+            "id_cedula": id_cedula,
+            "persona_id": str(persona_id or ""),
+            "fecha_hora": fecha,
+            "detalle": str(detalle or ""),
+        },
+        "log": entrada,
+    }
 
 
 # --- Log de acciones ---------------------------------------------
@@ -477,14 +707,14 @@ _CAMPOS_LOG = (
 )
 
 
-def agregar_log(accion, id_cedula="", caratula="", cuij="", detalle="",
-                usuario="", maquina="", operador="", identidad="",
-                persona_id="", ruta=None):
+def _entrada_log(accion, id_cedula="", caratula="", cuij="", detalle="",
+                 usuario="", maquina="", operador="", identidad="",
+                 persona_id=""):
     accion = str(accion or "").strip()
     if not accion:
         raise ValueError("La acción del log no puede estar vacía.")
     usuario_win, maquina_win = _quien()
-    entrada = {
+    return {
         "fecha_hora": _ahora(),
         "accion": accion,
         "id_cedula": str(id_cedula or ""),
@@ -497,13 +727,28 @@ def agregar_log(accion, id_cedula="", caratula="", cuij="", detalle="",
         "identidad": str(identidad or operador or usuario or usuario_win),
         "persona_id": str(persona_id or ""),
     }
+
+
+def _insertar_log(con, entrada):
+    cur = con.execute(
+        f"INSERT INTO log_acciones ({', '.join(_CAMPOS_LOG)}) "
+        f"VALUES ({', '.join('?' for _ in _CAMPOS_LOG)})",
+        tuple(entrada[c] for c in _CAMPOS_LOG),
+    )
+    entrada["id"] = cur.lastrowid
+    return entrada
+
+
+def agregar_log(accion, id_cedula="", caratula="", cuij="", detalle="",
+                usuario="", maquina="", operador="", identidad="",
+                persona_id="", ruta=None):
+    entrada = _entrada_log(
+        accion, id_cedula=id_cedula, caratula=caratula, cuij=cuij,
+        detalle=detalle, usuario=usuario, maquina=maquina,
+        operador=operador, identidad=identidad, persona_id=persona_id,
+    )
     with conexion(ruta) as con, _transaccion(con):
-        cur = con.execute(
-            f"INSERT INTO log_acciones ({', '.join(_CAMPOS_LOG)}) "
-            f"VALUES ({', '.join('?' for _ in _CAMPOS_LOG)})",
-            tuple(entrada[c] for c in _CAMPOS_LOG),
-        )
-        entrada["id"] = cur.lastrowid
+        _insertar_log(con, entrada)
     return entrada
 
 

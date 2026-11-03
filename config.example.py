@@ -75,9 +75,8 @@ SESION_HORAS_INACTIVIDAD = 12            # cubre la máquina que quedó abierta
 
 # --- Portal del estudio (Fase 10b) ----------------------------
 # El portal es el panel que se sirve desde el hub: login real (D23),
-# estado/log centralizados (D21) y anti-duplicado central (D22). Todavía
-# no hay código de portal en el repo: estas claves son el contrato del
-# Paso 0 y las va a leer `portal.py` en el Paso 1.
+# estado/log centralizados (D21) y anti-duplicado central (D22). El
+# código está en portal/ (ver docs/PORTAL.md).
 #
 # La base y las subidas viven del lado del hub, NO en la máquina que corre
 # Chrome (D21). Los perfiles de Chrome y las sesiones de los portales
@@ -117,6 +116,11 @@ PORTAL_MAX_SUBIDA_MB = 25
 # Python 3.14 con argon2-cffi 25.1.0) o "bcrypt" (alternativa si argon2 no
 # instala en la máquina). Ver docs/PORTAL.md.
 PORTAL_HASH = "argon2"
+
+# persona_id que pueden administrar por HTTP (crear personas, cambiar
+# claves, borrar sesiones). Lista vacía = nadie; la consola
+# `portal_admin.py` sigue siendo la vía normal.
+PORTAL_ADMINISTRADORES = []
 
 # --- Cédulas (generar_cedula.py) ------------------------------
 # Carpeta genérica y transitoria para los PDF: se borran al
