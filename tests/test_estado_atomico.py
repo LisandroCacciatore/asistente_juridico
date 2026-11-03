@@ -126,6 +126,57 @@ def test_timeout_del_lock_es_legible(_archivos_temporales, monkeypatch):
     assert proceso.exitcode == 0
 
 
+def test_mutar_permite_llamar_cargar_y_registrar_log_anidados(_archivos_temporales, monkeypatch):
+    """Dentro de _mutar, cargar() y registrar_log() no se tienen que trabar.
+
+    El modificador corre con el lock de estado.json ya tomado. Si cargar()
+    vuelve a pedir ese mismo lock, el proceso se queda esperándose a sí mismo
+    hasta el timeout. El contador de profundidad de _bloqueo_archivo tiene que
+    hacer que la segunda entrada sea reentrante.
+    """
+    estado.guardar({"cedulas": [{"id": "c1"}], "pendientes": []})
+    # Sin esto, la falla tarda los 10 s del timeout real. Con 0.3 s el test
+    # falla rápido antes del arreglo y pasa al instante después.
+    monkeypatch.setattr(estado, "BLOQUEO_TIMEOUT", 0.3)
+
+    visto = {}
+
+    def mod(data):
+        visto["antes"] = [c["id"] for c in data["cedulas"]]
+        visto["cargar"] = estado.cargar()
+        estado.registrar_log("anidada", "c1", detalle="desde _mutar")
+        data["cedulas"].append({"id": "c2"})
+
+    estado._mutar(mod)
+
+    assert visto["antes"] == ["c1"]
+    assert [c["id"] for c in visto["cargar"]["cedulas"]] == ["c1"]
+    with open(estado.ARCHIVO, encoding="utf-8") as f:
+        assert [c["id"] for c in json.load(f)["cedulas"]] == ["c1", "c2"]
+    assert estado.leer_log()[0]["accion"] == "anidada"
+
+
+def test_lock_anidado_a_tres_niveles_no_resetea_el_contador(_archivos_temporales, monkeypatch):
+    """El nivel interno decrementa; solo el externo suelta el FileLock.
+
+    Si un nivel interno pusiera el contador en 0, el siguiente anidado
+    volvería a pedir el FileLock real y se trabaría hasta el timeout.
+    """
+    estado.guardar({"cedulas": [], "pendientes": []})
+    monkeypatch.setattr(estado, "BLOQUEO_TIMEOUT", 0.3)
+
+    def mod(data):
+        with estado._bloqueo_archivo(estado.ARCHIVO):
+            with estado._bloqueo_archivo(estado.ARCHIVO):
+                estado.cargar()
+        data["cedulas"].append({"id": "c3"})
+
+    estado._mutar(mod)
+
+    with open(estado.ARCHIVO, encoding="utf-8") as f:
+        assert [c["id"] for c in json.load(f)["cedulas"]] == ["c3"]
+
+
 def test_registrar_log_acepta_operador_e_identidad_explicitos(_archivos_temporales):
     entrada = estado.registrar_log(
         "pdf_subido",

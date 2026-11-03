@@ -44,6 +44,11 @@ ESPERA_LOGIN_MINUTOS = 20
 # portales. Cada uno tiene su propio acceso al SISFE y a FirmAr, así que
 # lo normal es que la identidad sea la misma persona que está operando.
 #
+#   persona_id: el identificador ESTABLE de la persona (slug). Es la clave
+#               con la que la base del portal y el log la identifican; no se
+#               cambia aunque cambie el nombre que se muestra. Si algún día
+#               "Socio" tiene nombre real, se cambian la clave de PERSONAS y
+#               el nombre, pero el persona_id sigue siendo "socio".
 #   mail      : con el que entra al asistente. Cada uno entra con el suyo
 #               (el vacío no bloquea: mientras no lo tengas, entra con el
 #               nombre).
@@ -55,11 +60,11 @@ ESPERA_LOGIN_MINUTOS = 20
 #
 # ⚠ "Socio" es provisorio: reemplazalo por el nombre real cuando lo sepas.
 PERSONAS = {
-    "Santiago": {"mail": "", "matricula": SISFE_USUARIO, "firma": "",
+    "Santiago": {"persona_id": "santiago", "mail": "", "matricula": SISFE_USUARIO, "firma": "",
                  "perfil": "chrome_profile_portales"},
-    "Jr":       {"mail": "", "matricula": "",            "firma": "",
+    "Jr":       {"persona_id": "jr",       "mail": "", "matricula": "",            "firma": "",
                  "perfil": "chrome_profile_jr"},
-    "Socio":    {"mail": "", "matricula": "",            "firma": "",
+    "Socio":    {"persona_id": "socio",    "mail": "", "matricula": "",            "firma": "",
                  "perfil": "chrome_profile_socio"},
 }
 
@@ -67,6 +72,51 @@ PERSONAS = {
 SESION_VENCE_AL_CAMBIAR_EL_DIA = True    # nadie declara quién es y sigue
                                          # valiendo al otro día
 SESION_HORAS_INACTIVIDAD = 12            # cubre la máquina que quedó abierta
+
+# --- Portal del estudio (Fase 10b) ----------------------------
+# El portal es el panel que se sirve desde el hub: login real (D23),
+# estado/log centralizados (D21) y anti-duplicado central (D22). Todavía
+# no hay código de portal en el repo: estas claves son el contrato del
+# Paso 0 y las va a leer `portal.py` en el Paso 1.
+#
+# La base y las subidas viven del lado del hub, NO en la máquina que corre
+# Chrome (D21). Los perfiles de Chrome y las sesiones de los portales
+# siguen siendo de cada máquina.
+PORTAL_DB = _os.path.join(_CARPETA_BASE, "portal.db")
+PORTAL_UPLOADS = _os.path.join(_CARPETA_BASE, "portal_uploads")
+
+# Dónde escucha el portal. Siempre en loopback (127.0.0.1): no se abre a
+# 0.0.0.0. Para entrar desde afuera se pone Tailscale Serve (o un proxy con
+# HTTPS) delante, que termina el TLS y reenvía a este puerto. El 8100 no
+# choca con el servidor local (8000); Tailscale Serve apunta a 8100.
+PORTAL_HOST = "127.0.0.1"
+PORTAL_PUERTO = 8100
+
+# Clave para firmar la cookie de sesión. NO se sube: el valor real va en
+# config.py. En config.example.py queda un placeholder que el portal tiene
+# que rechazar si no se cambió. Generala con:
+#   python -c "import secrets; print(secrets.token_urlsafe(48))"
+PORTAL_SECRETO = "CAMBIAR-EN-CONFIG-PY"
+
+# La cookie solo viaja por HTTPS. En local (http://127.0.0.1) va en False;
+# en producción, con Tailscale Serve (HTTPS) delante, va en True.
+PORTAL_COOKIE_SEGURA = False
+
+# Cuánto dura una sesión del portal sin actividad, en horas.
+PORTAL_SESION_HORAS = 12
+
+# Orígenes que pueden hablarle al portal (CORS). Por defecto, lista vacía:
+# el panel y la API se sirven desde el mismo origen y no hace falta abrir
+# nada. Solo se agrega un origen si el panel se sirve desde otro dominio.
+PORTAL_ORIGENES = []
+
+# Tope de tamaño para las subidas (PDF de cédulas), en MB.
+PORTAL_MAX_SUBIDA_MB = 25
+
+# Algoritmo de hash de contraseñas: "argon2" (recomendado; verificado en
+# Python 3.14 con argon2-cffi 25.1.0) o "bcrypt" (alternativa si argon2 no
+# instala en la máquina). Ver docs/PORTAL.md.
+PORTAL_HASH = "argon2"
 
 # --- Cédulas (generar_cedula.py) ------------------------------
 # Carpeta genérica y transitoria para los PDF: se borran al

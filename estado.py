@@ -40,6 +40,21 @@ BLOQUEO_TIMEOUT = 10
 _REINTENTOS_REPLACE = 8
 _ESPERA_REPLACE = 0.075
 
+# Profundidad de _bloqueo_archivo por hilo y por archivo. Tiene que ser
+# reentrante: _mutar ya tomó el lock de estado.json cuando el modificador
+# llama a cargar(), y sin este contador el proceso se esperaría a sí mismo
+# hasta el timeout. threading.local: cada hilo lleva su propia profundidad,
+# y el RLock de arriba ya serializa a los hilos dentro del proceso.
+_locks_anidados = threading.local()
+
+
+def _profundidades_locks():
+    profundidades = getattr(_locks_anidados, "por_archivo", None)
+    if profundidades is None:
+        profundidades = {}
+        _locks_anidados.por_archivo = profundidades
+    return profundidades
+
 
 class EstadoBloqueado(RuntimeError):
     """No se pudo obtener el lock de archivo dentro del timeout."""
@@ -59,17 +74,40 @@ def _bloqueo_archivo(archivo, timeout=None):
 
     Orden fijo en todo el módulo: primero RLock, después FileLock. No
     invertirlo en ninguna función para evitar deadlocks.
+
+    Es reentrante dentro del mismo hilo: si este hilo ya tiene el lock de ese
+    archivo (por ejemplo cargar() llamado desde dentro de _mutar), vuelve a
+    entrar sin pedir el FileLock de nuevo. El contador de profundidad evita
+    esperarse a uno mismo hasta el timeout y garantiza un solo release.
     """
     timeout = BLOQUEO_TIMEOUT if timeout is None else timeout
-    try:
-        with FileLock(f"{archivo}.lock", timeout=timeout):
+    clave = os.path.normcase(os.path.abspath(f"{archivo}.lock"))
+    profundidades = _profundidades_locks()
+
+    if profundidades.get(clave):
+        profundidades[clave] += 1
+        try:
             yield
+        finally:
+            profundidades[clave] -= 1
+        return
+
+    bloqueo = FileLock(f"{archivo}.lock", timeout=timeout)
+    try:
+        bloqueo.acquire()
     except Timeout as e:
         raise EstadoBloqueado(
             f"No pude obtener el lock de {os.path.basename(archivo)} en "
             f"{timeout} s. Otro proceso puede estar usando el estado; "
             "probá de nuevo en unos segundos."
         ) from e
+
+    profundidades[clave] = 1
+    try:
+        yield
+    finally:
+        profundidades[clave] = 0
+        bloqueo.release()
 
 
 def _leer_disco():
