@@ -24,11 +24,9 @@ def test_inicializar_crea_tablas_y_es_idempotente(ruta):
         tablas = {f["name"] for f in con.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'"
         )}
-    assert {
-        "personas", "credenciales", "sesiones", "documentos", "auditoria",
-    } <= tablas
-    # Las tablas del portal viejo ya no se crean (commit 4b).
-    assert not ({"estado", "log_acciones", "fichas", "presentaciones"} & tablas)
+    assert {"personas", "credenciales", "sesiones", "auditoria"} <= tablas
+    # Las tablas del portal viejo ya no se crean (commits 4b y 5).
+    assert not (set(db.TABLAS_VIEJAS) & tablas)
 
 
 def test_crear_obtener_y_listar_personas(ruta):
@@ -212,16 +210,5 @@ def test_fijar_puede_actuar_como_guarda_dedup_y_limpia(ruta):
     assert db.puede_actuar_como("jr", ruta=ruta) == []
     with pytest.raises(db.PersonaNoEncontrada):
         db.fijar_puede_actuar_como("nadie", ["Jr"], ruta=ruta)
-
-
-def test_documentos_crud(ruta):
-    doc = db.registrar_documento(
-        "cedula.pdf", "C:/tmp/cedula.pdf", "abc123", tamano=10,
-        cuij="CUIJ-1", subido_por="santiago", ruta=ruta,
-    )
-    assert db.obtener_documento(doc["id"], ruta=ruta)["sha256"] == "abc123"
-    assert [d["id"] for d in db.listar_documentos(cuij="CUIJ-1", ruta=ruta)] == [doc["id"]]
-    assert db.eliminar_documento(doc["id"], ruta=ruta) is True
-    assert db.obtener_documento(doc["id"], ruta=ruta) is None
 
 

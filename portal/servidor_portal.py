@@ -438,14 +438,42 @@ def _tope_subida():
     return max(1, max_mb) * 1024 * 1024
 
 
-def _firmas_del_pdf(pdf):
-    """Campos de firma del PDF que tengan /ByteRange y /Contents.
+def _solo_alfanumerico(texto):
+    """Texto comparable: solo letras y dígitos, sin guiones ni espacios."""
+    return re.sub(r"[^0-9A-Za-z]+", "", str(texto or "")).casefold()
 
-    Recorre AcroForm/Fields y las anotaciones de cada página: el campo de
-    firma (`/FT /Sig`) no siempre cuelga de una página. `/Sig` es el valor de
-    `/FT`, no una clave.
+
+def _cuij_en_el_pdf(pdf, cuij):
+    """True si el CUIJ de la cédula aparece en el texto del PDF.
+
+    None si no se pudo extraer texto (PDF escaneado o sin capa de texto): el
+    endpoint lo convierte en un 400 con mensaje claro. Compara solo letras y
+    dígitos, así "21-00000001-0" y "2100000001 0" cuentan igual.
     """
-    encontrados = []
+    esperado = _solo_alfanumerico(cuij)
+    if not esperado:
+        return None
+    try:
+        texto = "".join(pagina.extract_text() or "" for pagina in pdf.pages)
+    except Exception:
+        return None
+    if not texto.strip():
+        return None
+    return esperado in _solo_alfanumerico(texto)
+
+
+def _firmas_del_pdf(pdf):
+    """Diccionarios de firma válidos del PDF (campo `/FT /Sig` → `/V`).
+
+    En un PDF firmado de verdad, `/ByteRange` y `/Contents` NO están en el
+    campo de firma: están en el diccionario al que apunta `/V`. Un campo sin
+    `/V`, con `/ByteRange` que no son 4 enteros, o con `/Contents` vacío o
+    todo en ceros (marcador sin firmar), no cuenta.
+
+    OJO: esto es un control contra errores humanos, NO una validación
+    criptográfica: no verifica el certificado ni la integridad del documento.
+    """
+    campos = []
 
     def visitar(objeto, profundidad=0):
         if profundidad > 8:
@@ -457,7 +485,7 @@ def _firmas_del_pdf(pdf):
         if not isinstance(objeto, dict):
             return
         if objeto.get("/FT") == "/Sig":
-            encontrados.append(objeto)
+            campos.append(objeto)
         for clave in ("/AcroForm", "/Fields", "/Kids", "/Annots"):
             hijos = objeto.get(clave)
             if hijos is None:
@@ -473,10 +501,46 @@ def _firmas_del_pdf(pdf):
                 visitar(hijos, profundidad + 1)
 
     visitar(pdf.trailer.get("/Root", {}))
-    return [
-        campo for campo in encontrados
-        if "/ByteRange" in campo and "/Contents" in campo
-    ]
+
+    validas = []
+    for campo in campos:
+        firma = campo.get("/V")
+        if firma is None:
+            continue
+        try:
+            firma = firma.get_object()
+        except Exception:
+            continue
+        if not isinstance(firma, dict):
+            continue
+
+        byte_range = firma.get("/ByteRange")
+        try:
+            byte_range = byte_range.get_object()
+        except Exception:
+            pass
+        if not isinstance(byte_range, list) or len(byte_range) != 4:
+            continue
+        if not all(isinstance(valor, int) for valor in byte_range):
+            continue
+
+        contenido = firma.get("/Contents")
+        try:
+            contenido = contenido.get_object()
+        except Exception:
+            pass
+        # pypdf puede devolver los bytes como ByteStringObject (PDF real) o
+        # como TextStringObject (PDF reescrito por pypdf): se aceptan los dos.
+        if isinstance(contenido, str):
+            contenido = contenido.encode("latin-1", "ignore")
+        if not isinstance(contenido, bytes) or not contenido:
+            continue
+        if not any(contenido):
+            # Un marcador de firma sin firmar viene en ceros.
+            continue
+
+        validas.append(firma)
+    return validas
 
 
 def _sha_repetido(huella):
@@ -593,10 +657,23 @@ def api_portal_subir_firmada(
             raise HTTPException(
                 status_code=400, detail="La carátula no coincide con la de la cédula."
             )
+        # El formulario es una confirmación: el CUIJ tiene que estar EN el PDF.
+        en_pdf = _cuij_en_el_pdf(pdf, cedula.get("cuij"))
+        if en_pdf is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No se pudo extraer texto del PDF para verificar el CUIJ.",
+            )
+        if not en_pdf:
+            raise HTTPException(
+                status_code=400,
+                detail="El CUIJ de la cédula no aparece en el texto del PDF.",
+            )
         if not _firmas_del_pdf(pdf):
             raise HTTPException(
                 status_code=400,
-                detail="El PDF no tiene una firma digital (/Sig con /ByteRange y /Contents).",
+                detail="El PDF no tiene una firma digital válida (/Sig con /V, "
+                       "/ByteRange y /Contents firmados).",
             )
 
         huella = sha.hexdigest()
@@ -634,7 +711,8 @@ def api_portal_subir_firmada(
         cuij=str(cedula.get("cuij") or ""),
         detalle=huella,
     )
-    return {"ok": True, "sha256": huella, "ruta": destino}
+    # Sin `ruta`: la ruta del servidor no sale por HTTP.
+    return {"ok": True, "id": id_cedula, "sha256": huella, "estado": "firmada"}
 
 
 @app.get("/api/portal/cedulas/{id_cedula}/pdf")

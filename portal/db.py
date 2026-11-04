@@ -4,7 +4,8 @@
 # ------------------------------------------------------------
 #  Una sola fuente de verdad para lo que se centraliza (D21):
 #    personas e identidades, estado de cédulas, log, ficha del
-#    cliente y documentos subidos.
+#  Un solo archivo SQLite (portal.db) para personas, credenciales, sesiones,
+#  auditoría y el bloqueo de login. El estado y el log viven en estado.py.
 #
 #  Lo que NO se guarda acá: perfiles de Chrome, sesiones de los
 #  portales, firma, matrícula del perfil ni rutas de cada máquina.
@@ -154,21 +155,6 @@ CREATE TABLE IF NOT EXISTS sesiones (
 );
 CREATE INDEX IF NOT EXISTS idx_sesiones_persona ON sesiones(persona_id);
 CREATE INDEX IF NOT EXISTS idx_sesiones_expira ON sesiones(expira);
-
-
-
-
-CREATE TABLE IF NOT EXISTS documentos (
-    id         TEXT PRIMARY KEY,
-    cuij       TEXT NOT NULL DEFAULT '',
-    nombre     TEXT NOT NULL,
-    ruta       TEXT NOT NULL,
-    sha256     TEXT NOT NULL,
-    tamano     INTEGER NOT NULL DEFAULT 0,
-    subido_por TEXT NOT NULL DEFAULT '',
-    subido_en  TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_documentos_cuij ON documentos(cuij);
 
 
 CREATE TABLE IF NOT EXISTS auditoria (
@@ -489,58 +475,13 @@ def contar_sesiones(persona_id=None, ruta=None):
         ).fetchone()[0]
 
 
-# --- Documentos subidos ------------------------------------------
-def registrar_documento(nombre, ruta_archivo, sha256, tamano=0, cuij="",
-                        subido_por="", documento_id=None, ruta=None):
-    nombre = str(nombre or "").strip()
-    if not nombre:
-        raise ValueError("El documento necesita un nombre.")
-    if not sha256:
-        raise ValueError("El documento necesita su sha256.")
-    doc_id = str(documento_id or secrets.token_hex(8))
-    subido_en = _ahora()
-    with conexion(ruta) as con, _transaccion(con):
-        try:
-            con.execute(
-                "INSERT INTO documentos (id, cuij, nombre, ruta, sha256, tamano, subido_por, subido_en) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (doc_id, str(cuij or ""), nombre, str(ruta_archivo or ""), str(sha256),
-                 int(tamano or 0), str(subido_por or ""), subido_en),
-            )
-        except sqlite3.IntegrityError as e:
-            raise ErrorPortal(f"Ya existe un documento con id {doc_id!r}.") from e
-    return obtener_documento(doc_id, ruta=ruta)
-
-
-def obtener_documento(documento_id, ruta=None):
-    with conexion(ruta) as con:
-        return _fila(con.execute(
-            "SELECT * FROM documentos WHERE id = ?", (documento_id,)
-        ).fetchone())
-
-
-def listar_documentos(cuij=None, ruta=None):
-    with conexion(ruta) as con:
-        if cuij is None:
-            filas = con.execute("SELECT * FROM documentos ORDER BY subido_en DESC").fetchall()
-        else:
-            filas = con.execute(
-                "SELECT * FROM documentos WHERE cuij = ? ORDER BY subido_en DESC", (cuij,)
-            ).fetchall()
-    return [dict(f) for f in filas]
-
-
-def eliminar_documento(documento_id, ruta=None):
-    with conexion(ruta) as con, _transaccion(con):
-        return con.execute(
-            "DELETE FROM documentos WHERE id = ?", (documento_id,)
-        ).rowcount > 0
-
-
 # --- Reducción del esquema (commit 4b) ----------------------------
-#: Tablas del portal viejo. El estado y el log viven en `estado.py` (fuente
-#: única de verdad) y la ficha se fue con el commit 4: acá ya no se usan.
-TABLAS_VIEJAS = ("estado", "log_acciones", "fichas", "presentaciones")
+#: Tablas del portal viejo que ya no existen: el estado y el log viven en
+#: `estado.py`, la ficha se fue en el commit 4 y `documentos` en el 5 (el PDF
+#: vive en PORTAL_UPLOADS y en `ruta_firmada`).
+TABLAS_VIEJAS = (
+    "estado", "log_acciones", "fichas", "presentaciones", "documentos",
+)
 
 
 def _tablas(con):

@@ -315,34 +315,76 @@ def test_filtrar_cedulas_por_estado(portal):
 
 
 # --- PDF firmado de una cédula (commit 5) --------------------------
-def _pdf(firmado=True):
-    """PDF sintético, con o sin un campo de firma (/Sig con ByteRange+Contents)."""
-    from pypdf import PdfWriter
-    from pypdf.generic import (
-        ArrayObject, DictionaryObject, NameObject, NumberObject, TextStringObject,
-    )
+def _pdf(texto="CUIJ-1", firma="valida"):
+    """PDF sintético con la estructura REAL de una firma.
 
-    writer = PdfWriter()
-    writer.add_blank_page(width=200, height=200)
-    if firmado:
-        campo = DictionaryObject({
-            NameObject("/FT"): NameObject("/Sig"),
-            NameObject("/T"): TextStringObject("Firma1"),
-            NameObject("/ByteRange"): ArrayObject([
-                NumberObject(0), NumberObject(10), NumberObject(20), NumberObject(5),
-            ]),
-            NameObject("/Contents"): TextStringObject("00" * 32),
-        })
-        referencia = writer._add_object(campo)
-        raiz = writer._root_object
-        acro = raiz.get("/AcroForm")
-        if acro is None:
-            acro = DictionaryObject()
-            raiz[NameObject("/AcroForm")] = acro
-        acro[NameObject("/Fields")] = ArrayObject([referencia])
+    El campo `/FT /Sig` no lleva los datos: apunta con `/V` a un diccionario
+    `/Type /Sig` con `/Filter`, `/SubFilter`, `/ByteRange` y `/Contents`, que
+    es donde los pone un firmador de verdad.
+
+    `firma`: "valida" | "sin_v" | "ceros" | "byterange_malo" | "ninguna".
+    `texto`: lo que se dibuja en la página ("" = sin capa de texto).
+    """
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import (
+        ArrayObject, ByteStringObject, DictionaryObject, NameObject,
+        NumberObject, TextStringObject,
+    )
+    from reportlab.pdfgen import canvas
+
     buffer = io.BytesIO()
-    writer.write(buffer)
-    return buffer.getvalue()
+    lienzo = canvas.Canvas(buffer, pagesize=(300, 200))
+    if texto:
+        lienzo.drawString(20, 100, texto)
+    lienzo.showPage()
+    lienzo.save()
+
+    writer = PdfWriter(clone_from=PdfReader(io.BytesIO(buffer.getvalue())))
+    if firma == "ninguna":
+        salida = io.BytesIO()
+        writer.write(salida)
+        return salida.getvalue()
+
+    campo = DictionaryObject({
+        NameObject("/FT"): NameObject("/Sig"),
+        NameObject("/T"): TextStringObject("Firma1"),
+        NameObject("/Rect"): ArrayObject([
+            NumberObject(0), NumberObject(0), NumberObject(0), NumberObject(0),
+        ]),
+    })
+    if firma != "sin_v":
+        byte_range = (
+            ArrayObject([NumberObject(0), NumberObject(10)])
+            if firma == "byterange_malo"
+            else ArrayObject([
+                NumberObject(0), NumberObject(100),
+                NumberObject(200), NumberObject(50),
+            ])
+        )
+        contenido = (
+            b"\x00" * 32
+            if firma == "ceros"
+            else b"\x30\x82\x01\x0a" + b"\x01" * 20
+        )
+        diccionario = DictionaryObject({
+            NameObject("/Type"): NameObject("/Sig"),
+            NameObject("/Filter"): NameObject("/Adobe.PPKLite"),
+            NameObject("/SubFilter"): NameObject("/adbe.pkcs7.detached"),
+            NameObject("/ByteRange"): byte_range,
+            NameObject("/Contents"): ByteStringObject(contenido),
+        })
+        campo[NameObject("/V")] = writer._add_object(diccionario)
+
+    raiz = writer._root_object
+    acro = raiz.get("/AcroForm")
+    if acro is None:
+        acro = DictionaryObject()
+        raiz[NameObject("/AcroForm")] = acro
+    acro[NameObject("/Fields")] = ArrayObject([writer._add_object(campo)])
+
+    salida = io.BytesIO()
+    writer.write(salida)
+    return salida.getvalue()
 
 
 CEDULA_1B = {
@@ -377,13 +419,19 @@ def test_subir_firmada_marca_la_cedula_y_loguea(portal):
     r = _subir(portal)
     assert r.status_code == 200, r.text
     cuerpo = r.json()
+    assert cuerpo["id"] == "c1"
     assert cuerpo["sha256"]
-    assert os.path.abspath(cuerpo["ruta"]).startswith(os.path.abspath(portal.uploads))
+    assert cuerpo["estado"] == "firmada"
+    # La ruta del servidor no sale por HTTP.
+    assert "ruta" not in cuerpo
 
     cedula = estado.obtener_cedula("c1")
     assert cedula["estado"] == "firmada"
-    assert cedula["ruta_firmada"] == cuerpo["ruta"]
     assert cedula["fecha_firmada"]
+    assert os.path.basename(cedula["ruta_firmada"]) == f"{cuerpo['sha256']}.pdf"
+    assert os.path.abspath(cedula["ruta_firmada"]).startswith(
+        os.path.abspath(portal.uploads)
+    )
 
     entradas = [json.loads(l) for l in _lineas_log(portal)]
     subidas = [e for e in entradas if e["accion"] == "pdf_subido"]
@@ -480,9 +528,48 @@ def test_subir_caratula_distinta_da_400(portal):
 def test_subir_pdf_sin_firma_da_400(portal):
     _login(portal)
     _sembrar_cedula(portal)
-    r = _subir(portal, contenido=_pdf(firmado=False))
+    r = _subir(portal, contenido=_pdf(firma="ninguna"))
     assert r.status_code == 400
     assert "/Sig" in r.json()["detail"]
+
+
+def test_subir_campo_sin_v_da_400(portal):
+    # Un campo /Sig sin /V no tiene firma: es un formulario vacío.
+    _login(portal)
+    _sembrar_cedula(portal)
+    r = _subir(portal, contenido=_pdf(firma="sin_v"))
+    assert r.status_code == 400
+    assert "/V" in r.json()["detail"]
+
+
+def test_subir_contenido_en_ceros_da_400(portal):
+    # Marcador de firma sin firmar: /Contents todo en ceros.
+    _login(portal)
+    _sembrar_cedula(portal)
+    assert _subir(portal, contenido=_pdf(firma="ceros")).status_code == 400
+
+
+def test_subir_byterange_mal_formado_da_400(portal):
+    _login(portal)
+    _sembrar_cedula(portal)
+    assert _subir(portal, contenido=_pdf(firma="byterange_malo")).status_code == 400
+
+
+def test_subir_pdf_de_otra_causa_da_400(portal):
+    # El formulario trae el CUIJ correcto, pero el PDF es de otro expediente.
+    _login(portal)
+    _sembrar_cedula(portal)
+    r = _subir(portal, contenido=_pdf(texto="CUIJ-999"), cuij="CUIJ-1")
+    assert r.status_code == 400
+    assert "no aparece en el texto" in r.json()["detail"]
+
+
+def test_subir_pdf_sin_texto_da_400(portal):
+    _login(portal)
+    _sembrar_cedula(portal)
+    r = _subir(portal, contenido=_pdf(texto=""))
+    assert r.status_code == 400
+    assert "extraer texto" in r.json()["detail"]
 
 
 def test_subir_tope_excedido_da_413(portal):

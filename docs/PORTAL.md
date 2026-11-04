@@ -300,7 +300,8 @@ un temporal dentro de `PORTAL_UPLOADS` y recién al final se mueve con
 6. `pypdf` la abre y no está cifrada (400);
 7. `cuij` y `caratula` del formulario coinciden con los de la cédula,
    comparados normalizados (400);
-8. hay al menos un campo de firma `/FT /Sig` con `/ByteRange` y `/Contents` (400);
+8. hay al menos un campo `/FT /Sig` cuyo `/V` sea un diccionario de firma con
+   `/ByteRange` de 4 enteros y `/Contents` no vacío y no todo en ceros (400);
 9. el sha256 no está repetido en otra cédula (409).
 
 Se guarda en `PORTAL_UPLOADS/<id saneado>/<sha256>.pdf` y la cédula se marca
@@ -308,8 +309,15 @@ firmada con `estado.marcar_firmada(..., solo_si_generada=True)`, que hace el
 chequeo de estado y la escritura **dentro del mismo lock**: si otro proceso ya
 la marcó, el archivo recién guardado se borra y la respuesta es 409.
 
-⚠️ Validado con un PDF sintético; falta probarlo con un PDF firmado real de
-FirmAr (Santiago) antes de usarlo con cédulas reales.
+La respuesta trae solo `ok`, `id`, `sha256` y `estado`: **nunca la ruta del
+servidor**.
+
+**Alcance de la validación**: es un control contra errores humanos (subir el
+PDF equivocado, uno sin firmar, el de otra causa), **no** una validación
+criptográfica. No verifica el certificado del firmante ni la integridad del
+documento: cualquiera puede fabricar un PDF con un campo de firma bien formado.
+La verificación real (por ejemplo con `pyHanko`) queda para una etapa
+posterior.
 
 ### Visibilidad
 
