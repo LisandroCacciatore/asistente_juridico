@@ -113,3 +113,35 @@ def test_main_puede_actuar_fija_y_limpia(ruta, capsys):
     portal_admin.main(["--db", ruta, "puede-actuar", "jr", "Santiago"])
     portal_admin.main(["--db", ruta, "listar"])
     assert "actua como" in capsys.readouterr().out
+
+
+# --- Auditoría del CLI (commit 6) ----------------------------------
+def _acciones(ruta):
+    with db.conexion(ruta) as con:
+        return [
+            (f["persona_id"], f["accion"])
+            for f in con.execute("SELECT persona_id, accion FROM auditoria ORDER BY id")
+        ]
+
+
+def test_el_cli_audita_crear_desactivar_y_puede_actuar(ruta):
+    portal_admin.main(["--db", ruta, "crear", "jr", "Jr"])
+    portal_admin.main(["--db", ruta, "puede-actuar", "jr", "Santiago"])
+    portal_admin.main(["--db", ruta, "desactivar", "jr"])
+
+    filas = _acciones(ruta)
+    acciones = {accion for _persona, accion in filas}
+    assert {
+        "cli_persona_creada", "cli_puede_actuar", "cli_persona_desactivada",
+    } <= acciones
+    # Todo lo que hace la consola queda firmado como "cli".
+    assert {persona for persona, _accion in filas} == {"cli"}
+
+
+def test_el_cli_marca_debe_cambiar_al_resetear(ruta, monkeypatch):
+    portal_admin.main(["--db", ruta, "crear", "jr", "Jr"])
+    monkeypatch.setattr(portal_admin, "pedir_password", lambda: "clave-provisoria-1")
+    portal_admin.main(["--db", ruta, "password", "jr"])
+
+    assert db.obtener_credencial("jr", ruta=ruta)["debe_cambiar"] == 1
+    assert ("cli", "cli_password_actualizada") in _acciones(ruta)

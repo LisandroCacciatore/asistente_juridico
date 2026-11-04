@@ -224,6 +224,8 @@ tablas viejas se fueron en el commit 4.
 | `POST /login` | sesión | Abre sesión, firma la cookie y audita (`login` / `login_fallido`) |
 | `POST /logout` | sesión | Cierra la sesión en la base, borra la cookie y audita (`logout`) |
 | `GET /panel` | lectura | Panel HTML: Novedades y Actividad |
+| `GET /cambiar-password` | sesión | Formulario de cambio de contraseña |
+| `POST /cambiar-password` | sesión | Cambia la clave (exige la actual, ≥12 y distinta) |
 | `GET /api/sesion` | lectura | Quién está autenticado |
 | `GET /api/salud` | lectura | Chequeo sin login |
 | `GET /api/portal/novedades` | lectura | Cédulas recientes (`?limite=`); pendientes solo para admin |
@@ -318,6 +320,43 @@ criptográfica. No verifica el certificado del firmante ni la integridad del
 documento: cualquiera puede fabricar un PDF con un campo de firma bien formado.
 La verificación real (por ejemplo con `pyHanko`) queda para una etapa
 posterior.
+
+### Bloqueo de login
+
+Los intentos fallidos se cuentan en la tabla `login_intentos` por dos claves:
+`id:<identificador normalizado>` (exista o no la persona) y `ip:<ip del
+cliente>`. Con **5 fallos en 15 minutos** se bloquea ese identificador;
+la IP tiene un umbral más alto (**20**) porque una oficina puede compartir
+salida. Mientras está bloqueado, la respuesta es la **misma** que un fallo
+normal (`Usuario o contraseña incorrectos.`, 401) y se audita
+`login_bloqueado`. Un login correcto borra los intentos de ese identificador.
+
+Un identificador inexistente cuesta lo mismo que uno real: `auth.autenticar`
+verifica igual contra un hash falso, así el tiempo de respuesta no delata qué
+usuarios existen.
+
+### Cambio obligatorio de contraseña
+
+`credenciales.debe_cambiar` se pone en 1 al crear una persona con clave y al
+resetearla (por HTTP o por consola). Mientras esté activo, la sesión solo
+puede ir a `/cambiar-password` y a logout: el panel redirige y la API responde
+403. La clave nueva tiene que ser **distinta de la anterior** y tener **al
+menos 12 caracteres**. Al guardarla se cierran las demás sesiones de esa
+persona y se audita `password_cambiada`.
+
+### Token CSRF
+
+El token es un HMAC-SHA256 de `PORTAL_SECRETO` sobre el identificador de la
+sesión (el valor de la cookie firmada), recalculado en cada pedido y comparado
+en tiempo constante. Los pedidos a `/api/*` que no son GET lo llevan en
+`X-CSRF-Token`; se obtiene en `GET /api/sesion` (`csrf`). El chequeo de
+`Origin` se mantiene, y el formulario de login usa un token derivado de una
+cookie anónima. Un pedido de escritura **sin sesión** no exige token: la falta
+de sesión ya lo rechaza con 401.
+
+La consola `portal_admin.py` audita en `auditoria` lo que hace, con
+`persona_id="cli"`: `cli_persona_creada`, `cli_persona_desactivada`,
+`cli_password_actualizada` y `cli_puede_actuar`.
 
 ### Visibilidad
 

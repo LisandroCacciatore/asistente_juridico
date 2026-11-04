@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import estado
-from portal import auth, db, hub, permisos, servidor_portal
+from portal import auth, csrf, db, hub, permisos, servidor_portal
 
 PDF = b"%PDF-1.4\n% cedula de prueba\n"
 CLAVE = "clave-segura-123"
@@ -98,11 +98,16 @@ def portal(tmp_path, monkeypatch):
 
 
 def _login(portal, identificador="santiago", password=CLAVE):
-    return portal.cliente.post(
+    respuesta = portal.cliente.post(
         "/login",
         data={"identificador": identificador, "password": password},
         follow_redirects=False,
     )
+    if respuesta.status_code == 303:
+        # El token CSRF de la API se deriva de la cookie de sesión.
+        cookie = portal.cliente.cookies.get(auth.NOMBRE_COOKIE)
+        portal.cliente.headers["X-CSRF-Token"] = csrf.token(cookie)
+    return respuesta
 
 
 # --- Sesión -------------------------------------------------------
@@ -1060,3 +1065,186 @@ def test_dentro_de_uploads_rechaza_afuera(portal):
     assert servidor_portal._dentro_de_uploads(
         os.path.join(str(portal.tmp_path), "fuera.pdf")
     ) is False
+
+
+# --- Bloqueo de login (commit 6) -----------------------------------
+def _intentar(portal, identificador="santiago", password="mal"):
+    return portal.cliente.post(
+        "/login",
+        data={"identificador": identificador, "password": password},
+        follow_redirects=False,
+    )
+
+
+def test_cinco_fallos_bloquean_y_la_respuesta_no_cambia(portal):
+    for _ in range(servidor_portal.FALLOS_POR_IDENTIFICADOR):
+        r = _intentar(portal)
+        assert r.status_code == 401
+        assert servidor_portal.MENSAJE_LOGIN in r.text
+    # Ni con la clave correcta: el mensaje es exactamente el mismo.
+    r = _intentar(portal, password=CLAVE)
+    assert r.status_code == 401
+    assert servidor_portal.MENSAJE_LOGIN in r.text
+    assert len(_auditoria_con("login_bloqueado")) == 1
+
+
+def test_login_correcto_reinicia_el_contador(portal):
+    for _ in range(4):
+        _intentar(portal)
+    assert _login(portal).status_code == 303
+    # Cuatro fallos más: si el contador no se hubiera reiniciado, serían 8.
+    for _ in range(4):
+        _intentar(portal)
+    assert _login(portal).status_code == 303
+
+
+def test_el_bloqueo_por_ip_usa_un_umbral_mas_alto(portal):
+    for numero in range(servidor_portal.FALLOS_POR_IP):
+        _intentar(portal, identificador=f"usuario{numero}")
+    # Ningún identificador llegó a 5, pero la IP llegó a 20.
+    r = _intentar(portal, password=CLAVE)
+    assert r.status_code == 401
+    assert len(_auditoria_con("login_bloqueado")) == 1
+
+
+def test_usuario_inexistente_hace_el_mismo_trabajo(portal):
+    import time
+
+    inicio = time.perf_counter()
+    assert auth.autenticar("no-existe", "cualquier-cosa") is None
+    transcurrido = time.perf_counter() - inicio
+    # Sin el hash falso esto sería casi instantáneo y delataría qué usuarios existen.
+    assert transcurrido > 0.005
+
+
+# --- Cambio obligatorio de contraseña ------------------------------
+CLAVE_PROVISORIA = "clave-provisoria-1"
+
+
+def _persona_con_clave_provisoria(portal, persona_id="nuevo", nombre="Nuevo"):
+    db.crear_persona(persona_id, nombre)
+    db.guardar_credencial(
+        persona_id, auth.hashear(CLAVE_PROVISORIA), debe_cambiar=1
+    )
+    return persona_id
+
+
+def _entrar_como_nuevo(portal):
+    return portal.cliente.post(
+        "/login",
+        data={"identificador": "nuevo", "password": CLAVE_PROVISORIA},
+        follow_redirects=False,
+    )
+
+
+def _token_del_form(portal):
+    return csrf.token(portal.cliente.cookies.get(auth.NOMBRE_COOKIE))
+
+
+def test_debe_cambiar_redirige_y_bloquea_la_api(portal):
+    _persona_con_clave_provisoria(portal)
+    r = _entrar_como_nuevo(portal)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/cambiar-password"
+
+    panel = portal.cliente.get("/panel", follow_redirects=False)
+    assert panel.status_code == 303
+    assert panel.headers["location"] == "/cambiar-password"
+
+    assert portal.cliente.get("/api/portal/novedades").status_code == 403
+    assert portal.cliente.get("/cambiar-password").status_code == 200
+
+
+def test_cambiar_password_corta_da_400(portal):
+    _persona_con_clave_provisoria(portal)
+    _entrar_como_nuevo(portal)
+    r = portal.cliente.post(
+        "/cambiar-password",
+        data={"actual": CLAVE_PROVISORIA, "nueva": "corta1234", "repetida": "corta1234",
+              "csrf": _token_del_form(portal)},
+        follow_redirects=False,
+    )
+    assert r.status_code == 400
+    assert "12" in r.text
+
+
+def test_cambiar_password_igual_a_la_anterior_da_400(portal):
+    _persona_con_clave_provisoria(portal)
+    _entrar_como_nuevo(portal)
+    r = portal.cliente.post(
+        "/cambiar-password",
+        data={"actual": CLAVE_PROVISORIA, "nueva": CLAVE_PROVISORIA,
+              "repetida": CLAVE_PROVISORIA, "csrf": _token_del_form(portal)},
+        follow_redirects=False,
+    )
+    assert r.status_code == 400
+    assert "distinta" in r.text
+
+
+def test_cambiar_password_ok_cierra_las_otras_sesiones(portal):
+    _persona_con_clave_provisoria(portal)
+    # Otra sesión de la misma persona, como si fuera otra PC.
+    otra = TestClient(servidor_portal.app)
+    assert otra.post(
+        "/login",
+        data={"identificador": "nuevo", "password": CLAVE_PROVISORIA},
+        follow_redirects=False,
+    ).status_code == 303
+    _entrar_como_nuevo(portal)
+    assert db.contar_sesiones("nuevo") == 2
+
+    r = portal.cliente.post(
+        "/cambiar-password",
+        data={"actual": CLAVE_PROVISORIA, "nueva": "clave-nueva-larga-1",
+              "repetida": "clave-nueva-larga-1", "csrf": _token_del_form(portal)},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/panel"
+    assert db.contar_sesiones("nuevo") == 1
+    assert db.obtener_credencial("nuevo")["debe_cambiar"] == 0
+    assert len(_auditoria_con("password_cambiada")) == 1
+    # Ya puede usar la API.
+    portal.cliente.headers["X-CSRF-Token"] = csrf.token(
+        portal.cliente.cookies.get(auth.NOMBRE_COOKIE)
+    )
+    assert portal.cliente.get("/api/portal/novedades").status_code == 200
+
+
+def test_cambiar_password_sin_token_da_403(portal):
+    _persona_con_clave_provisoria(portal)
+    _entrar_como_nuevo(portal)
+    r = portal.cliente.post(
+        "/cambiar-password",
+        data={"actual": CLAVE_PROVISORIA, "nueva": "clave-nueva-larga-1",
+              "repetida": "clave-nueva-larga-1"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 403
+
+
+# --- Token CSRF (commit 6) -----------------------------------------
+def test_api_sin_token_da_403(portal):
+    _login(portal)
+    portal.cliente.headers.pop("X-CSRF-Token", None)
+    assert portal.cliente.post("/api/admin/sesiones-borrar").status_code == 403
+
+
+def test_api_con_token_incorrecto_da_403(portal):
+    _login(portal)
+    portal.cliente.headers["X-CSRF-Token"] = "no-es-el-token"
+    assert portal.cliente.post("/api/admin/sesiones-borrar").status_code == 403
+
+
+def test_get_no_necesita_token(portal):
+    _login(portal)
+    portal.cliente.headers.pop("X-CSRF-Token", None)
+    assert portal.cliente.get("/api/portal/novedades").status_code == 200
+
+
+def test_el_token_se_publica_en_sesion(portal):
+    _login(portal)
+    cuerpo = portal.cliente.get("/api/sesion").json()
+    assert cuerpo["csrf"] == csrf.token(
+        portal.cliente.cookies.get(auth.NOMBRE_COOKIE)
+    )

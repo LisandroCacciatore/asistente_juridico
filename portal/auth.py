@@ -172,15 +172,36 @@ def verificar_cookie(valor, secreto=None):
 
 
 # --- Autenticación y sesiones -------------------------------------
+_HASH_FALSO = None
+
+
+def _hash_falso():
+    """Hash de una contraseña que nadie conoce.
+
+    Sirve para que un identificador inexistente cueste lo mismo que uno real:
+    sin esto, el tiempo de respuesta delata qué usuarios existen.
+    """
+    global _HASH_FALSO
+    if _HASH_FALSO is None:
+        _HASH_FALSO = hashear(secrets.token_urlsafe(32))
+    return _HASH_FALSO
+
+
 def autenticar(identificador, password, ruta=None):
     """Devuelve la persona o None. Acepta persona_id o mail."""
     persona = db.obtener_persona_por_identificador(identificador, ruta=ruta)
-    if not persona or not persona["activo"]:
-        return None
-    credencial = db.obtener_credencial(persona["persona_id"], ruta=ruta)
+    credencial = None
+    if persona and persona["activo"]:
+        credencial = db.obtener_credencial(persona["persona_id"], ruta=ruta)
     if not credencial:
+        # Mismo trabajo que con un usuario real, y mismo resultado.
+        verificar(password, _hash_falso())
         return None
-    return persona if verificar(password, credencial["hash"]) else None
+    if not verificar(password, credencial["hash"]):
+        return None
+    # El login necesita saber si la clave es provisoria (redirige al cambio).
+    persona["debe_cambiar"] = bool(credencial.get("debe_cambiar"))
+    return persona
 
 
 def crear_sesion(persona_id, horas=None, usuario_windows="", maquina="", ruta=None):
@@ -234,6 +255,8 @@ def validar_sesion(token, tocar=True, horas=None, ruta=None):
         db.renovar_sesion(
             token_hash, _iso(ahora + datetime.timedelta(hours=horas)), ruta=ruta
         )
+    credencial = db.obtener_credencial(persona["persona_id"], ruta=ruta)
+    persona["debe_cambiar"] = bool(credencial and credencial.get("debe_cambiar"))
     return persona
 
 
@@ -245,6 +268,32 @@ def cerrar_sesion(token, ruta=None):
 
 def cerrar_sesiones_persona(persona_id, ruta=None):
     return db.eliminar_sesiones_persona(persona_id, ruta=ruta)
+
+
+#: El cambio de contraseña exige más que el mínimo del alta.
+LARGO_MINIMO_CAMBIO = 12
+
+
+def cambiar_password(persona_id, actual, nueva, ruta=None):
+    """Cambia la contraseña de una persona. Devuelve (ok, motivo).
+
+    Exige la contraseña actual, que la nueva sea distinta y que tenga al menos
+    `LARGO_MINIMO_CAMBIO` caracteres. Al guardarla se limpia `debe_cambiar`.
+    """
+    credencial = db.obtener_credencial(persona_id, ruta=ruta)
+    if not credencial:
+        return False, "Esa persona no tiene contraseña guardada."
+    if not verificar(str(actual or ""), credencial["hash"]):
+        return False, "La contraseña actual no es correcta."
+    if len(str(nueva or "")) < LARGO_MINIMO_CAMBIO:
+        return False, (
+            "La contraseña nueva tiene que tener al menos "
+            f"{LARGO_MINIMO_CAMBIO} caracteres."
+        )
+    if verificar(str(nueva), credencial["hash"]):
+        return False, "La contraseña nueva tiene que ser distinta de la anterior."
+    db.guardar_credencial(persona_id, hashear(nueva), debe_cambiar=0, ruta=ruta)
+    return True, ""
 
 
 def iniciar_sesion(identificador, password, usuario_windows="", maquina="", ruta=None):

@@ -71,8 +71,22 @@ def guardar_password(persona_id, password, ruta=None):
         )
     if not db.obtener_persona(persona_id, ruta=ruta):
         raise db.PersonaNoEncontrada(f"No existe la persona {persona_id!r}.")
-    db.guardar_credencial(persona_id, auth.hashear(password), ruta=ruta)
+    # Una clave puesta desde la consola es provisoria: se cambia al entrar.
+    db.guardar_credencial(
+        persona_id, auth.hashear(password), debe_cambiar=1, ruta=ruta
+    )
     return True
+
+
+def auditar(accion, detalle="", ruta=None):
+    """Deja rastro en `auditoria` de lo que se hace desde la consola."""
+    try:
+        db.registrar_auditoria(
+            persona_id="cli", accion=accion, ip="", detalle=detalle, ruta=ruta
+        )
+    except Exception:
+        # Auditar no puede tumbar una operación que ya se hizo.
+        pass
 
 
 def pedir_password():
@@ -176,9 +190,11 @@ def main(argv=None):
                 args.persona_id, args.nombre, mail=args.mail,
                 matricula=args.matricula, ruta=ruta,
             )
+            auditar("cli_persona_creada", persona["persona_id"], ruta)
             print(f"Persona creada: {persona['persona_id']} ({persona['nombre']})")
         elif args.comando == "password":
             guardar_password(args.persona_id, pedir_password(), ruta=ruta)
+            auditar("cli_password_actualizada", args.persona_id, ruta)
             print(f"Contraseña actualizada para {args.persona_id}.")
         elif args.comando == "listar":
             listar(ruta=ruta)
@@ -187,6 +203,7 @@ def main(argv=None):
             print(f"Persona activada: {args.persona_id}")
         elif args.comando == "desactivar":
             db.desactivar_persona(args.persona_id, ruta=ruta)
+            auditar("cli_persona_desactivada", args.persona_id, ruta)
             print(f"Persona desactivada y sesiones cerradas: {args.persona_id}")
         elif args.comando == "sesiones-borrar":
             if args.persona_id:
@@ -197,6 +214,11 @@ def main(argv=None):
         elif args.comando == "puede-actuar":
             identidades = [] if args.limpiar else args.identidades
             persona = db.fijar_puede_actuar_como(args.persona_id, identidades, ruta=ruta)
+            auditar(
+                "cli_puede_actuar",
+                f"{args.persona_id}: {persona.get('puede_actuar_como') or '-'}",
+                ruta,
+            )
             print(
                 f"{persona['persona_id']} puede actuar como: "
                 f"{persona.get('puede_actuar_como') or '(ninguna)'}"

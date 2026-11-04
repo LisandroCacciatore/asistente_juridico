@@ -140,10 +140,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_personas_mail
     ON personas(mail) WHERE mail <> '';
 
 CREATE TABLE IF NOT EXISTS credenciales (
-    persona_id  TEXT PRIMARY KEY REFERENCES personas(persona_id) ON DELETE CASCADE,
-    hash        TEXT NOT NULL,
-    actualizado TEXT NOT NULL
+    persona_id   TEXT PRIMARY KEY REFERENCES personas(persona_id) ON DELETE CASCADE,
+    hash         TEXT NOT NULL,
+    debe_cambiar INTEGER NOT NULL DEFAULT 0 CHECK (debe_cambiar IN (0, 1)),
+    actualizado  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS login_intentos (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    clave TEXT NOT NULL,
+    fecha TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_intentos ON login_intentos(clave, fecha);
 
 CREATE TABLE IF NOT EXISTS sesiones (
     token_hash      TEXT PRIMARY KEY,
@@ -207,12 +214,19 @@ def _migrar(con):
     """Agrega columnas nuevas a bases ya creadas. Es idempotente.
 
     `CREATE TABLE IF NOT EXISTS` no toca una tabla que ya existe, así que una
-    base vieja se quedaría sin `puede_actuar_como` para siempre.
+    base vieja se quedaría sin las columnas nuevas para siempre.
     """
     columnas = {fila["name"] for fila in con.execute("PRAGMA table_info(personas)")}
     if "puede_actuar_como" not in columnas:
         con.execute(
             "ALTER TABLE personas ADD COLUMN puede_actuar_como TEXT NOT NULL DEFAULT ''"
+        )
+    columnas = {
+        fila["name"] for fila in con.execute("PRAGMA table_info(credenciales)")
+    }
+    if "debe_cambiar" not in columnas:
+        con.execute(
+            "ALTER TABLE credenciales ADD COLUMN debe_cambiar INTEGER NOT NULL DEFAULT 0"
         )
     con.commit()
 
@@ -380,7 +394,12 @@ def desactivar_persona(persona_id, ruta=None):
 
 
 # --- Credenciales -------------------------------------------------
-def guardar_credencial(persona_id, hash_guardado, ruta=None):
+def guardar_credencial(persona_id, hash_guardado, debe_cambiar=0, ruta=None):
+    """Guarda (o reemplaza) la contraseña de una persona.
+
+    `debe_cambiar=1` obliga a cambiarla en el próximo ingreso: se usa al crear
+    la persona y al resetear la contraseña desde la consola.
+    """
     if not hash_guardado:
         raise ValueError("El hash de la contraseña no puede estar vacío.")
     ahora = _ahora()
@@ -388,9 +407,11 @@ def guardar_credencial(persona_id, hash_guardado, ruta=None):
         if con.execute("SELECT 1 FROM personas WHERE persona_id = ?", (persona_id,)).fetchone() is None:
             raise PersonaNoEncontrada(f"No existe la persona {persona_id!r}.")
         con.execute(
-            "INSERT INTO credenciales (persona_id, hash, actualizado) VALUES (?, ?, ?) "
-            "ON CONFLICT(persona_id) DO UPDATE SET hash = excluded.hash, actualizado = excluded.actualizado",
-            (persona_id, hash_guardado, ahora),
+            "INSERT INTO credenciales (persona_id, hash, debe_cambiar, actualizado) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(persona_id) DO UPDATE SET hash = excluded.hash, "
+            "debe_cambiar = excluded.debe_cambiar, actualizado = excluded.actualizado",
+            (persona_id, hash_guardado, 1 if debe_cambiar else 0, ahora),
         )
     return obtener_credencial(persona_id, ruta=ruta)
 
@@ -456,6 +477,49 @@ def eliminar_sesiones_persona(persona_id, ruta=None):
 def eliminar_todas_las_sesiones(ruta=None):
     with conexion(ruta) as con, _transaccion(con):
         return con.execute("DELETE FROM sesiones").rowcount
+
+
+def eliminar_otras_sesiones(persona_id, token_hash_actual, ruta=None):
+    """Cierra las sesiones de una persona menos la actual (al cambiar la clave)."""
+    with conexion(ruta) as con, _transaccion(con):
+        return con.execute(
+            "DELETE FROM sesiones WHERE persona_id = ? AND token_hash <> ?",
+            (persona_id, token_hash_actual),
+        ).rowcount
+
+
+# --- Intentos de login (bloqueo) -----------------------------------
+def registrar_intento(clave, ruta=None):
+    """Anota un intento fallido para una clave ("id:..." o "ip:...")."""
+    with conexion(ruta) as con, _transaccion(con):
+        con.execute(
+            "INSERT INTO login_intentos (clave, fecha) VALUES (?, ?)",
+            (str(clave), _ahora()),
+        )
+
+
+def contar_intentos(clave, desde, ruta=None):
+    """Cuántos fallos tiene esa clave desde `desde` (ISO UTC)."""
+    with conexion(ruta) as con:
+        return con.execute(
+            "SELECT COUNT(*) FROM login_intentos WHERE clave = ? AND fecha >= ?",
+            (str(clave), str(desde)),
+        ).fetchone()[0]
+
+
+def limpiar_intentos(clave, ruta=None):
+    with conexion(ruta) as con, _transaccion(con):
+        return con.execute(
+            "DELETE FROM login_intentos WHERE clave = ?", (str(clave),)
+        ).rowcount
+
+
+def podar_intentos(antes, ruta=None):
+    """Borra los intentos más viejos que la ventana: no sirven para el conteo."""
+    with conexion(ruta) as con, _transaccion(con):
+        return con.execute(
+            "DELETE FROM login_intentos WHERE fecha < ?", (str(antes),)
+        ).rowcount
 
 
 def limpiar_sesiones_expiradas(ahora=None, ruta=None):

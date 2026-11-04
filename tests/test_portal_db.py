@@ -176,6 +176,41 @@ def test_reducir_esquema_hace_backup_y_conserva_personas(tmp_path):
     assert db.reducir_esquema(ruta) is None
 
 
+def test_migracion_agrega_debe_cambiar(tmp_path):
+    # Una base creada antes del commit 6 no tiene la columna: inicializar la
+    # agrega con 0 y conserva la credencial.
+    ruta = str(tmp_path / "vieja.db")
+    with db.conexion(ruta) as con:
+        con.execute(
+            "CREATE TABLE personas (persona_id TEXT PRIMARY KEY, nombre TEXT NOT NULL, "
+            "mail TEXT NOT NULL DEFAULT '', matricula TEXT NOT NULL DEFAULT '', "
+            "activo INTEGER NOT NULL DEFAULT 1, "
+            "puede_actuar_como TEXT NOT NULL DEFAULT '', "
+            "creado TEXT NOT NULL, actualizado TEXT NOT NULL)"
+        )
+        con.execute(
+            "CREATE TABLE credenciales (persona_id TEXT PRIMARY KEY, "
+            "hash TEXT NOT NULL, actualizado TEXT NOT NULL)"
+        )
+        con.execute(
+            "INSERT INTO personas (persona_id, nombre, creado, actualizado) "
+            "VALUES ('jr', 'Jr', 'x', 'x')"
+        )
+        con.execute(
+            "INSERT INTO credenciales VALUES ('jr', 'hash-x', 'x')"
+        )
+        con.commit()
+    db.inicializar(ruta)
+    with db.conexion(ruta) as con:
+        columnas = {
+            fila["name"] for fila in con.execute("PRAGMA table_info(credenciales)")
+        }
+        credencial = dict(con.execute("SELECT * FROM credenciales").fetchone())
+    assert "debe_cambiar" in columnas
+    assert credencial["debe_cambiar"] == 0
+    assert credencial["hash"] == "hash-x"
+
+
 def test_migracion_agrega_puede_actuar_como(tmp_path):
     # Una base creada antes del commit 3 no tiene la columna: inicializar la
     # agrega sin perder datos (CREATE TABLE IF NOT EXISTS no la tocaría).

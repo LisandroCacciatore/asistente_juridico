@@ -14,6 +14,7 @@
 #  o el acceso directo `Iniciar_Portal.bat`.
 # ============================================================
 
+import datetime
 import hashlib
 import html
 import os
@@ -33,9 +34,21 @@ from pydantic import BaseModel
 
 import estado
 
-from . import auth, db, hub, permisos
+from . import auth, csrf, db, hub, permisos
 
 MIN_LARGO_PASSWORD = 8
+
+# --- Bloqueo de login (commit 6) -----------------------------------
+#: Ventana en la que se cuentan los fallos y duración del bloqueo.
+VENTANA_BLOQUEO_MIN = 15
+BLOQUEO_MIN = 15
+
+#: Fallos por identificador (exista o no) y por IP (umbral más alto: una
+#: oficina entera puede compartir salida).
+FALLOS_POR_IDENTIFICADOR = 5
+FALLOS_POR_IP = 20
+
+MENSAJE_LOGIN = "Usuario o contraseña incorrectos."
 
 app = FastAPI(title="Portal del Estudio Segovia")
 
@@ -76,6 +89,14 @@ async def _proteger_csrf(request: Request, call_next):
             if origen_host and origen_host != host and origen_host not in permitidos:
                 return JSONResponse(
                     {"ok": False, "error": "Origen no permitido"}, status_code=403
+                )
+        # Token CSRF para la API: HMAC de PORTAL_SECRETO sobre la sesión. Sin
+        # sesión no se exige (la dependencia ya responde 401).
+        if request.url.path.startswith("/api/"):
+            cookie = request.cookies.get(auth.NOMBRE_COOKIE)
+            if cookie and not csrf.valido(cookie, request.headers.get("X-CSRF-Token")):
+                return JSONResponse(
+                    {"ok": False, "error": "Token CSRF inválido"}, status_code=403
                 )
     return await call_next(request)
 
@@ -151,6 +172,12 @@ def _persona(request: Request):
     persona = auth.persona_actual(request.cookies.get(auth.NOMBRE_COOKIE))
     if not persona:
         raise HTTPException(status_code=401, detail="Sesión vencida o inexistente.")
+    if persona.get("debe_cambiar"):
+        # Mientras deba cambiar la clave, la API no responde nada más.
+        raise HTTPException(
+            status_code=403,
+            detail="Hay que cambiar la contraseña antes de seguir (/cambiar-password).",
+        )
     return persona
 
 
@@ -256,9 +283,55 @@ def _dentro_de_uploads(ruta):
 # --- Login / sesión ----------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 def inicio(request: Request):
-    if _persona_opcional(request):
-        return RedirectResponse("/panel", status_code=303)
-    return HTMLResponse(_html_login())
+    persona = _persona_opcional(request)
+    if persona:
+        destino = "/cambiar-password" if persona.get("debe_cambiar") else "/panel"
+        return RedirectResponse(destino, status_code=303)
+    # Cookie anónima: de ahí sale el token del formulario de login.
+    anon = request.cookies.get(csrf.NOMBRE_COOKIE_ANON) or secrets.token_urlsafe(24)
+    respuesta = HTMLResponse(_html_login(csrf_token=csrf.token(anon)))
+    respuesta.set_cookie(
+        csrf.NOMBRE_COOKIE_ANON,
+        anon,
+        httponly=True,
+        samesite="lax",
+        secure=auth.cookie_segura(),
+        path="/",
+    )
+    return respuesta
+
+
+def _clave_intentos(identificador):
+    """Clave de conteo por identificador (normalizado, exista o no)."""
+    limpio = permisos.normalizar(identificador)[:80]
+    return f"id:{limpio}" if limpio else ""
+
+
+def _clave_ip_intentos(request):
+    ip = _ip_cliente(request)
+    return f"ip:{ip}" if ip else ""
+
+
+def _desde_la_ventana():
+    """Inicio de la ventana de conteo, en UTC como `db._ahora()`.
+
+    Si acá se usara la hora local, la comparación de strings ISO quedaría
+    corrida respecto de las fechas guardadas y el conteo daría 0.
+    """
+    ahora = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+        minutes=VENTANA_BLOQUEO_MIN
+    )
+    return ahora.isoformat(timespec="seconds")
+
+
+def _esta_bloqueado(claves):
+    """True si alguna clave superó su umbral de fallos en la ventana."""
+    desde = _desde_la_ventana()
+    db.podar_intentos(desde)
+    for clave, tope in claves:
+        if clave and db.contar_intentos(clave, desde) >= tope:
+            return True
+    return False
 
 
 @app.post("/login")
@@ -266,7 +339,31 @@ def login(
     request: Request,
     identificador: str = Form(...),
     password: str = Form(...),
+    csrf_form: str = Form("", alias="csrf"),
 ):
+    # Token del formulario: se deriva de la cookie anónima. Sin esa cookie
+    # (cliente de API que no hizo GET /) no hay nada que validar.
+    anon = request.cookies.get(csrf.NOMBRE_COOKIE_ANON)
+    if anon and not csrf.valido(anon, csrf_form):
+        return HTMLResponse(
+            _html_login("El formulario venció. Volvé a intentar.", csrf.token(anon)),
+            status_code=403,
+        )
+
+    claves = [
+        (_clave_intentos(identificador), FALLOS_POR_IDENTIFICADOR),
+        (_clave_ip_intentos(request), FALLOS_POR_IP),
+    ]
+    if _esta_bloqueado(claves):
+        # Misma respuesta que un fallo normal: no se revela el bloqueo.
+        db.registrar_auditoria(
+            persona_id=str(identificador or "")[:80],
+            accion="login_bloqueado",
+            ip=_ip_cliente(request),
+            detalle="",
+        )
+        return HTMLResponse(_html_login(MENSAJE_LOGIN), status_code=401)
+
     usuario, maquina = db.quien()
     token = None
     persona = None
@@ -282,22 +379,29 @@ def login(
             _html_login(f"El portal no está configurado: {e}"), status_code=500
         )
     if not token:
+        for clave, _tope in claves:
+            if clave:
+                db.registrar_intento(clave)
         db.registrar_auditoria(
             persona_id=identificador or "",
             accion="login_fallido",
             ip=_ip_cliente(request),
             detalle=str(identificador or ""),
         )
-        return HTMLResponse(
-            _html_login("Usuario o contraseña incorrectos."), status_code=401
-        )
+        return HTMLResponse(_html_login(MENSAJE_LOGIN), status_code=401)
+
+    # Login correcto: se reinicia el contador del identificador.
+    clave_identificador = _clave_intentos(identificador)
+    if clave_identificador:
+        db.limpiar_intentos(clave_identificador)
     db.registrar_auditoria(
         persona_id=persona["persona_id"],
         accion="login",
         ip=_ip_cliente(request),
         detalle="",
     )
-    respuesta = RedirectResponse("/panel", status_code=303)
+    destino = "/cambiar-password" if persona.get("debe_cambiar") else "/panel"
+    respuesta = RedirectResponse(destino, status_code=303)
     respuesta.set_cookie(auth.NOMBRE_COOKIE, cookie, **auth.opciones_cookie())
     return respuesta
 
@@ -323,8 +427,13 @@ def logout(request: Request):
 
 
 @app.get("/api/sesion")
-def api_sesion(persona=Depends(_persona)):
-    return {"ok": True, "persona": _publica(persona)}
+def api_sesion(request: Request, persona=Depends(_persona)):
+    cookie = request.cookies.get(auth.NOMBRE_COOKIE)
+    return {
+        "ok": True,
+        "persona": _publica(persona),
+        "csrf": csrf.token(cookie),
+    }
 
 
 @app.get("/api/salud")
@@ -780,7 +889,8 @@ def api_admin_crear_persona(
         matricula=entrada.matricula,
     )
     if hash_guardado:
-        db.guardar_credencial(creada["persona_id"], hash_guardado)
+        # Clave provisoria: se cambia en el primer ingreso.
+        db.guardar_credencial(creada["persona_id"], hash_guardado, debe_cambiar=1)
     db.registrar_auditoria(
         persona_id=persona["persona_id"],
         accion="persona_creada",
@@ -821,7 +931,9 @@ def api_admin_password(
     _password_valida(entrada.password)
     if not db.obtener_persona(persona_id):
         raise db.PersonaNoEncontrada(f"No existe la persona {persona_id!r}.")
-    db.guardar_credencial(persona_id, auth.hashear(entrada.password))
+    db.guardar_credencial(
+        persona_id, auth.hashear(entrada.password), debe_cambiar=1
+    )
     db.registrar_auditoria(
         persona_id=persona["persona_id"],
         accion="password_actualizada",
@@ -860,12 +972,71 @@ def api_admin_borrar_sesiones(request: Request, persona=Depends(_persona)):
 
 
 # --- Panel --------------------------------------------------------
+@app.get("/cambiar-password", response_class=HTMLResponse)
+def cambiar_password_form(request: Request, error: str = ""):
+    persona = _persona_opcional(request)
+    if not persona:
+        return RedirectResponse("/", status_code=303)
+    cookie = request.cookies.get(auth.NOMBRE_COOKIE)
+    return HTMLResponse(
+        _html_cambiar_password(persona, csrf.token(cookie), error)
+    )
+
+
+@app.post("/cambiar-password")
+def cambiar_password(
+    request: Request,
+    actual: str = Form(...),
+    nueva: str = Form(...),
+    repetida: str = Form(""),
+    csrf_form: str = Form("", alias="csrf"),
+):
+    cookie = request.cookies.get(auth.NOMBRE_COOKIE)
+    persona = auth.persona_actual(cookie)
+    if not persona:
+        return RedirectResponse("/", status_code=303)
+    if not csrf.valido(cookie, csrf_form):
+        return HTMLResponse(
+            _html_cambiar_password(
+                persona, csrf.token(cookie), "La sesión del formulario venció."
+            ),
+            status_code=403,
+        )
+    if repetida and nueva != repetida:
+        return HTMLResponse(
+            _html_cambiar_password(
+                persona, csrf.token(cookie), "Las contraseñas nuevas no coinciden."
+            ),
+            status_code=400,
+        )
+    ok, motivo = auth.cambiar_password(persona["persona_id"], actual, nueva)
+    if not ok:
+        return HTMLResponse(
+            _html_cambiar_password(persona, csrf.token(cookie), motivo),
+            status_code=400,
+        )
+    # Cambiar la clave cierra las otras sesiones de esa persona.
+    token = auth.verificar_cookie(cookie)
+    if token:
+        db.eliminar_otras_sesiones(persona["persona_id"], auth.hash_token(token))
+    db.registrar_auditoria(
+        persona_id=persona["persona_id"],
+        accion="password_cambiada",
+        ip=_ip_cliente(request),
+        detalle="",
+    )
+    return RedirectResponse("/panel", status_code=303)
+
+
 @app.get("/panel", response_class=HTMLResponse)
 def panel(request: Request):
     persona = _persona_opcional(request)
     if not persona:
         return RedirectResponse("/", status_code=303)
-    return HTMLResponse(_html_panel(persona))
+    if persona.get("debe_cambiar"):
+        return RedirectResponse("/cambiar-password", status_code=303)
+    cookie = request.cookies.get(auth.NOMBRE_COOKIE)
+    return HTMLResponse(_html_panel(persona, csrf.token(cookie)))
 
 
 # --- HTML ---------------------------------------------------------
@@ -917,8 +1088,9 @@ textarea { width: 100%; min-height: 90px; padding: 10px; border: 1px solid #c9d1
 .aviso { color: #556; }
 """
 
-def _html_login(error=""):
+def _html_login(error="", csrf_token=""):
     aviso = f'<p class="error">{_e(error)}</p>' if error else ""
+    oculto = f'<input type="hidden" name="csrf" value="{_e(csrf_token)}">' 
     return f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -928,6 +1100,7 @@ def _html_login(error=""):
 <p class="aviso">Entrá con tu usuario o mail y tu contraseña.</p>
 {aviso}
 <form method="post" action="/login">
+{oculto}
 <label for="identificador">Usuario o mail</label>
 <input id="identificador" name="identificador" autocomplete="username" required autofocus>
 <label for="password">Contraseña</label>
@@ -937,7 +1110,39 @@ def _html_login(error=""):
 </main></body></html>"""
 
 
-def _html_panel(persona):
+def _html_cambiar_password(persona, csrf_token="", error=""):
+    aviso = f'<p class="error">{_e(error)}</p>' if error else ""
+    nombre = _e(persona.get("nombre") or persona.get("persona_id"))
+    obligatorio = persona.get("debe_cambiar")
+    titulo = (
+        "Cambiá tu contraseña para seguir"
+        if obligatorio
+        else "Cambiar contraseña"
+    )
+    return f"""<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cambiar contraseña</title><style>{_CSS}</style></head>
+<body><main class="tarjeta">
+<h1>{titulo}</h1>
+<p class="aviso">{nombre}: la contraseña nueva tiene que tener al menos
+{auth.LARGO_MINIMO_CAMBIO} caracteres y ser distinta de la anterior.</p>
+{aviso}
+<form method="post" action="/cambiar-password">
+<input type="hidden" name="csrf" value="{_e(csrf_token)}">
+<label for="actual">Contraseña actual</label>
+<input id="actual" name="actual" type="password" autocomplete="current-password" required>
+<label for="nueva">Contraseña nueva</label>
+<input id="nueva" name="nueva" type="password" autocomplete="new-password" required>
+<label for="repetida">Repetir la nueva</label>
+<input id="repetida" name="repetida" type="password" autocomplete="new-password" required>
+<p><button type="submit">Guardar</button></p>
+</form>
+<p class="aviso"><a href="/panel">Volver al panel</a></p>
+</main></body></html>"""
+
+
+def _html_panel(persona, csrf_token=""):
     datos = hub.estado()
     cedulas = hub.ordenar_por_fecha(permisos.filtrar_cedulas(datos["cedulas"], persona))
     # Los pendientes todavía no tienen identidad: solo los ve un administrador.
@@ -1005,7 +1210,7 @@ def _html_panel(persona):
 <header>
   <h1>Portal del Estudio</h1>
   <div class="quien">Trabajando: <strong>{nombre}</strong> ({persona_id})</div>
-  <form method="post" action="/logout"><button type="submit">Salir</button></form>
+  <form method="post" action="/logout"><input type="hidden" name="csrf" value="{_e(csrf_token)}"><button type="submit">Salir</button></form>
 </header>
 <main>
   <div class="resumen">
