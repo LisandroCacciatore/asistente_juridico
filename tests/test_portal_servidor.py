@@ -287,49 +287,12 @@ def test_actividad_aplica_el_limite_despues_de_filtrar(portal):
     assert entradas[0]["identidad"] == "Santiago"
 
 
-def test_log_rechaza_accion_vacia(portal):
-    # Convertido del POST /api/log (commit 2): la validación vive en db.
-    with pytest.raises(ValueError):
-        db.agregar_log("")
-
-
-# --- Ficha --------------------------------------------------------
-def test_ficha_ida_y_vuelta(portal):
-    _login(portal)
-    r = portal.cliente.put("/api/ficha/CUIJ-1", json={"datos": {"caratula": "Perez"}})
-    assert r.status_code == 200
-    r = portal.cliente.get("/api/ficha/CUIJ-1")
-    assert r.status_code == 200
-    assert r.json()["ficha"]["caratula"] == "Perez"
-    assert portal.cliente.get("/api/ficha/NO-EXISTE").status_code == 404
-
-
-# --- Cédulas (lectura) --------------------------------------------
-# Los endpoints de escritura (`PUT /api/cedulas/{id}`, `/cadena`,
-# `/presentar`) se sacaron en el commit 2. Lo que prueban en db ya está
-# cubierto por `tests/test_portal_db.py` y `tests/test_cadena.py`; acá
-# queda solo lo que hace el servidor: leer y chequear la cadena de otra
-# persona.
 def test_cedula_cadena_de_otra_persona_frena(portal):
     _login(portal)
     # La cédula es de Jr (en el estado real); santiago no puede verla.
     _sembrar_estado(portal, cedulas=[{"id": "c1", "identidad_cadena": "Jr"}])
-    # Y en db, D25 sigue frenando el cruce.
-    db.guardar_cedula({"id": "c1", "identidad_cadena": "jr"})
-    with pytest.raises(db.ConflictoCadena, match="D25"):
-        db.guardar_cedula({"id": "c1", "identidad_cadena": "santiago"})
-    with pytest.raises(db.ConflictoCadena, match="D25"):
-        db.fijar_cadena_cedula("c1", "santiago")
     # 404, no 403 (no se filtra que existe).
     assert portal.cliente.get("/api/cedulas/c1").status_code == 404
-    assert db.buscar_cedula("c1")["identidad_cadena"] == "jr"
-
-
-def test_guardar_cedula_conserva_la_cadena(portal):
-    # Convertido del PUT /api/cedulas/{id} (commit 2): upsert que no pisa D25.
-    db.guardar_cedula({"id": "c1", "identidad_cadena": "jr"})
-    db.guardar_cedula({"id": "c1", "caratula": "Perez"})
-    assert db.buscar_cedula("c1")["identidad_cadena"] == "jr"
 
 
 def test_cedula_inexistente_da_404(portal):
@@ -467,17 +430,20 @@ def test_documento_inexistente_da_404(portal):
 
 
 # --- CSRF y panel -------------------------------------------------
-def test_csrf_bloquea_origen_externo(portal):
+def test_csrf_bloquea_origen_externo(portal, monkeypatch):
+    config_actual = db.config_portal
+    monkeypatch.setattr(db, "config_portal", lambda nombre, default=None: (
+        ["santiago"] if nombre == "PORTAL_ADMINISTRADORES" else config_actual(nombre, default)
+    ))
     _login(portal)
-    r = portal.cliente.put(
-        "/api/ficha/CUIJ-1",
-        json={"datos": {"caratula": "Perez"}},
+    datos = {"persona_id": "nuevo", "nombre": "Nuevo"}
+    r = portal.cliente.post(
+        "/api/admin/personas", json=datos,
         headers={"Origin": "https://evil.example"},
     )
     assert r.status_code == 403
-    r = portal.cliente.put(
-        "/api/ficha/CUIJ-1",
-        json={"datos": {"caratula": "Perez"}},
+    r = portal.cliente.post(
+        "/api/admin/personas", json=datos,
         headers={"Origin": "http://testserver"},
     )
     assert r.status_code == 200
@@ -495,14 +461,6 @@ def test_panel_muestra_la_persona(portal):
     assert r.status_code == 200
     assert "Trabajando" in r.text
     assert "Santiago" in r.text
-
-
-def test_panel_muestra_la_ficha(portal):
-    _login(portal)
-    portal.cliente.put("/api/ficha/CUIJ-1", json={"datos": {"caratula": "Perez"}})
-    r = portal.cliente.get("/panel?cuij=CUIJ-1")
-    assert r.status_code == 200
-    assert "Perez" in r.text
 
 
 def test_personas_publicas_sin_hash(portal):
@@ -580,6 +538,14 @@ def test_admin_persona_duplicada_da_400(portal):
 
 
 # --- Auditoría (commit 2) -----------------------------------------
+def _lineas_log(portal):
+    """Líneas del log_acciones.jsonl de tmp (vacío si todavía no existe)."""
+    if not os.path.exists(portal.ruta_log):
+        return []
+    with open(portal.ruta_log, encoding="utf-8") as archivo:
+        return [linea for linea in archivo.read().splitlines() if linea.strip()]
+
+
 def test_login_ok_queda_en_auditoria_y_no_en_el_log(portal):
     r = _login(portal)
     assert r.status_code == 303
@@ -587,7 +553,7 @@ def test_login_ok_queda_en_auditoria_y_no_en_el_log(portal):
     assert len(filas) == 1
     assert filas[0]["persona_id"] == "santiago"
     assert filas[0]["ip"] == "testclient"
-    assert db.leer_log() == []
+    assert _lineas_log(portal) == []
 
 
 def test_login_fallido_recorta_el_detalle_y_no_ensucia_el_log(portal):
@@ -600,7 +566,7 @@ def test_login_fallido_recorta_el_detalle_y_no_ensucia_el_log(portal):
     assert len(filas[0]["detalle"]) == 80
     assert filas[0]["persona_id"] == identificador[:80]
     assert filas[0]["ip"] == "testclient"
-    assert db.leer_log() == []
+    assert _lineas_log(portal) == []
 
 
 def test_logout_queda_en_auditoria_con_la_persona(portal):
@@ -610,30 +576,29 @@ def test_logout_queda_en_auditoria_con_la_persona(portal):
     filas = _auditoria_con("logout")
     assert len(filas) == 1
     assert filas[0]["persona_id"] == "santiago"
-    assert db.leer_log() == []
+    assert _lineas_log(portal) == []
 
 
-def test_registrar_log_escribe_una_linea_con_el_nombre_de_la_sesion(portal):
+def test_registrar_log_escribe_una_linea_en_el_jsonl(portal):
     _login(portal)
     persona = auth.persona_actual(
         portal.cliente.cookies.get(auth.NOMBRE_COOKIE)
     )
-    request = type("Pedido", (), {"client": type("Cliente", (), {"host": "10.0.0.7"})()})()
+    request = _pedido("10.0.0.7")
 
     entrada = servidor_portal._registrar_log(
         persona, request, "firmada", id_cedula="c1", detalle="ok"
     )
 
     assert entrada["accion"] == "firmada"
-    filas = db.leer_log()
-    assert len(filas) == 1
-    fila = filas[0]
+    lineas = _lineas_log(portal)
+    assert len(lineas) == 1
+    fila = json.loads(lineas[0])
     assert fila["identidad"] == "Santiago"
     assert fila["operador"] == "Santiago"
     assert fila["usuario"] == "portal"
     assert fila["maquina"] == "10.0.0.7"
-    assert fila["id_cedula"] == "c1"
-    assert fila["persona_id"] == "santiago"
+    assert fila["id"] == "c1"
 
 
 @pytest.mark.parametrize(

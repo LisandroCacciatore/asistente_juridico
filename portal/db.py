@@ -24,6 +24,7 @@ import platform
 import re
 import secrets
 import sqlite3
+import time
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECRETO_PLACEHOLDER = "CAMBIAR-EN-CONFIG-PY"
@@ -39,18 +40,6 @@ class PersonaExistente(ErrorPortal):
 
 class PersonaNoEncontrada(ErrorPortal):
     """No existe la persona pedida."""
-
-
-class YaPresentada(ErrorPortal):
-    """La cédula ya fue marcada como presentada (anti-duplicado, D22)."""
-
-
-class CedulaNoEncontrada(ErrorPortal):
-    """No existe la cédula pedida en el estado central."""
-
-
-class ConflictoCadena(ErrorPortal):
-    """La cédula pertenece a otra identidad y no se puede cruzar (D25)."""
 
 
 # --- Configuración ------------------------------------------------
@@ -166,37 +155,8 @@ CREATE TABLE IF NOT EXISTS sesiones (
 CREATE INDEX IF NOT EXISTS idx_sesiones_persona ON sesiones(persona_id);
 CREATE INDEX IF NOT EXISTS idx_sesiones_expira ON sesiones(expira);
 
-CREATE TABLE IF NOT EXISTS estado (
-    id              INTEGER PRIMARY KEY CHECK (id = 1),
-    datos           TEXT NOT NULL,
-    version         INTEGER NOT NULL DEFAULT 0,
-    actualizado     TEXT NOT NULL,
-    actualizado_por TEXT NOT NULL DEFAULT ''
-);
 
-CREATE TABLE IF NOT EXISTS log_acciones (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    fecha_hora TEXT NOT NULL,
-    accion     TEXT NOT NULL,
-    id_cedula  TEXT NOT NULL DEFAULT '',
-    caratula   TEXT NOT NULL DEFAULT '',
-    cuij       TEXT NOT NULL DEFAULT '',
-    detalle    TEXT NOT NULL DEFAULT '',
-    usuario    TEXT NOT NULL DEFAULT '',
-    maquina    TEXT NOT NULL DEFAULT '',
-    operador   TEXT NOT NULL DEFAULT '',
-    identidad  TEXT NOT NULL DEFAULT '',
-    persona_id TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS idx_log_fecha ON log_acciones(fecha_hora);
-CREATE INDEX IF NOT EXISTS idx_log_cedula ON log_acciones(id_cedula);
 
-CREATE TABLE IF NOT EXISTS fichas (
-    cuij            TEXT PRIMARY KEY,
-    datos           TEXT NOT NULL,
-    actualizado     TEXT NOT NULL,
-    actualizado_por TEXT NOT NULL DEFAULT ''
-);
 
 CREATE TABLE IF NOT EXISTS documentos (
     id         TEXT PRIMARY KEY,
@@ -210,12 +170,6 @@ CREATE TABLE IF NOT EXISTS documentos (
 );
 CREATE INDEX IF NOT EXISTS idx_documentos_cuij ON documentos(cuij);
 
-CREATE TABLE IF NOT EXISTS presentaciones (
-    id_cedula  TEXT PRIMARY KEY,
-    persona_id TEXT NOT NULL DEFAULT '',
-    fecha_hora TEXT NOT NULL,
-    detalle    TEXT NOT NULL DEFAULT ''
-);
 
 CREATE TABLE IF NOT EXISTS auditoria (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -278,10 +232,14 @@ def _migrar(con):
 
 
 def inicializar(ruta=None):
-    """Crea las tablas si faltan y migra las columnas nuevas. Es idempotente."""
+    """Crea las tablas, migra columnas y reduce el esquema viejo.
+
+    Es idempotente: la segunda vez no crea, no migra y no hace backup.
+    """
     with conexion(ruta) as con:
         con.executescript(ESQUEMA)
         _migrar(con)
+    reducir_esquema(ruta)
     return ruta or ruta_db()
 
 
@@ -531,407 +489,6 @@ def contar_sesiones(persona_id=None, ruta=None):
         ).fetchone()[0]
 
 
-# --- Estado central ----------------------------------------------
-def _normalizar_estado(datos):
-    if not isinstance(datos, dict):
-        raise ErrorPortal("El estado tiene que ser un objeto JSON.")
-    for clave in ("cedulas", "pendientes"):
-        if clave not in datos:
-            datos[clave] = []
-        if not isinstance(datos[clave], list):
-            raise ErrorPortal(f"'{clave}' tiene que ser una lista.")
-    return datos
-
-
-def _leer_estado_con(con):
-    """Lee el estado dentro de una conexión ya abierta (para transacciones)."""
-    fila = con.execute("SELECT datos FROM estado WHERE id = 1").fetchone()
-    datos = json.loads(fila["datos"]) if fila else {"cedulas": [], "pendientes": []}
-    return _normalizar_estado(datos)
-
-
-def _buscar_cedula(datos, id_cedula):
-    buscado = str(id_cedula or "").strip()
-    for cedula in datos.get("cedulas", []):
-        if isinstance(cedula, dict) and str(cedula.get("id") or "").strip() == buscado:
-            return cedula
-    return None
-
-
-def leer_estado(ruta=None):
-    with conexion(ruta) as con:
-        return _leer_estado_con(con)
-
-
-def buscar_cedula(id_cedula, datos=None, ruta=None):
-    """Busca una cédula en el estado (o en `datos` si ya se leyó)."""
-    if datos is None:
-        datos = leer_estado(ruta=ruta)
-    return _buscar_cedula(datos, id_cedula)
-
-
-def version_estado(ruta=None):
-    with conexion(ruta) as con:
-        fila = con.execute("SELECT version FROM estado WHERE id = 1").fetchone()
-    return fila["version"] if fila else 0
-
-
-def _guardar_estado(con, datos, persona_id):
-    con.execute(
-        "INSERT INTO estado (id, datos, version, actualizado, actualizado_por) "
-        "VALUES (1, ?, 1, ?, ?) "
-        "ON CONFLICT(id) DO UPDATE SET datos = excluded.datos, "
-        "version = estado.version + 1, actualizado = excluded.actualizado, "
-        "actualizado_por = excluded.actualizado_por",
-        (json.dumps(datos, ensure_ascii=False), _ahora(), str(persona_id or "")),
-    )
-
-
-def escribir_estado(datos, persona_id="", ruta=None):
-    datos = _normalizar_estado(datos)
-    with conexion(ruta) as con, _transaccion(con):
-        _guardar_estado(con, datos, persona_id)
-    return datos
-
-
-def mutar_estado(modificador, persona_id="", ruta=None):
-    """Lee, modifica en el lugar y guarda en una sola transacción."""
-    with conexion(ruta) as con, _transaccion(con):
-        datos = _leer_estado_con(con)
-        modificador(datos)
-        _normalizar_estado(datos)
-        _guardar_estado(con, datos, persona_id)
-    return datos
-
-
-# --- Cédulas en el estado central (D25) --------------------------
-def guardar_cedula(cedula, persona_id="", operador="", ruta=None):
-    """Inserta o actualiza una cédula sin romper la cadena ya fijada.
-
-    Si la cédula ya existe con `identidad_cadena`, esa identidad manda:
-    un pedido con otra identidad se rechaza y uno sin identidad la
-    conserva. Así el candado de D25 no se puede corregir por atrás.
-    """
-    if not isinstance(cedula, dict):
-        raise ValueError("La cédula tiene que ser un objeto JSON.")
-    cedula = dict(cedula)
-    id_cedula = str(cedula.get("id") or "").strip()
-    if not id_cedula:
-        raise ValueError("La cédula necesita un id.")
-    cedula["id"] = id_cedula
-
-    with conexion(ruta) as con, _transaccion(con):
-        datos = _leer_estado_con(con)
-        existente = _buscar_cedula(datos, id_cedula)
-        if existente is None:
-            datos["cedulas"].append(cedula)
-            accion = "cedula_registrada"
-        else:
-            fijada = str(existente.get("identidad_cadena") or "").strip()
-            nueva = str(cedula.get("identidad_cadena") or "").strip()
-            if fijada and nueva and fijada != nueva:
-                raise ConflictoCadena(
-                    f"La cédula {id_cedula!r} ya es de {fijada!r}; no se puede "
-                    f"pasar a {nueva!r} (D25)."
-                )
-            cedula["identidad_cadena"] = fijada or nueva
-            datos["cedulas"] = [
-                cedula if str(c.get("id") or "").strip() == id_cedula else c
-                for c in datos["cedulas"]
-            ]
-            accion = "cedula_actualizada"
-        _guardar_estado(con, datos, persona_id)
-        _insertar_log(con, _entrada_log(
-            accion,
-            id_cedula=id_cedula,
-            caratula=cedula.get("caratula", ""),
-            cuij=cedula.get("cuij", ""),
-            operador=operador,
-            identidad=cedula.get("identidad_cadena", ""),
-            persona_id=persona_id,
-        ))
-    return cedula
-
-
-def sincronizar_estado(datos, persona_id="", operador="", ruta=None):
-    """Sincroniza el estado central sin poder corregir una cadena (D25).
-
-    Las cédulas se agregan o actualizan; las que no vienen en el pedido
-    **no se borran** (el hub es archivo, no una copia efímera de una
-    máquina). Los pendientes sí se reemplazan: son de la corrida actual.
-    Si una cédula ya tenía `identidad_cadena`, esa identidad se conserva
-    y un pedido que intente cambiarla se rechaza.
-    """
-    datos = _normalizar_estado(dict(datos))
-    with conexion(ruta) as con, _transaccion(con):
-        actual = _leer_estado_con(con)
-        por_id = {
-            str(c.get("id") or "").strip(): c
-            for c in actual.get("cedulas", [])
-            if isinstance(c, dict)
-        }
-        for cedula in datos.get("cedulas", []):
-            if not isinstance(cedula, dict):
-                raise ValueError("Cada cédula tiene que ser un objeto JSON.")
-            id_cedula = str(cedula.get("id") or "").strip()
-            if not id_cedula:
-                raise ValueError("Cada cédula necesita un id.")
-            cedula = dict(cedula)
-            cedula["id"] = id_cedula
-            previa = por_id.get(id_cedula)
-            fijada = str((previa or {}).get("identidad_cadena") or "").strip()
-            nueva = str(cedula.get("identidad_cadena") or "").strip()
-            if fijada and nueva and fijada != nueva:
-                raise ConflictoCadena(
-                    f"La cédula {id_cedula!r} ya es de {fijada!r}; no se puede "
-                    f"pasar a {nueva!r} (D25)."
-                )
-            cedula["identidad_cadena"] = fijada or nueva
-            por_id[id_cedula] = cedula
-        datos["cedulas"] = list(por_id.values())
-        _guardar_estado(con, datos, persona_id)
-        _insertar_log(con, _entrada_log(
-            "estado_sincronizado",
-            detalle=f"{len(datos['cedulas'])} cédulas",
-            operador=operador,
-            identidad=operador or persona_id,
-            persona_id=persona_id,
-        ))
-    return datos
-
-
-def fijar_cadena_cedula(id_cedula, identidad, persona_id="", operador="", ruta=None):
-    """Fija la identidad de la cédula en el primer acto del portal (D25)."""
-    id_cedula = str(id_cedula or "").strip()
-    identidad = str(identidad or "").strip()
-    if not id_cedula:
-        raise ValueError("La cédula necesita un id.")
-    if not identidad:
-        raise ValueError("La identidad no puede estar vacía.")
-
-    with conexion(ruta) as con, _transaccion(con):
-        datos = _leer_estado_con(con)
-        cedula = _buscar_cedula(datos, id_cedula)
-        if cedula is None:
-            raise CedulaNoEncontrada(
-                f"No existe la cédula {id_cedula!r} en el estado central."
-            )
-        fijada = str(cedula.get("identidad_cadena") or "").strip()
-        if fijada and fijada != identidad:
-            raise ConflictoCadena(
-                f"La cédula {id_cedula!r} ya es de {fijada!r}; no se puede "
-                f"pasar a {identidad!r} (D25)."
-            )
-        if not fijada:
-            cedula["identidad_cadena"] = identidad
-            _guardar_estado(con, datos, persona_id)
-            _insertar_log(con, _entrada_log(
-                "cadena_fijada",
-                id_cedula=id_cedula,
-                caratula=cedula.get("caratula", ""),
-                cuij=cedula.get("cuij", ""),
-                detalle=f"identidad {identidad}",
-                operador=operador,
-                identidad=identidad,
-                persona_id=persona_id,
-            ))
-    return identidad
-
-
-def presentar_cedula(id_cedula, identidad, persona_id="", operador="",
-                     detalle="", ruta=None):
-    """Marca presentada, actualiza el estado y deja el log, todo junto.
-
-    La cadena se chequea dentro de la misma transacción: si la cédula es
-    de otra identidad, no se inserta la presentación (D25). El
-    anti-duplicado es la PK de `presentaciones` (D22).
-    """
-    id_cedula = str(id_cedula or "").strip()
-    identidad = str(identidad or "").strip()
-    if not id_cedula:
-        raise ValueError("La cédula necesita un id.")
-    if not identidad:
-        raise ValueError("La identidad no puede estar vacía.")
-    fecha = _ahora()
-
-    with conexion(ruta) as con, _transaccion(con):
-        datos = _leer_estado_con(con)
-        cedula = _buscar_cedula(datos, id_cedula)
-        if cedula is None:
-            raise CedulaNoEncontrada(
-                f"No existe la cédula {id_cedula!r} en el estado central."
-            )
-        fijada = str(cedula.get("identidad_cadena") or "").strip()
-        if fijada and fijada != identidad:
-            raise ConflictoCadena(
-                f"La cédula {id_cedula!r} es de {fijada!r} y estás actuando "
-                f"como {identidad!r}. No se puede cruzar la cadena (D25)."
-            )
-        try:
-            con.execute(
-                "INSERT INTO presentaciones (id_cedula, persona_id, fecha_hora, detalle) "
-                "VALUES (?, ?, ?, ?)",
-                (id_cedula, str(persona_id or ""), fecha, str(detalle or "")),
-            )
-        except sqlite3.IntegrityError as e:
-            raise YaPresentada(
-                f"La cédula {id_cedula!r} ya fue marcada como presentada."
-            ) from e
-        cedula["identidad_cadena"] = fijada or identidad
-        cedula["estado"] = "presentada"
-        cedula["fecha_presentada"] = fecha
-        _guardar_estado(con, datos, persona_id)
-        entrada = _entrada_log(
-            "presentada",
-            id_cedula=id_cedula,
-            caratula=cedula.get("caratula", ""),
-            cuij=cedula.get("cuij", ""),
-            detalle=detalle,
-            operador=operador,
-            identidad=cedula["identidad_cadena"],
-            persona_id=persona_id,
-        )
-        _insertar_log(con, entrada)
-    return {
-        "cedula": cedula,
-        "presentacion": {
-            "id_cedula": id_cedula,
-            "persona_id": str(persona_id or ""),
-            "fecha_hora": fecha,
-            "detalle": str(detalle or ""),
-        },
-        "log": entrada,
-    }
-
-
-# --- Log de acciones ---------------------------------------------
-_CAMPOS_LOG = (
-    "fecha_hora", "accion", "id_cedula", "caratula", "cuij", "detalle",
-    "usuario", "maquina", "operador", "identidad", "persona_id",
-)
-
-
-def _entrada_log(accion, id_cedula="", caratula="", cuij="", detalle="",
-                 usuario="", maquina="", operador="", identidad="",
-                 persona_id=""):
-    accion = str(accion or "").strip()
-    if not accion:
-        raise ValueError("La acción del log no puede estar vacía.")
-    usuario_win, maquina_win = _quien()
-    return {
-        "fecha_hora": _ahora(),
-        "accion": accion,
-        "id_cedula": str(id_cedula or ""),
-        "caratula": str(caratula or ""),
-        "cuij": str(cuij or ""),
-        "detalle": str(detalle or ""),
-        "usuario": str(usuario or usuario_win),
-        "maquina": str(maquina or maquina_win),
-        "operador": str(operador or usuario or usuario_win),
-        "identidad": str(identidad or operador or usuario or usuario_win),
-        "persona_id": str(persona_id or ""),
-    }
-
-
-def _insertar_log(con, entrada):
-    cur = con.execute(
-        f"INSERT INTO log_acciones ({', '.join(_CAMPOS_LOG)}) "
-        f"VALUES ({', '.join('?' for _ in _CAMPOS_LOG)})",
-        tuple(entrada[c] for c in _CAMPOS_LOG),
-    )
-    entrada["id"] = cur.lastrowid
-    return entrada
-
-
-def agregar_log(accion, id_cedula="", caratula="", cuij="", detalle="",
-                usuario="", maquina="", operador="", identidad="",
-                persona_id="", ruta=None):
-    entrada = _entrada_log(
-        accion, id_cedula=id_cedula, caratula=caratula, cuij=cuij,
-        detalle=detalle, usuario=usuario, maquina=maquina,
-        operador=operador, identidad=identidad, persona_id=persona_id,
-    )
-    with conexion(ruta) as con, _transaccion(con):
-        _insertar_log(con, entrada)
-    return entrada
-
-
-def leer_log(limite=None, identidades=None, ruta=None):
-    """Entradas del log, más nuevas primero.
-
-    `identidades` filtra por identidad de la cédula (sin distinguir mayúsculas).
-    `None` devuelve todo (lo que ve un administrador); una lista vacía no
-    devuelve nada, que es lo que corresponde a quien no tiene identidades.
-    """
-    sql = "SELECT * FROM log_acciones"
-    parametros = []
-    if identidades is not None:
-        bajas = [str(i or "").strip().lower() for i in identidades]
-        bajas = [i for i in bajas if i]
-        if not bajas:
-            return []
-        sql += " WHERE lower(identidad) IN (" + ", ".join("?" for _ in bajas) + ")"
-        parametros.extend(bajas)
-    sql += " ORDER BY id DESC"
-    if limite is not None:
-        limite = int(limite)
-        if limite < 0:
-            raise ValueError("El límite no puede ser negativo.")
-        sql += " LIMIT ?"
-        parametros.append(limite)
-    with conexion(ruta) as con:
-        return [dict(f) for f in con.execute(sql, parametros).fetchall()]
-
-
-# --- Ficha del cliente -------------------------------------------
-def leer_ficha(cuij, ruta=None):
-    with conexion(ruta) as con:
-        fila = con.execute("SELECT * FROM fichas WHERE cuij = ?", (str(cuij or ""),)).fetchone()
-    if fila is None:
-        return None
-    datos = json.loads(fila["datos"])
-    datos["cuij"] = fila["cuij"]
-    datos["actualizado"] = fila["actualizado"]
-    datos["actualizado_por"] = fila["actualizado_por"]
-    return datos
-
-
-def guardar_ficha(cuij, datos, persona_id="", ruta=None):
-    """Upsert que mezcla las claves: no borra lo que no vino."""
-    cuij = str(cuij or "").strip()
-    if not cuij:
-        raise ValueError("La ficha necesita un CUIJ.")
-    if not isinstance(datos, dict):
-        raise ValueError("La ficha tiene que ser un objeto JSON.")
-    with conexion(ruta) as con, _transaccion(con):
-        fila = con.execute("SELECT datos FROM fichas WHERE cuij = ?", (cuij,)).fetchone()
-        actual = json.loads(fila["datos"]) if fila else {}
-        actual.update(datos)
-        actual["cuij"] = cuij
-        con.execute(
-            "INSERT INTO fichas (cuij, datos, actualizado, actualizado_por) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(cuij) DO UPDATE SET datos = excluded.datos, "
-            "actualizado = excluded.actualizado, actualizado_por = excluded.actualizado_por",
-            (cuij, json.dumps(actual, ensure_ascii=False), _ahora(), str(persona_id or "")),
-        )
-    return leer_ficha(cuij, ruta=ruta)
-
-
-def listar_fichas(ruta=None):
-    with conexion(ruta) as con:
-        filas = con.execute(
-            "SELECT cuij, datos, actualizado, actualizado_por FROM fichas ORDER BY actualizado DESC"
-        ).fetchall()
-    resultado = []
-    for fila in filas:
-        datos = json.loads(fila["datos"])
-        datos["cuij"] = fila["cuij"]
-        datos["actualizado"] = fila["actualizado"]
-        datos["actualizado_por"] = fila["actualizado_por"]
-        resultado.append(datos)
-    return resultado
-
-
 # --- Documentos subidos ------------------------------------------
 def registrar_documento(nombre, ruta_archivo, sha256, tamano=0, cuij="",
                         subido_por="", documento_id=None, ruta=None):
@@ -980,40 +537,56 @@ def eliminar_documento(documento_id, ruta=None):
         ).rowcount > 0
 
 
-# --- Anti-duplicado central (D22) --------------------------------
-def marcar_presentada(id_cedula, persona_id="", detalle="", ruta=None):
-    id_cedula = str(id_cedula or "").strip()
-    if not id_cedula:
-        raise ValueError("La cédula necesita un id.")
-    fecha = _ahora()
-    with conexion(ruta) as con, _transaccion(con):
-        try:
-            con.execute(
-                "INSERT INTO presentaciones (id_cedula, persona_id, fecha_hora, detalle) "
-                "VALUES (?, ?, ?, ?)",
-                (id_cedula, str(persona_id or ""), fecha, str(detalle or "")),
-            )
-        except sqlite3.IntegrityError as e:
-            raise YaPresentada(
-                f"La cédula {id_cedula!r} ya fue marcada como presentada."
-            ) from e
+# --- Reducción del esquema (commit 4b) ----------------------------
+#: Tablas del portal viejo. El estado y el log viven en `estado.py` (fuente
+#: única de verdad) y la ficha se fue con el commit 4: acá ya no se usan.
+TABLAS_VIEJAS = ("estado", "log_acciones", "fichas", "presentaciones")
+
+
+def _tablas(con):
     return {
-        "id_cedula": id_cedula,
-        "persona_id": str(persona_id or ""),
-        "fecha_hora": fecha,
-        "detalle": str(detalle or ""),
+        fila["name"]
+        for fila in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
     }
 
 
-def ya_presentada(id_cedula, ruta=None):
-    with conexion(ruta) as con:
-        return con.execute(
-            "SELECT 1 FROM presentaciones WHERE id_cedula = ?", (str(id_cedula or ""),)
-        ).fetchone() is not None
+def backup(ruta=None):
+    """Copia consistente de portal.db con la API de backup de sqlite.
+
+    No se copia el archivo en caliente: con WAL, un `copy` puede dejar una
+    base a medias. `Connection.backup` la copia abierta y consistente.
+    Devuelve la ruta del backup.
+    """
+    origen_ruta = ruta or ruta_db()
+    destino = f"{origen_ruta}.bak-{time.strftime('%Y%m%d-%H%M%S')}"
+    origen = sqlite3.connect(origen_ruta)
+    try:
+        copia = sqlite3.connect(destino)
+        try:
+            origen.backup(copia)
+        finally:
+            copia.close()
+    finally:
+        origen.close()
+    return destino
 
 
-def listar_presentaciones(ruta=None):
-    with conexion(ruta) as con:
-        return [dict(f) for f in con.execute(
-            "SELECT * FROM presentaciones ORDER BY fecha_hora DESC"
-        ).fetchall()]
+def reducir_esquema(ruta=None):
+    """Borra las tablas del portal viejo, con backup previo.
+
+    Idempotente: si no queda ninguna de `TABLAS_VIEJAS` no hace nada (y no
+    genera backups de más). Devuelve la ruta del backup, o None.
+    """
+    origen = ruta or ruta_db()
+    with conexion(origen) as con:
+        presentes = _tablas(con)
+    a_borrar = [tabla for tabla in TABLAS_VIEJAS if tabla in presentes]
+    if not a_borrar:
+        return None
+    destino = backup(origen)
+    with conexion(origen) as con, _transaccion(con):
+        for tabla in a_borrar:
+            con.execute(f"DROP TABLE IF EXISTS {tabla}")
+    return destino
+
+

@@ -19,7 +19,7 @@ import html
 import os
 import re
 import secrets
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +30,8 @@ from fastapi.responses import (
     RedirectResponse,
 )
 from pydantic import BaseModel
+
+import estado
 
 from . import auth, db, hub, permisos
 
@@ -99,21 +101,6 @@ async def _error_permiso(request: Request, exc: permisos.ErrorPermiso):
     return JSONResponse({"ok": False, "error": str(exc)}, status_code=403)
 
 
-@app.exception_handler(db.CedulaNoEncontrada)
-async def _error_cedula(request: Request, exc: db.CedulaNoEncontrada):
-    return JSONResponse({"ok": False, "error": str(exc)}, status_code=404)
-
-
-@app.exception_handler(db.YaPresentada)
-async def _error_duplicado(request: Request, exc: db.YaPresentada):
-    return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
-
-
-@app.exception_handler(db.ConflictoCadena)
-async def _error_cadena(request: Request, exc: db.ConflictoCadena):
-    return JSONResponse({"ok": False, "error": str(exc)}, status_code=403)
-
-
 @app.exception_handler(db.PersonaNoEncontrada)
 async def _error_persona(request: Request, exc: db.PersonaNoEncontrada):
     return JSONResponse({"ok": False, "error": str(exc)}, status_code=404)
@@ -140,10 +127,6 @@ async def _error_valor(request: Request, exc: ValueError):
 
 
 # --- Modelos ------------------------------------------------------
-class FichaIn(BaseModel):
-    datos: dict
-
-
 class PersonaIn(BaseModel):
     persona_id: str
     nombre: str
@@ -248,24 +231,23 @@ def _ip_cliente(request):
 
 def _registrar_log(persona, request, accion, id_cedula="", caratula="",
                    cuij="", detalle=""):
-    """Deja en `log_acciones` (tabla del portal) un acto sobre una CÉDULA.
+    """Deja en `log_acciones.jsonl` un acto sobre una CÉDULA.
 
-    Solo para cédulas: el login, el logout y los rechazos van a
-    `auditoria` y no ensucian este log. Recibe la persona ya resuelta.
-    Lo usan los endpoints que actúan sobre cédulas (ver commit 4).
+    Escribe en el log real (`estado.registrar_log`), que es la única fuente de
+    verdad. Solo para cédulas: login, logout y rechazos van a `auditoria`.
+    Recibe la persona ya resuelta.
     """
     # `identidad_cadena` guarda el NOMBRE (ej. "Santiago"), no el persona_id.
-    return db.agregar_log(
+    return estado.registrar_log(
         accion,
-        id_cedula=id_cedula,
+        id_cedula,
         caratula=caratula,
         cuij=cuij,
         detalle=detalle,
+        identidad=permisos.identidad_de(persona),
+        operador=persona.get("nombre", ""),
         usuario="portal",
         maquina=_ip_cliente(request),
-        operador=persona["nombre"],
-        identidad=persona["nombre"],
-        persona_id=persona["persona_id"],
     )
 
 
@@ -367,7 +349,7 @@ def api_sesion(persona=Depends(_persona)):
 @app.get("/api/salud")
 def api_salud():
     try:
-        db.leer_estado()
+        db.contar_sesiones()
     except Exception:
         return JSONResponse({"ok": False, "error": "La base no responde."}, status_code=503)
     return {"ok": True, "portal": "estudio"}
@@ -430,8 +412,9 @@ def api_cedula(id_cedula: str, persona=Depends(_persona)):
     # 404 también cuando existe pero no es visible: un 403 confirmaría que la
     # cédula está ahí y de quién es.
     if cedula is None or not permisos.puede_ver_cedula(cedula, persona):
-        raise db.CedulaNoEncontrada(
-            f"No existe la cédula {id_cedula!r} en el estado central."
+        raise HTTPException(
+            status_code=404,
+            detail=f"No existe la cédula {id_cedula!r} en el estado central.",
         )
     return {"ok": True, "cedula": cedula}
 
@@ -443,32 +426,6 @@ def api_log(limite: int = 50, persona=Depends(_persona)):
     return {"ok": True, "entradas": _log_visible(persona, limite)}
 
 
-# --- Ficha del cliente -------------------------------------------
-@app.get("/api/ficha/{cuij}")
-def api_ficha(cuij: str, persona=Depends(_persona)):
-    permisos.exigir(persona, permisos.LEER_FICHA)
-    ficha = db.leer_ficha(cuij)
-    if ficha is None:
-        raise HTTPException(status_code=404, detail="No hay ficha para ese CUIJ.")
-    return {"ok": True, "ficha": ficha}
-
-
-@app.put("/api/ficha/{cuij}")
-def api_guardar_ficha(cuij: str, entrada: FichaIn, persona=Depends(_persona)):
-    permisos.exigir(persona, permisos.ESCRIBIR_FICHA)
-    ficha = db.guardar_ficha(
-        cuij, entrada.datos, persona_id=persona["persona_id"]
-    )
-    db.agregar_log(
-        "ficha_actualizada",
-        cuij=cuij,
-        operador=persona["nombre"],
-        identidad=persona["persona_id"],
-        persona_id=persona["persona_id"],
-    )
-    return {"ok": True, "ficha": ficha}
-
-
 # --- Documentos ---------------------------------------------------
 @app.get("/api/documentos")
 def api_documentos(cuij: str | None = None, persona=Depends(_persona)):
@@ -478,6 +435,7 @@ def api_documentos(cuij: str | None = None, persona=Depends(_persona)):
 
 @app.post("/api/documentos")
 def api_subir_documento(
+    request: Request,
     archivo: UploadFile = File(...),
     cuij: str = Form(""),
     persona=Depends(_persona),
@@ -541,13 +499,9 @@ def api_subir_documento(
         subido_por=persona["persona_id"],
         documento_id=documento_id,
     )
-    db.agregar_log(
-        "documento_subido",
-        cuij=cuij,
-        detalle=f"{nombre} ({total} bytes)",
-        operador=persona["nombre"],
-        identidad=persona["persona_id"],
-        persona_id=persona["persona_id"],
+    _registrar_log(
+        persona, request, "documento_subido",
+        cuij=cuij, detalle=f"{nombre} ({total} bytes)",
     )
     return {"ok": True, "documento": documento}
 
@@ -604,7 +558,9 @@ def api_admin_personas(persona=Depends(_persona)):
 
 
 @app.post("/api/admin/personas")
-def api_admin_crear_persona(entrada: PersonaIn, persona=Depends(_persona)):
+def api_admin_crear_persona(
+    entrada: PersonaIn, request: Request, persona=Depends(_persona)
+):
     _exigir_admin(persona)
     hash_guardado = ""
     if entrada.password:
@@ -618,19 +574,19 @@ def api_admin_crear_persona(entrada: PersonaIn, persona=Depends(_persona)):
     )
     if hash_guardado:
         db.guardar_credencial(creada["persona_id"], hash_guardado)
-    db.agregar_log(
-        "persona_creada",
-        detalle=creada["persona_id"],
-        operador=persona["nombre"],
-        identidad=persona["persona_id"],
+    db.registrar_auditoria(
         persona_id=persona["persona_id"],
+        accion="persona_creada",
+        ip=_ip_cliente(request),
+        detalle=creada["persona_id"],
     )
     return {"ok": True, "persona": _publica(creada)}
 
 
 @app.put("/api/admin/personas/{persona_id}")
 def api_admin_actualizar_persona(
-    persona_id: str, entrada: PersonaUpdate, persona=Depends(_persona)
+    persona_id: str, entrada: PersonaUpdate, request: Request,
+    persona=Depends(_persona)
 ):
     _exigir_admin(persona)
     actualizada = db.actualizar_persona(
@@ -640,70 +596,69 @@ def api_admin_actualizar_persona(
         matricula=entrada.matricula,
         activo=entrada.activo,
     )
-    db.agregar_log(
-        "persona_actualizada",
-        detalle=persona_id,
-        operador=persona["nombre"],
-        identidad=persona["persona_id"],
+    db.registrar_auditoria(
         persona_id=persona["persona_id"],
+        accion="persona_actualizada",
+        ip=_ip_cliente(request),
+        detalle=persona_id,
     )
     return {"ok": True, "persona": _publica(actualizada)}
 
 
 @app.post("/api/admin/personas/{persona_id}/password")
 def api_admin_password(
-    persona_id: str, entrada: PasswordIn, persona=Depends(_persona)
+    persona_id: str, entrada: PasswordIn, request: Request,
+    persona=Depends(_persona)
 ):
     _exigir_admin(persona)
     _password_valida(entrada.password)
     if not db.obtener_persona(persona_id):
         raise db.PersonaNoEncontrada(f"No existe la persona {persona_id!r}.")
     db.guardar_credencial(persona_id, auth.hashear(entrada.password))
-    db.agregar_log(
-        "password_actualizada",
-        detalle=persona_id,
-        operador=persona["nombre"],
-        identidad=persona["persona_id"],
+    db.registrar_auditoria(
         persona_id=persona["persona_id"],
+        accion="password_actualizada",
+        ip=_ip_cliente(request),
+        detalle=persona_id,
     )
     return {"ok": True}
 
 
 @app.post("/api/admin/personas/{persona_id}/desactivar")
-def api_admin_desactivar(persona_id: str, persona=Depends(_persona)):
+def api_admin_desactivar(
+    persona_id: str, request: Request, persona=Depends(_persona)
+):
     _exigir_admin(persona)
     desactivada = db.desactivar_persona(persona_id)
-    db.agregar_log(
-        "persona_desactivada",
-        detalle=persona_id,
-        operador=persona["nombre"],
-        identidad=persona["persona_id"],
+    db.registrar_auditoria(
         persona_id=persona["persona_id"],
+        accion="persona_desactivada",
+        ip=_ip_cliente(request),
+        detalle=persona_id,
     )
     return {"ok": True, "persona": _publica(desactivada)}
 
 
 @app.post("/api/admin/sesiones-borrar")
-def api_admin_borrar_sesiones(persona=Depends(_persona)):
+def api_admin_borrar_sesiones(request: Request, persona=Depends(_persona)):
     _exigir_admin(persona)
     borradas = db.eliminar_todas_las_sesiones()
-    db.agregar_log(
-        "sesiones_borradas",
-        detalle=str(borradas),
-        operador=persona["nombre"],
-        identidad=persona["persona_id"],
+    db.registrar_auditoria(
         persona_id=persona["persona_id"],
+        accion="sesiones_borradas",
+        ip=_ip_cliente(request),
+        detalle=str(borradas),
     )
     return {"ok": True, "borradas": borradas}
 
 
 # --- Panel --------------------------------------------------------
 @app.get("/panel", response_class=HTMLResponse)
-def panel(request: Request, cuij: str | None = None):
+def panel(request: Request):
     persona = _persona_opcional(request)
     if not persona:
         return RedirectResponse("/", status_code=303)
-    return HTMLResponse(_html_panel(persona, cuij=cuij))
+    return HTMLResponse(_html_panel(persona))
 
 
 # --- HTML ---------------------------------------------------------
@@ -755,34 +710,6 @@ textarea { width: 100%; min-height: 90px; padding: 10px; border: 1px solid #c9d1
 .aviso { color: #556; }
 """
 
-_JS = """
-async function pedir(url, opciones) {
-  const r = await fetch(url, opciones || {});
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    alert(data.detail || data.error || 'Error');
-    return null;
-  }
-  location.reload();
-  return data;
-}
-function subir(e) {
-  e.preventDefault();
-  return pedir('/api/documentos', {method: 'POST', body: new FormData(e.target)});
-}
-function guardarNotas() {
-  const boton = document.getElementById('guardar-notas');
-  if (!boton) return;
-  const notas = document.getElementById('notas').value;
-  return pedir('/api/ficha/' + encodeURIComponent(boton.dataset.cuij), {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({datos: {notas: notas}})
-  });
-}
-"""
-
-
 def _html_login(error=""):
     aviso = f'<p class="error">{_e(error)}</p>' if error else ""
     return f"""<!doctype html>
@@ -803,7 +730,7 @@ def _html_login(error=""):
 </main></body></html>"""
 
 
-def _html_panel(persona, cuij=None):
+def _html_panel(persona):
     datos = hub.estado()
     cedulas = hub.ordenar_por_fecha(permisos.filtrar_cedulas(datos["cedulas"], persona))
     # Los pendientes todavía no tienen identidad: solo los ve un administrador.
@@ -815,15 +742,10 @@ def _html_panel(persona, cuij=None):
         id_cedula = str(cedula.get("id") or "")
         estado = str(cedula.get("estado") or "generada")
         identidad = str(cedula.get("identidad_cadena") or "sin fijar")
-        enlace_ficha = ""
-        if cedula.get("cuij"):
-            enlace_ficha = (
-                f'<br><a href="/panel?cuij={quote(str(cedula["cuij"]), safe="")}">ver ficha</a>'
-            )
         filas.append(
             "<tr>"
             f"<td>{_e(id_cedula)}</td>"
-            f"<td>{_e(cedula.get('caratula'))}{enlace_ficha}</td>"
+            f"<td>{_e(cedula.get('caratula'))}</td>"
             f"<td>{_e(cedula.get('cuij'))}</td>"
             f"<td>{_e(estado)}</td>"
             f"<td>{_e(identidad)}</td>"
@@ -866,40 +788,6 @@ def _html_panel(persona, cuij=None):
             f"<tbody>{filas_pendientes}</tbody></table>"
         )
 
-    ficha_html = ""
-    if cuij:
-        ficha = db.leer_ficha(cuij)
-        documentos = db.listar_documentos(cuij=cuij)
-        if ficha is None:
-            ficha_html = f'<p class="aviso">No hay ficha para {_e(cuij)}.</p>'
-        else:
-            import json
-
-            documentos_html = "".join(
-                f'<li><a href="/api/documentos/{quote(str(d.get("id") or ""), safe="")}">'
-                f'{_e(d.get("nombre"))}</a> '
-                f'<span class="aviso">({_e(d.get("tamano"))} bytes)</span></li>'
-                for d in documentos
-            ) or '<li class="aviso">Sin documentos.</li>'
-            notas = ficha.get("notas", "")
-            ficha_html = (
-                f"<h2>Ficha {_e(cuij)}</h2>"
-                f"<pre>{_e(json.dumps(ficha, ensure_ascii=False, indent=2))}</pre>"
-                f'<label for="notas">Notas</label>'
-                f'<textarea id="notas">{_e(notas)}</textarea>'
-                f'<p><button id="guardar-notas" data-cuij="{_e(cuij)}" '
-                f'onclick="guardarNotas()">Guardar notas</button></p>'
-                f"<h2>Documentos</h2><ul>{documentos_html}</ul>"
-            )
-        ficha_html += (
-            '<h2>Subir un PDF</h2>'
-            '<form onsubmit="subir(event)">'
-            f'<input type="hidden" name="cuij" value="{_e(cuij or "")}">'
-            '<input type="file" name="archivo" accept="application/pdf" required> '
-            '<button type="submit">Subir</button>'
-            "</form>"
-        )
-
     nombre = _e(persona.get("nombre") or persona.get("persona_id"))
     persona_id = _e(persona.get("persona_id"))
     return f"""<!doctype html>
@@ -928,16 +816,6 @@ def _html_panel(persona, cuij=None):
   </section>
 
   <section>
-    <h2>Buscar ficha</h2>
-    <form method="get" action="/panel">
-      <label for="cuij">CUIJ</label>
-      <input id="cuij" name="cuij" value="{_e(cuij or '')}" placeholder="21-00000001-0">
-      <p><button type="submit">Buscar</button></p>
-    </form>
-    {ficha_html}
-  </section>
-
-  <section>
     <h2>Actividad</h2>
     <table>
       <thead><tr><th>Fecha</th><th>Acción</th><th>Operador</th><th>Identidad</th><th>Cédula/CUIJ</th><th>Detalle</th></tr></thead>
@@ -945,7 +823,6 @@ def _html_panel(persona, cuij=None):
     </table>
   </section>
 </main>
-<script>{_JS}</script>
 </body></html>"""
 
 

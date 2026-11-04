@@ -213,27 +213,27 @@ es a propósito: el módulo usa imports del paquete `portal`.
 Todos los que no son login/salud piden la cookie de sesión. Los errores
 salen como `{"ok": false, "error": "..."}`.
 
-El portal **no escribe cédulas**: las rutas de escritura de estado, cédulas
-y log se sacaron en el commit 2. Lo que queda por HTTP es lectura, sesión,
-ficha, documentos y administración.
+El portal **no escribe cédulas ni tiene estado propio**: lee `estado.json` y
+`log_acciones.jsonl` a través de `portal/hub.py` (solo lectura). Las rutas de
+escritura de estado, cédulas y log se sacaron en el commit 2; la ficha y las
+tablas viejas se fueron en el commit 4.
 
 | Método y ruta | Tipo | Para qué |
 |---|---|---|
 | `GET /` | lectura | Login (o redirige a `/panel` si ya hay sesión) |
 | `POST /login` | sesión | Abre sesión, firma la cookie y audita (`login` / `login_fallido`) |
 | `POST /logout` | sesión | Cierra la sesión en la base, borra la cookie y audita (`logout`) |
-| `GET /panel` | lectura | Panel HTML mínimo (solo consulta) |
+| `GET /panel` | lectura | Panel HTML: Novedades y Actividad |
 | `GET /api/sesion` | lectura | Quién está autenticado |
 | `GET /api/salud` | lectura | Chequeo sin login |
-| `GET /api/estado` | lectura | Lee estado + versión |
+| `GET /api/portal/novedades` | lectura | Cédulas recientes (`?limite=`); pendientes solo para admin |
+| `GET /api/portal/actividad` | lectura | Últimos movimientos (`?limite=`) filtrados por identidad |
 | `GET /api/cedulas` | lectura | Lista cédulas (filtro `?estado=`) |
-| `GET /api/cedulas/{id}` | lectura | Una cédula |
-| `GET /api/log` | lectura | Últimas entradas (`?limite=`) |
-| `GET /api/ficha/{cuij}` | lectura | Lee la ficha |
-| `PUT /api/ficha/{cuij}` | escritura | Mezcla claves en la ficha |
+| `GET /api/cedulas/{id}` | lectura | Una cédula (404 si no es visible) |
+| `GET /api/log` | lectura | Igual que actividad (se mantiene por compatibilidad) |
 | `GET /api/documentos` | lectura | Lista documentos (`?cuij=`) |
 | `POST /api/documentos` | escritura | Sube un PDF (multipart, tope `PORTAL_MAX_SUBIDA_MB`) |
-| `GET /api/documentos/{id}` | lectura | Sirve el PDF (inline, solo si está dentro de `PORTAL_UPLOADS`) |
+| `GET /api/documentos/{id}` | lectura | Sirve el PDF (404 si la cédula no es visible) |
 | `GET /api/personas` | lectura | Personas activas, sin hash |
 | `GET /api/admin/personas` | admin | Lista todas (solo `PORTAL_ADMINISTRADORES`) |
 | `POST /api/admin/personas` | admin | Crea persona |
@@ -242,34 +242,67 @@ ficha, documentos y administración.
 | `POST /api/admin/personas/{id}/desactivar` | admin | Desactiva y cierra sesiones |
 | `POST /api/admin/sesiones-borrar` | admin | Borra todas las sesiones |
 
-Borrados en el commit 2: `PUT /api/estado`, `PUT /api/cedulas/{id}`,
+Borrados: en el commit 2 `PUT /api/estado`, `PUT /api/cedulas/{id}`,
 `POST /api/cedulas/{id}/cadena`, `POST /api/cedulas/{id}/presentar` y
-`POST /api/log`. Responden 404/405.
+`POST /api/log`; en el commit 4a `GET /api/estado` (lo reemplaza
+`/api/portal/novedades`) y en el 4b los de ficha. Todos responden 404/405.
+
+### Campos que salen por HTTP
+
+El hub recorta cada cédula a una lista **fija**: `id`, `caratula`, `cuij`,
+`estado`, `identidad_cadena`, `tipo`, `fecha_generada`, `fecha_firmada`.
+Nunca salen `ruta_pdf`, `ruta_firmada` ni los textos del decreto. Los
+pendientes salen con `id`, `caratula`, `cuij`, `tipo_sugerido`,
+`fecha_decreto`, y **solo los ve un administrador** (todavía no tienen
+identidad).
 
 ### Auditoría y log de cédulas
 
 Son dos registros distintos:
 
-- **`auditoria`** (tabla de `portal.db`): quién entró y quién salió. Las
-  filas las escribe `db.registrar_auditoria(persona_id, accion, ip, detalle)`
-  desde `login` y `logout`. El `detalle` se recorta a 80 caracteres.
-- **`log_acciones` / `log_acciones.jsonl`**: solo actos sobre cédulas.
-  `db.agregar_log` escribe la tabla y el servidor deja el helper
-  `_registrar_log(persona, request, accion, ...)` (commit 4), con
-  `identidad` y `operador` = nombre de la persona de la sesión.
+- **`auditoria`** (tabla de `portal.db`): quién entró, quién salió y qué hizo
+  de administración. La escribe `db.registrar_auditoria(persona_id, accion,
+  ip, detalle)`, que recorta los cuatro campos (`persona_id` 80, `accion` 40,
+  `ip` 45, `detalle` 80) y les quita caracteres de control. Un logout sin
+  sesión no deja fila.
+- **`log_acciones.jsonl`** (módulo `estado.py`): solo actos sobre cédulas.
+  El servidor los escribe con `_registrar_log(...)`, que delega en
+  `estado.registrar_log` con `identidad` = nombre de la persona de la sesión,
+  `operador` = su nombre, `usuario="portal"` y `maquina` = IP del cliente.
+
+La IP del cliente sale de `X-Forwarded-For` **solo** cuando la conexión
+directa viene de `127.0.0.1` (Tailscale Serve), y se toma la **última**
+entrada: la agrega el proxy de confianza, las anteriores las puede inventar
+quien llama.
 
 ### La cadena (D25)
 
 La identidad de una cédula queda en `identidad_cadena` (el **nombre** de la
-persona, ej. `"Santiago"`). La regla vive en `portal/db.py`:
-`guardar_cedula`, `sincronizar_estado`, `fijar_cadena_cedula` y
-`presentar_cedula` conservan la cadena ya fijada y rechazan un pedido que
-intente cambiarla (`ConflictoCadena`, D25). `presentar_cedula` chequea la
-cadena dentro de la misma transacción que inserta la presentación, y la PK
-de `presentaciones` frena el duplicado (D22).
+persona, ej. `"Santiago"`, nunca el `persona_id`). La regla vive en
+`estado.py`; el portal la respeta en `portal/permisos.py`:
+`verificar_cadena` compara normalizado (`strip` + `casefold`) contra
+`identidad_de(persona)`, y `puede_actuar_como` permite operar cédulas de
+otra identidad delegada. El operador puede ser distinto de la identidad
+(D18); lo que no se puede es mezclar.
 
-El operador puede ser distinto de la identidad (D18); lo que no se puede es
-mezclar. El control cruzado fuerte sigue siendo el login del portal.
+### Visibilidad
+
+Un administrador (`PORTAL_ADMINISTRADORES`) ve todo. El resto ve solo las
+cédulas cuya cadena esté entre sus identidades: la propia y las de
+`puede_actuar_como` (columna de `personas`, se fija por consola:
+`python portal_admin.py puede-actuar jr Santiago`). Una cédula sin cadena
+todavía no es de nadie: solo la ve un administrador. Si una cédula o su PDF
+no son visibles, la respuesta es **404**, igual que si no existiera: un 403
+confirmaría que está ahí.
+
+### Migración del esquema (commit 4b)
+
+`db.inicializar()` reduce el esquema: si encuentra las tablas viejas
+(`estado`, `log_acciones`, `fichas`, `presentaciones`) hace un **backup con
+la API de sqlite** —`portal.db.bak-AAAAMMDD-HHMMSS`, no una copia en caliente
+con WAL— y después las borra. Quedan `personas`, `credenciales`, `sesiones`,
+`documentos` y `auditoria`. Es idempotente: si no hay tablas viejas, no hace
+nada ni genera backups de más.
 
 ### Seguridad del servidor
 
@@ -284,14 +317,14 @@ mezclar. El control cruzado fuerte sigue siendo el login del portal.
   descarga restringida a `PORTAL_UPLOADS` (si la metadata apunta afuera,
   responde 403).
 - **Nunca `0.0.0.0`**: el bind es `PORTAL_HOST` (loopback). La exposición
-  remota es Tailscale Serve/HTTPS.
+  remota es Tailscale Serve/HTTPS, y **no antes del commit 6**.
 
 ### Panel mínimo
 
-`/` y `/panel` sirven un HTML sin dependencias externas: login, resumen,
-tabla de cédulas (solo lectura), búsqueda de ficha por CUIJ, notas,
-documentos y los últimos movimientos. Es un panel de trabajo, no la UI
-final: alcanza para validar el contrato y consultar el hub.
+`/` y `/panel` sirven un HTML sin dependencias externas ni JavaScript: login,
+resumen, tabla de **Novedades** (cédulas visibles, con pendientes si sos
+admin) y tabla de **Actividad** (log filtrado por identidad). Es un panel de
+trabajo, no la UI final.
 
 ## Cómo verificar
 
@@ -301,9 +334,10 @@ python -m pytest tests/ -q
 
 Los tests del portal son `tests/test_portal_db.py`,
 `tests/test_portal_auth.py`, `tests/test_portal_admin.py`,
-`tests/test_portal_permisos.py` y `tests/test_portal_servidor.py`. Los del
-Paso 0 siguen en `tests/test_reset_registros.py` y el del lock reentrante
-en `tests/test_estado_atomico.py`.
+`tests/test_portal_permisos.py`, `tests/test_portal_hub.py` y
+`tests/test_portal_servidor.py`. Los del Paso 0 siguen en
+`tests/test_reset_registros.py` y el del lock reentrante en
+`tests/test_estado_atomico.py`.
 
 ## Qué NO hace el Paso 1b
 

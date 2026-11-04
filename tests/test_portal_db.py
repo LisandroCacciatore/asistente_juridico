@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Base SQLite del portal: personas, credenciales, sesiones, estado, log, ficha."""
+"""Base SQLite del portal: personas, credenciales, sesiones, documentos y auditoría."""
 import os
 import sys
 
@@ -25,10 +25,10 @@ def test_inicializar_crea_tablas_y_es_idempotente(ruta):
             "SELECT name FROM sqlite_master WHERE type = 'table'"
         )}
     assert {
-        "personas", "credenciales", "sesiones", "estado",
-        "log_acciones", "fichas", "documentos", "presentaciones",
-        "auditoria",
+        "personas", "credenciales", "sesiones", "documentos", "auditoria",
     } <= tablas
+    # Las tablas del portal viejo ya no se crean (commit 4b).
+    assert not ({"estado", "log_acciones", "fichas", "presentaciones"} & tablas)
 
 
 def test_crear_obtener_y_listar_personas(ruta):
@@ -106,49 +106,6 @@ def test_sesiones_crud_y_limpieza(ruta):
     assert db.eliminar_sesion("th1", ruta=ruta) is False
 
 
-def test_estado_default_escribir_version_y_mutar(ruta):
-    assert db.leer_estado(ruta=ruta) == {"cedulas": [], "pendientes": []}
-    assert db.version_estado(ruta=ruta) == 0
-    db.escribir_estado(
-        {"cedulas": [{"id": "c1"}], "pendientes": []},
-        persona_id="santiago", ruta=ruta,
-    )
-    assert db.leer_estado(ruta=ruta)["cedulas"][0]["id"] == "c1"
-    assert db.version_estado(ruta=ruta) == 1
-
-    def mod(data):
-        data["cedulas"].append({"id": "c2"})
-
-    db.mutar_estado(mod, persona_id="jr", ruta=ruta)
-    assert [c["id"] for c in db.leer_estado(ruta=ruta)["cedulas"]] == ["c1", "c2"]
-    assert db.version_estado(ruta=ruta) == 2
-
-
-def test_mutar_estado_si_falla_no_pisa(ruta):
-    db.escribir_estado({"cedulas": [{"id": "c1"}], "pendientes": []}, ruta=ruta)
-
-    def falla(data):
-        raise RuntimeError("boom")
-
-    with pytest.raises(RuntimeError):
-        db.mutar_estado(falla, ruta=ruta)
-    assert [c["id"] for c in db.leer_estado(ruta=ruta)["cedulas"]] == ["c1"]
-    assert db.version_estado(ruta=ruta) == 1
-
-
-def test_estado_invalido(ruta):
-    with pytest.raises(db.ErrorPortal):
-        db.escribir_estado({"cedulas": "no-es-lista"}, ruta=ruta)
-
-
-def test_log_append_y_orden(ruta):
-    db.agregar_log("generada", "c1", caratula="X", ruta=ruta)
-    db.agregar_log("presentada", "c1", caratula="X", persona_id="santiago", ruta=ruta)
-    log = db.leer_log(ruta=ruta)
-    assert [e["accion"] for e in log] == ["presentada", "generada"]
-    assert db.leer_log(limite=1, ruta=ruta)[0]["accion"] == "presentada"
-
-
 def test_auditoria_guarda_y_recorta_el_detalle(ruta):
     db.registrar_auditoria(
         persona_id="santiago", accion="login", ip="127.0.0.1", detalle="x" * 200, ruta=ruta
@@ -160,8 +117,6 @@ def test_auditoria_guarda_y_recorta_el_detalle(ruta):
     assert fila["ip"] == "127.0.0.1"
     assert fila["detalle"] == "x" * 80
     assert fila["fecha"]
-    # La auditoría no va al log de cédulas.
-    assert db.leer_log(ruta=ruta) == []
 
 
 def test_auditoria_limpia_controles_y_recorta_campos(ruta):
@@ -183,6 +138,44 @@ def test_auditoria_limpia_controles_y_recorta_campos(ruta):
     assert len(fila["detalle"]) == 80
     assert fila["persona_id"].startswith("ab")
     assert fila["detalle"].startswith("de")
+
+
+def test_reducir_esquema_hace_backup_y_conserva_personas(tmp_path):
+    ruta = str(tmp_path / "portal.db")
+    db.inicializar(ruta)
+    db.crear_persona("jr", "Jr", ruta=ruta)
+    db.guardar_credencial("jr", "hash-de-prueba", ruta=ruta)
+    # Una base del portal viejo tenía estas cuatro tablas.
+    with db.conexion(ruta) as con:
+        for tabla in db.TABLAS_VIEJAS:
+            con.execute(f"CREATE TABLE {tabla} (id INTEGER PRIMARY KEY)")
+        con.execute("INSERT INTO estado (id) VALUES (1)")
+        con.commit()
+
+    backup = db.reducir_esquema(ruta)
+
+    assert backup and os.path.isfile(backup)
+    with db.conexion(ruta) as con:
+        tablas = {
+            f["name"]
+            for f in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        personas = con.execute("SELECT COUNT(*) FROM personas").fetchone()[0]
+        credenciales = con.execute("SELECT COUNT(*) FROM credenciales").fetchone()[0]
+    assert not (set(db.TABLAS_VIEJAS) & tablas)
+    assert personas == 1
+    assert credenciales == 1
+
+    # El backup conserva lo que se borró.
+    with db.conexion(backup) as con:
+        viejas = {
+            f["name"]
+            for f in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+    assert set(db.TABLAS_VIEJAS) <= viejas
+
+    # Idempotente: la segunda vez no hay nada que borrar ni backup nuevo.
+    assert db.reducir_esquema(ruta) is None
 
 
 def test_migracion_agrega_puede_actuar_como(tmp_path):
@@ -221,27 +214,6 @@ def test_fijar_puede_actuar_como_guarda_dedup_y_limpia(ruta):
         db.fijar_puede_actuar_como("nadie", ["Jr"], ruta=ruta)
 
 
-def test_leer_log_filtra_por_identidad(ruta):
-    db.agregar_log("generada", identidad="Santiago", operador="Santiago", ruta=ruta)
-    db.agregar_log("generada", identidad="Jr", operador="Jr", ruta=ruta)
-    assert len(db.leer_log(ruta=ruta)) == 2
-    assert [
-        e["identidad"] for e in db.leer_log(identidades=["santiago"], ruta=ruta)
-    ] == ["Santiago"]
-    assert db.leer_log(identidades=[], ruta=ruta) == []
-
-
-def test_ficha_merge_y_listado(ruta):
-    db.guardar_ficha("CUIJ-1", {"caratula": "Perez", "notas": "hola"}, persona_id="santiago", ruta=ruta)
-    db.guardar_ficha("CUIJ-1", {"notas": "chau"}, persona_id="jr", ruta=ruta)
-    ficha = db.leer_ficha("CUIJ-1", ruta=ruta)
-    assert ficha["caratula"] == "Perez"
-    assert ficha["notas"] == "chau"
-    assert ficha["actualizado_por"] == "jr"
-    assert [f["cuij"] for f in db.listar_fichas(ruta=ruta)] == ["CUIJ-1"]
-    assert db.leer_ficha("NO", ruta=ruta) is None
-
-
 def test_documentos_crud(ruta):
     doc = db.registrar_documento(
         "cedula.pdf", "C:/tmp/cedula.pdf", "abc123", tamano=10,
@@ -253,10 +225,3 @@ def test_documentos_crud(ruta):
     assert db.obtener_documento(doc["id"], ruta=ruta) is None
 
 
-def test_presentaciones_anti_duplicado(ruta):
-    db.marcar_presentada("c1", persona_id="santiago", ruta=ruta)
-    assert db.ya_presentada("c1", ruta=ruta) is True
-    with pytest.raises(db.YaPresentada):
-        db.marcar_presentada("c1", persona_id="jr", ruta=ruta)
-    assert db.ya_presentada("c2", ruta=ruta) is False
-    assert len(db.listar_presentaciones(ruta=ruta)) == 1

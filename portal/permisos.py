@@ -12,8 +12,8 @@
 #
 #  El operador puede ser distinto de la identidad del acto (D18).
 #  Por eso `verificar_cadena` compara la identidad de la cédula con
-#  la persona autenticada, pero `guardar_cedula` no obliga a que
-#  coincidan: la cédula nace con la identidad de quien la generó.
+#  la persona autenticada: el portal no escribe cédulas (eso es de
+#  `estado.py`), pero sí decide qué puede ver y qué puede tocar.
 #
 #  La administración por HTTP queda para quien esté en
 #  PORTAL_ADMINISTRADORES (lista vacía = nadie); la consola
