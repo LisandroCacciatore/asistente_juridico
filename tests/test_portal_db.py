@@ -185,6 +185,52 @@ def test_auditoria_limpia_controles_y_recorta_campos(ruta):
     assert fila["detalle"].startswith("de")
 
 
+def test_migracion_agrega_puede_actuar_como(tmp_path):
+    # Una base creada antes del commit 3 no tiene la columna: inicializar la
+    # agrega sin perder datos (CREATE TABLE IF NOT EXISTS no la tocaría).
+    ruta = str(tmp_path / "vieja.db")
+    with db.conexion(ruta) as con:
+        con.execute(
+            "CREATE TABLE personas ("
+            "persona_id TEXT PRIMARY KEY, nombre TEXT NOT NULL, "
+            "mail TEXT NOT NULL DEFAULT '', matricula TEXT NOT NULL DEFAULT '', "
+            "activo INTEGER NOT NULL DEFAULT 1, "
+            "creado TEXT NOT NULL, actualizado TEXT NOT NULL)"
+        )
+        con.execute(
+            "INSERT INTO personas (persona_id, nombre, creado, actualizado) "
+            "VALUES ('jr', 'Jr', 'x', 'x')"
+        )
+        con.commit()
+    db.inicializar(ruta)
+    with db.conexion(ruta) as con:
+        columnas = {f["name"] for f in con.execute("PRAGMA table_info(personas)")}
+        fila = dict(con.execute("SELECT * FROM personas").fetchone())
+    assert "puede_actuar_como" in columnas
+    assert fila["puede_actuar_como"] == ""
+    assert fila["nombre"] == "Jr"
+
+
+def test_fijar_puede_actuar_como_guarda_dedup_y_limpia(ruta):
+    db.crear_persona("jr", "Jr", ruta=ruta)
+    db.fijar_puede_actuar_como("jr", ["Santiago", "socio", "Santiago"], ruta=ruta)
+    assert db.puede_actuar_como("jr", ruta=ruta) == ["Santiago", "socio"]
+    db.fijar_puede_actuar_como("jr", [], ruta=ruta)
+    assert db.puede_actuar_como("jr", ruta=ruta) == []
+    with pytest.raises(db.PersonaNoEncontrada):
+        db.fijar_puede_actuar_como("nadie", ["Jr"], ruta=ruta)
+
+
+def test_leer_log_filtra_por_identidad(ruta):
+    db.agregar_log("generada", identidad="Santiago", operador="Santiago", ruta=ruta)
+    db.agregar_log("generada", identidad="Jr", operador="Jr", ruta=ruta)
+    assert len(db.leer_log(ruta=ruta)) == 2
+    assert [
+        e["identidad"] for e in db.leer_log(identidades=["santiago"], ruta=ruta)
+    ] == ["Santiago"]
+    assert db.leer_log(identidades=[], ruta=ruta) == []
+
+
 def test_ficha_merge_y_listado(ruta):
     db.guardar_ficha("CUIJ-1", {"caratula": "Perez", "notas": "hola"}, persona_id="santiago", ruta=ruta)
     db.guardar_ficha("CUIJ-1", {"notas": "chau"}, persona_id="jr", ruta=ruta)

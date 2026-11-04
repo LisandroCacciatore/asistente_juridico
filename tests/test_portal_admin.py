@@ -95,3 +95,21 @@ def test_main_crear_y_listar(ruta, capsys):
     salida = capsys.readouterr().out
     assert "santiago" in salida
     assert "Santiago" in salida
+
+
+def test_main_puede_actuar_fija_y_limpia(ruta, capsys):
+    portal_admin.main(["--db", ruta, "crear", "jr", "Jr"])
+    assert portal_admin.main(
+        ["--db", ruta, "puede-actuar", "jr", "Santiago", "Socio"]
+    ) == 0
+    assert db.puede_actuar_como("jr", ruta=ruta) == ["Santiago", "Socio"]
+    assert "Santiago, Socio" in capsys.readouterr().out
+
+    assert portal_admin.main(["--db", ruta, "puede-actuar", "jr", "--limpiar"]) == 0
+    assert db.puede_actuar_como("jr", ruta=ruta) == []
+    assert "(ninguna)" in capsys.readouterr().out
+
+    # Listar muestra la columna.
+    portal_admin.main(["--db", ruta, "puede-actuar", "jr", "Santiago"])
+    portal_admin.main(["--db", ruta, "listar"])
+    assert "actua como" in capsys.readouterr().out

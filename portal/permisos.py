@@ -56,8 +56,86 @@ class ErrorPermiso(RuntimeError):
 
 # --- Persona ------------------------------------------------------
 def identidad(persona):
-    """El persona_id de la persona autenticada, o '' si no hay."""
+    """El persona_id de la persona autenticada, o '' si no hay.
+
+    OJO: es el ID (`santiago`), no el nombre. Para comparar contra
+    `identidad_cadena` —que guarda nombres— va `identidad_de`.
+    """
     return str((persona or {}).get("persona_id") or "").strip()
+
+
+def normalizar(texto):
+    """Forma de comparación: sin espacios de más y sin distinguir mayúsculas."""
+    return " ".join(str(texto or "").split()).casefold()
+
+
+def personas_config():
+    """PERSONAS de config.py, o {} si no hay config en esta máquina."""
+    try:
+        from config import PERSONAS
+    except Exception:
+        return {}
+    return PERSONAS if isinstance(PERSONAS, dict) else {}
+
+
+def identidad_de(persona):
+    """El NOMBRE canónico de la persona, tal como figura en PERSONAS.
+
+    `identidad_cadena` guarda nombres ("Santiago"), no persona_id
+    ("santiago"): comparar contra el persona_id nunca coincide y hacía que
+    cualquier cédula propia pareciera ajena. La fuente de verdad del nombre es
+    `PERSONAS` de `config.py`; si la persona no está ahí, se usa el `nombre` de
+    la base.
+    """
+    if not isinstance(persona, dict):
+        return ""
+    pid = str(persona.get("persona_id") or "").strip()
+    for nombre, datos in personas_config().items():
+        if str((datos or {}).get("persona_id") or "").strip() == pid:
+            return str(nombre).strip()
+    return str(persona.get("nombre") or "").strip()
+
+
+def identidades_de(persona):
+    """Identidades que esta persona puede ver: la propia y las delegadas."""
+    propia = identidad_de(persona)
+    pid = str((persona or {}).get("persona_id") or "").strip()
+    try:
+        delegadas = db.puede_actuar_como(pid)
+    except Exception:
+        # Sin base accesible (tests de funciones puras, primer arranque) la
+        # persona sigue viendo lo propio; no se cae por no poder leer la lista.
+        delegadas = []
+    salida, vistas = [], set()
+    for valor in [propia, *delegadas]:
+        clave = normalizar(valor)
+        if clave and clave not in vistas:
+            vistas.add(clave)
+            salida.append(str(valor).strip())
+    return salida
+
+
+def _puede_ver(cedula, visibles, admin):
+    if admin:
+        return True
+    fijada = cadena_de(cedula)
+    if not fijada:
+        # Una cédula sin cadena todavía no es de nadie: solo la ve un admin.
+        return False
+    return normalizar(fijada) in visibles
+
+
+def puede_ver_cedula(cedula, persona):
+    """True si la persona puede ver esa cédula (admin, propia o delegada)."""
+    visibles = {normalizar(i) for i in identidades_de(persona)}
+    return _puede_ver(cedula, visibles, es_administrador(persona))
+
+
+def filtrar_cedulas(cedulas, persona):
+    """Las cédulas visibles para la persona, en el mismo orden."""
+    visibles = {normalizar(i) for i in identidades_de(persona)}
+    admin = es_administrador(persona)
+    return [c for c in (cedulas or []) if _puede_ver(c, visibles, admin)]
 
 
 def esta_activa(persona):
@@ -122,19 +200,22 @@ def cadena_de(cedula):
 def verificar_cadena(cedula, persona):
     """Devuelve la identidad que corresponde usar.
 
-    Si la cédula ya tiene una identidad distinta de la persona
-    autenticada, frena con el motivo (D25). Si todavía no tiene,
-    devuelve la persona autenticada: el primer acto la fija.
+    Compara NOMBRES normalizados (la cadena guarda "Santiago", no "santiago").
+    Si la cédula ya tiene una identidad distinta de la persona autenticada —y
+    que no está entre las que puede operar— frena con el motivo (D25). Si
+    todavía no tiene, devuelve la persona autenticada: el primer acto la fija.
     """
     exigir_activo(persona)
-    quien = identidad(persona)
+    quien = identidad_de(persona)
     fijada = cadena_de(cedula)
-    if fijada and quien and fijada != quien:
-        id_cedula = str((cedula or {}).get("id") or "").strip()
-        raise ErrorPermiso(
-            f"La cédula {id_cedula!r} es de la identidad {fijada!r} y estás "
-            f"actuando como {quien!r}. No se puede cruzar la cadena (D25)."
-        )
+    if fijada and quien and normalizar(fijada) != normalizar(quien):
+        delegadas = {normalizar(i) for i in identidades_de(persona)}
+        if normalizar(fijada) not in delegadas:
+            id_cedula = str((cedula or {}).get("id") or "").strip()
+            raise ErrorPermiso(
+                f"La cédula {id_cedula!r} es de la identidad {fijada!r} y estás "
+                f"actuando como {quien!r}. No se puede cruzar la cadena (D25)."
+            )
     return fijada or quien
 
 

@@ -176,6 +176,26 @@ def _persona_opcional(request: Request):
     return auth.persona_actual(cookie) if cookie else None
 
 
+def _filtro_log(persona):
+    """Identidades del log que puede ver la persona (None = todas, admin)."""
+    if permisos.es_administrador(persona):
+        return None
+    return permisos.identidades_de(persona)
+
+
+def _documento_visible(documento, persona):
+    """True si el documento es de una cédula que la persona puede ver."""
+    cuij = str(documento.get("cuij") or "").strip()
+    if not cuij:
+        return permisos.es_administrador(persona)
+    cedulas = db.leer_estado().get("cedulas", [])
+    return any(
+        permisos.puede_ver_cedula(c, persona)
+        for c in cedulas
+        if str(c.get("cuij") or "").strip() == cuij
+    )
+
+
 def _publica(persona):
     return {
         "persona_id": persona.get("persona_id", ""),
@@ -364,10 +384,14 @@ def api_salud():
 @app.get("/api/estado")
 def api_estado(persona=Depends(_persona)):
     permisos.exigir(persona, permisos.LEER_ESTADO)
+    datos = db.leer_estado()
+    # El estado completo es el bypass más obvio del filtro por identidad: se
+    # filtra acá igual que en /api/cedulas.
+    datos["cedulas"] = permisos.filtrar_cedulas(datos.get("cedulas", []), persona)
     return {
         "ok": True,
         "version": db.version_estado(),
-        "datos": db.leer_estado(),
+        "datos": datos,
     }
 
 
@@ -375,7 +399,7 @@ def api_estado(persona=Depends(_persona)):
 @app.get("/api/cedulas")
 def api_cedulas(estado: str | None = None, persona=Depends(_persona)):
     permisos.exigir(persona, permisos.LEER_ESTADO)
-    cedulas = db.leer_estado().get("cedulas", [])
+    cedulas = permisos.filtrar_cedulas(db.leer_estado().get("cedulas", []), persona)
     if estado:
         cedulas = [c for c in cedulas if c.get("estado") == estado]
     return {"ok": True, "cedulas": cedulas}
@@ -385,7 +409,9 @@ def api_cedulas(estado: str | None = None, persona=Depends(_persona)):
 def api_cedula(id_cedula: str, persona=Depends(_persona)):
     permisos.exigir(persona, permisos.LEER_ESTADO)
     cedula = db.buscar_cedula(id_cedula)
-    if cedula is None:
+    # 404 también cuando existe pero no es visible: un 403 confirmaría que la
+    # cédula está ahí y de quién es.
+    if cedula is None or not permisos.puede_ver_cedula(cedula, persona):
         raise db.CedulaNoEncontrada(
             f"No existe la cédula {id_cedula!r} en el estado central."
         )
@@ -396,7 +422,10 @@ def api_cedula(id_cedula: str, persona=Depends(_persona)):
 @app.get("/api/log")
 def api_log(limite: int = 50, persona=Depends(_persona)):
     permisos.exigir(persona, permisos.LEER_LOG)
-    return {"ok": True, "entradas": db.leer_log(limite=limite)}
+    return {
+        "ok": True,
+        "entradas": db.leer_log(limite=limite, identidades=_filtro_log(persona)),
+    }
 
 
 # --- Ficha del cliente -------------------------------------------
@@ -512,7 +541,8 @@ def api_subir_documento(
 def api_descargar_documento(documento_id: str, persona=Depends(_persona)):
     permisos.exigir(persona, permisos.DESCARGAR_DOCUMENTO)
     documento = db.obtener_documento(documento_id)
-    if documento is None:
+    if documento is None or not _documento_visible(documento, persona):
+        # Mismo 404 que "no existe": no se filtra qué cédulas tienen PDF.
         raise HTTPException(status_code=404, detail="No existe ese documento.")
     ruta = documento.get("ruta", "")
     if not _dentro_de_uploads(ruta):
@@ -760,9 +790,9 @@ def _html_login(error=""):
 
 def _html_panel(persona, cuij=None):
     datos = db.leer_estado()
-    cedulas = datos.get("cedulas", [])
+    cedulas = permisos.filtrar_cedulas(datos.get("cedulas", []), persona)
     pendientes = datos.get("pendientes", [])
-    entradas = db.leer_log(limite=20)
+    entradas = db.leer_log(limite=20, identidades=_filtro_log(persona))
 
     filas = []
     for cedula in cedulas:

@@ -9,7 +9,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from portal import auth, db, servidor_portal
+from portal import auth, db, permisos, servidor_portal
 
 PDF = b"%PDF-1.4\n% cedula de prueba\n"
 CLAVE = "clave-segura-123"
@@ -133,8 +133,11 @@ def test_estado_arranca_vacio(portal):
 
 def test_estado_sembrado_se_lee_por_http(portal):
     # El PUT se sacó (commit 2): el estado se siembra por db y se lee por GET.
+    # Con la cadena en "Santiago" (nombre) la cédula es visible para santiago.
     _login(portal)
-    db.sincronizar_estado({"cedulas": [{"id": "c1", "caratula": "Perez"}]})
+    db.sincronizar_estado(
+        {"cedulas": [{"id": "c1", "caratula": "Perez", "identidad_cadena": "Santiago"}]}
+    )
     r = portal.cliente.get("/api/estado")
     assert r.status_code == 200
     assert r.json()["datos"]["cedulas"][0]["id"] == "c1"
@@ -204,7 +207,9 @@ def test_cedula_cadena_de_otra_persona_frena(portal):
         db.guardar_cedula({"id": "c1", "identidad_cadena": "santiago"})
     with pytest.raises(db.ConflictoCadena, match="D25"):
         db.fijar_cadena_cedula("c1", "santiago")
-    assert portal.cliente.get("/api/cedulas/c1").json()["cedula"]["identidad_cadena"] == "jr"
+    # Y por HTTP no puede verla: 404, no 403 (no se filtra que existe).
+    assert portal.cliente.get("/api/cedulas/c1").status_code == 404
+    assert db.buscar_cedula("c1")["identidad_cadena"] == "jr"
 
 
 def test_guardar_cedula_conserva_la_cadena(portal):
@@ -221,8 +226,8 @@ def test_cedula_inexistente_da_404(portal):
 
 def test_filtrar_cedulas_por_estado(portal):
     _login(portal)
-    db.guardar_cedula({"id": "c1", "estado": "generada"})
-    db.guardar_cedula({"id": "c2", "estado": "presentada"})
+    db.guardar_cedula({"id": "c1", "estado": "generada", "identidad_cadena": "Santiago"})
+    db.guardar_cedula({"id": "c2", "estado": "presentada", "identidad_cadena": "Santiago"})
     r = portal.cliente.get("/api/cedulas?estado=generada")
     assert [c["id"] for c in r.json()["cedulas"]] == ["c1"]
 
@@ -230,6 +235,8 @@ def test_filtrar_cedulas_por_estado(portal):
 # --- Documentos ---------------------------------------------------
 def test_subir_y_descargar_pdf(portal):
     _login(portal)
+    # El PDF pertenece a una cédula: sin cadena propia el documento no se ve.
+    db.guardar_cedula({"id": "c1", "cuij": "CUIJ-1", "identidad_cadena": "Santiago"})
     r = portal.cliente.post(
         "/api/documentos",
         files={"archivo": ("cedula.pdf", PDF, "application/pdf")},
@@ -555,3 +562,89 @@ def test_logout_sin_sesion_no_audita(portal):
     r = portal.cliente.post("/logout", follow_redirects=False)
     assert r.status_code == 303
     assert _auditoria_con("logout") == []
+
+
+# --- Visibilidad por identidad (commit 3) --------------------------
+def test_visibilidad_por_defecto_solo_lo_propio(portal):
+    persona = db.obtener_persona("santiago")
+    propia = {"id": "c1", "identidad_cadena": "Santiago"}
+    ajena = {"id": "c2", "identidad_cadena": "Jr"}
+    sin_cadena = {"id": "c3"}
+    assert permisos.puede_ver_cedula(propia, persona) is True
+    assert permisos.puede_ver_cedula(ajena, persona) is False
+    assert permisos.puede_ver_cedula(sin_cadena, persona) is False
+    visibles = permisos.filtrar_cedulas([propia, ajena, sin_cadena], persona)
+    assert [c["id"] for c in visibles] == ["c1"]
+
+
+def test_visibilidad_normaliza_la_cadena(portal):
+    persona = db.obtener_persona("santiago")
+    assert permisos.puede_ver_cedula(
+        {"id": "c1", "identidad_cadena": "  SANTIAGO "}, persona
+    ) is True
+
+
+def test_delegacion_permite_ver_lo_del_otro(portal):
+    db.fijar_puede_actuar_como("santiago", ["Jr"])
+    persona = db.obtener_persona("santiago")
+    assert permisos.puede_ver_cedula({"id": "c2", "identidad_cadena": "jr"}, persona) is True
+
+
+def test_administrador_ve_todo(portal, monkeypatch):
+    config_actual = db.config_portal
+    monkeypatch.setattr(
+        db, "config_portal",
+        lambda nombre, default=None: (
+            ["santiago"]
+            if nombre == "PORTAL_ADMINISTRADORES"
+            else config_actual(nombre, default)
+        ),
+    )
+    persona = db.obtener_persona("santiago")
+    assert permisos.puede_ver_cedula({"id": "c3"}, persona) is True
+    assert permisos.puede_ver_cedula({"id": "c2", "identidad_cadena": "Jr"}, persona) is True
+
+
+def test_api_cedulas_filtra_y_api_cedula_da_404(portal):
+    _login(portal)
+    db.guardar_cedula({"id": "c1", "identidad_cadena": "Santiago"})
+    db.guardar_cedula({"id": "c2", "identidad_cadena": "Jr"})
+    db.guardar_cedula({"id": "c3"})
+    r = portal.cliente.get("/api/cedulas")
+    assert [c["id"] for c in r.json()["cedulas"]] == ["c1"]
+    assert portal.cliente.get("/api/cedulas/c1").status_code == 200
+    assert portal.cliente.get("/api/cedulas/c2").status_code == 404
+    assert portal.cliente.get("/api/cedulas/c3").status_code == 404
+
+
+def test_api_estado_filtra_las_cedulas(portal):
+    _login(portal)
+    db.guardar_cedula({"id": "c1", "identidad_cadena": "Santiago"})
+    db.guardar_cedula({"id": "c2", "identidad_cadena": "Jr"})
+    datos = portal.cliente.get("/api/estado").json()["datos"]
+    assert [c["id"] for c in datos["cedulas"]] == ["c1"]
+
+
+def test_api_log_filtra_por_identidad(portal):
+    _login(portal)
+    db.agregar_log("generada", identidad="Santiago", operador="Santiago")
+    db.agregar_log("generada", identidad="Jr", operador="Jr")
+    entradas = portal.cliente.get("/api/log").json()["entradas"]
+    assert [e["identidad"] for e in entradas] == ["Santiago"]
+
+
+def test_pdf_de_otra_identidad_da_404(portal):
+    _login(portal)
+    db.guardar_cedula({"id": "c1", "cuij": "CUIJ-1", "identidad_cadena": "Jr"})
+    r = portal.cliente.post(
+        "/api/documentos",
+        files={"archivo": ("cedula.pdf", PDF, "application/pdf")},
+        data={"cuij": "CUIJ-1"},
+    )
+    documento = r.json()["documento"]
+    assert portal.cliente.get(f"/api/documentos/{documento['id']}").status_code == 404
+
+
+def test_identidad_de_usa_el_nombre_y_no_el_persona_id(portal):
+    persona = db.obtener_persona("santiago")
+    assert permisos.identidad_de(persona) == "Santiago"

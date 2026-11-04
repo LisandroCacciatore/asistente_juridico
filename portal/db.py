@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS personas (
     mail        TEXT NOT NULL DEFAULT '',
     matricula   TEXT NOT NULL DEFAULT '',
     activo      INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
+    puede_actuar_como TEXT NOT NULL DEFAULT '',
     creado      TEXT NOT NULL,
     actualizado TEXT NOT NULL
 );
@@ -262,10 +263,25 @@ def registrar_auditoria(persona_id="", accion="", ip="", detalle="", ruta=None):
         return cur.lastrowid
 
 
+def _migrar(con):
+    """Agrega columnas nuevas a bases ya creadas. Es idempotente.
+
+    `CREATE TABLE IF NOT EXISTS` no toca una tabla que ya existe, así que una
+    base vieja se quedaría sin `puede_actuar_como` para siempre.
+    """
+    columnas = {fila["name"] for fila in con.execute("PRAGMA table_info(personas)")}
+    if "puede_actuar_como" not in columnas:
+        con.execute(
+            "ALTER TABLE personas ADD COLUMN puede_actuar_como TEXT NOT NULL DEFAULT ''"
+        )
+    con.commit()
+
+
 def inicializar(ruta=None):
-    """Crea las tablas si faltan. Es idempotente."""
+    """Crea las tablas si faltan y migra las columnas nuevas. Es idempotente."""
     with conexion(ruta) as con:
         con.executescript(ESQUEMA)
+        _migrar(con)
     return ruta or ruta_db()
 
 
@@ -332,6 +348,50 @@ def listar_personas(ruta=None):
         return [dict(f) for f in con.execute(
             "SELECT * FROM personas ORDER BY nombre COLLATE NOCASE, persona_id"
         ).fetchall()]
+
+
+# --- Identidades delegadas ----------------------------------------
+def _lista_identidades(valor):
+    """Texto guardado (o lista) -> identidades sin vacíos ni repetidos.
+
+    En la base se guarda como texto separado por comas porque es legible con
+    `sqlite3` a mano; el orden y las mayúsculas se respetan como los escribió
+    el administrador (importan para mostrar, no para comparar).
+    """
+    if isinstance(valor, (list, tuple, set)):
+        partes = list(valor)
+    else:
+        partes = str(valor or "").split(",")
+    vistas, salida = set(), []
+    for parte in partes:
+        limpio = str(parte or "").strip()
+        if limpio and limpio.casefold() not in vistas:
+            vistas.add(limpio.casefold())
+            salida.append(limpio)
+    return salida
+
+
+def puede_actuar_como(persona_id, ruta=None):
+    """Identidades que esta persona puede operar además de la propia."""
+    persona = obtener_persona(persona_id, ruta=ruta)
+    if not persona:
+        return []
+    return _lista_identidades(persona.get("puede_actuar_como", ""))
+
+
+def fijar_puede_actuar_como(persona_id, identidades, ruta=None):
+    """Reemplaza la lista de identidades delegadas de una persona."""
+    persona_id = str(persona_id or "")
+    if obtener_persona(persona_id, ruta=ruta) is None:
+        raise PersonaNoEncontrada(f"No existe la persona {persona_id!r}.")
+    texto = ", ".join(_lista_identidades(identidades))
+    with conexion(ruta) as con, _transaccion(con):
+        con.execute(
+            "UPDATE personas SET puede_actuar_como = ?, actualizado = ? "
+            "WHERE persona_id = ?",
+            (texto, _ahora(), persona_id),
+        )
+    return obtener_persona(persona_id, ruta=ruta)
 
 
 def actualizar_persona(persona_id, nombre=None, mail=None, matricula=None, activo=None, ruta=None):
@@ -796,15 +856,29 @@ def agregar_log(accion, id_cedula="", caratula="", cuij="", detalle="",
     return entrada
 
 
-def leer_log(limite=None, ruta=None):
-    sql = "SELECT * FROM log_acciones ORDER BY id DESC"
-    parametros = ()
+def leer_log(limite=None, identidades=None, ruta=None):
+    """Entradas del log, más nuevas primero.
+
+    `identidades` filtra por identidad de la cédula (sin distinguir mayúsculas).
+    `None` devuelve todo (lo que ve un administrador); una lista vacía no
+    devuelve nada, que es lo que corresponde a quien no tiene identidades.
+    """
+    sql = "SELECT * FROM log_acciones"
+    parametros = []
+    if identidades is not None:
+        bajas = [str(i or "").strip().lower() for i in identidades]
+        bajas = [i for i in bajas if i]
+        if not bajas:
+            return []
+        sql += " WHERE lower(identidad) IN (" + ", ".join("?" for _ in bajas) + ")"
+        parametros.extend(bajas)
+    sql += " ORDER BY id DESC"
     if limite is not None:
         limite = int(limite)
         if limite < 0:
             raise ValueError("El límite no puede ser negativo.")
         sql += " LIMIT ?"
-        parametros = (limite,)
+        parametros.append(limite)
     with conexion(ruta) as con:
         return [dict(f) for f in con.execute(sql, parametros).fetchall()]
 

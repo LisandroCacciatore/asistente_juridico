@@ -74,7 +74,8 @@ def test_administradores_acepta_texto(monkeypatch):
 def test_cadena_vacia_devuelve_la_persona():
     cedula = {"id": "c1"}
     assert permisos.cadena_de(cedula) == ""
-    assert permisos.verificar_cadena(cedula, PERSONA) == "santiago"
+    # Devuelve el NOMBRE canónico (lo que se guarda en identidad_cadena).
+    assert permisos.verificar_cadena(cedula, PERSONA) == "Santiago"
 
 
 def test_cadena_igual_pasa():
@@ -90,14 +91,51 @@ def test_cadena_distinta_frena():
 
 def test_fijar_cadena_solo_la_primera_vez():
     cedula = {"id": "c1"}
-    assert permisos.fijar_cadena(cedula, PERSONA) == "santiago"
-    assert cedula["identidad_cadena"] == "santiago"
+    assert permisos.fijar_cadena(cedula, PERSONA) == "Santiago"
+    assert cedula["identidad_cadena"] == "Santiago"
     # Otra persona ya no puede cambiarla.
     with pytest.raises(permisos.ErrorPermiso, match="D25"):
         permisos.fijar_cadena(cedula, OTRA)
-    assert cedula["identidad_cadena"] == "santiago"
+    assert cedula["identidad_cadena"] == "Santiago"
 
 
 def test_cadena_sin_persona_frena():
     with pytest.raises(permisos.ErrorPermiso, match="autenticada"):
         permisos.verificar_cadena({"id": "c1"}, None)
+
+
+# --- Identidad canónica (commit 3) --------------------------------
+def _personas_de_ejemplo():
+    """PERSONAS tal como está en config.example.py (la fuente de verdad)."""
+    import importlib.util
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location(
+        "config_de_ejemplo", raiz / "config.example.py"
+    )
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo.PERSONAS
+
+
+def test_normalizar_ignora_mayusculas_y_espacios():
+    assert permisos.normalizar("  Santiago ") == "santiago"
+    assert permisos.normalizar("SANTIAGO") == "santiago"
+    assert permisos.normalizar(None) == ""
+
+
+def test_identidad_de_devuelve_el_nombre_real(monkeypatch):
+    personas = _personas_de_ejemplo()
+    assert {"Santiago", "Jr", "Socio"} <= set(personas)
+    monkeypatch.setattr(permisos, "personas_config", lambda: personas)
+    for nombre, datos in personas.items():
+        # Aunque el nombre de la base esté desactualizado, manda PERSONAS.
+        persona = {"persona_id": datos["persona_id"], "nombre": "Nombre viejo"}
+        assert permisos.identidad_de(persona) == nombre
+
+
+def test_identidad_de_no_devuelve_el_persona_id():
+    assert permisos.identidad_de(PERSONA) == "Santiago"
+    assert permisos.identidad_de({"persona_id": "x", "nombre": "Otra"}) == "Otra"
+    assert permisos.identidad_de(None) == ""
