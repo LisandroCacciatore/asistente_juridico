@@ -356,11 +356,39 @@ def marcar_atencion(id_cedula, motivo, etiqueta="Solicita Revisión"):
     registrar_log("atencion", id_cedula, cedula.get("caratula", ""), cedula.get("cuij", ""), motivo)
 
 
-def marcar_firmada(id_cedula, ruta_firmada, identidad=None):
-    cedula = obtener_cedula(id_cedula) or {}
-    _actualizar(id_cedula, estado="firmada", ruta_firmada=ruta_firmada, fecha_firmada=_ahora())
-    registrar_log("firmada", id_cedula, cedula.get("caratula", ""), cedula.get("cuij", ""),
-                  ruta_firmada or "", identidad=identidad)
+def marcar_firmada(id_cedula, ruta_firmada, identidad=None, solo_si_generada=False):
+    """Marca la cédula como firmada y devuelve True si la marcó.
+
+    Con `solo_si_generada=True` el chequeo de estado y la escritura ocurren
+    dentro del MISMO lock (`_mutar`): si otro proceso ya la marcó, devuelve
+    False y no toca nada. Es lo que hace atómico el "solo uno gana" del portal.
+    """
+    resultado = {"ok": False, "cedula": {}}
+
+    def mod(data):
+        for cedula in data.get("cedulas", []):
+            if cedula.get("id") != id_cedula:
+                continue
+            resultado["cedula"] = dict(cedula)
+            if solo_si_generada and cedula.get("estado") != "generada":
+                return
+            cedula.update(
+                estado="firmada",
+                ruta_firmada=ruta_firmada,
+                fecha_firmada=_ahora(),
+            )
+            resultado["ok"] = True
+            return
+
+    _mutar(mod)
+    if not resultado["ok"]:
+        return False
+    cedula = resultado["cedula"]
+    registrar_log(
+        "firmada", id_cedula, cedula.get("caratula", ""), cedula.get("cuij", ""),
+        ruta_firmada or "", identidad=identidad,
+    )
+    return True
 
 
 def fijar_cadena(id_cedula, identidad):

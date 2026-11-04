@@ -159,19 +159,6 @@ def _persona_opcional(request: Request):
     return auth.persona_actual(cookie) if cookie else None
 
 
-def _documento_visible(documento, persona):
-    """True si el documento es de una cédula que la persona puede ver."""
-    cuij = str(documento.get("cuij") or "").strip()
-    if not cuij:
-        return permisos.es_administrador(persona)
-    cedulas = hub.estado()["cedulas"]
-    return any(
-        permisos.puede_ver_cedula(c, persona)
-        for c in cedulas
-        if str(c.get("cuij") or "").strip() == cuij
-    )
-
-
 def _publica(persona):
     return {
         "persona_id": persona.get("persona_id", ""),
@@ -249,12 +236,6 @@ def _registrar_log(persona, request, accion, id_cedula="", caratula="",
         usuario="portal",
         maquina=_ip_cliente(request),
     )
-
-
-def _cuij_seguro(cuij):
-    """CUIJ apto para nombrar una carpeta: solo letras, números y guiones."""
-    limpio = re.sub(r"[^0-9A-Za-z-]+", "", str(cuij or ""))
-    return limpio[:80]
 
 
 def _dentro_de_uploads(ruta):
@@ -436,111 +417,244 @@ def api_log(limite: int = 50, persona=Depends(_persona)):
     return {"ok": True, "entradas": _log_visible(persona, limite)}
 
 
-# --- Documentos ---------------------------------------------------
-@app.get("/api/documentos")
-def api_documentos(cuij: str | None = None, persona=Depends(_persona)):
-    permisos.exigir(persona, permisos.LEER_FICHA)
-    # El listado también filtra: si no, se ven nombres y CUIJ de PDF ajenos.
-    documentos = [
-        d for d in db.listar_documentos(cuij=cuij)
-        if _documento_visible(d, persona)
-    ]
-    return {"ok": True, "documentos": documentos}
+# --- PDF firmado de una cédula (commit 5) --------------------------
+def _normalizar(texto):
+    """Comparación de CUIJ/carátula: sin espacios de más ni mayúsculas."""
+    return " ".join(str(texto or "").split()).casefold()
 
 
-@app.post("/api/documentos")
-def api_subir_documento(
-    request: Request,
-    archivo: UploadFile = File(...),
-    cuij: str = Form(""),
-    persona=Depends(_persona),
-):
-    permisos.exigir(persona, permisos.SUBIR_DOCUMENTO)
-    nombre = _nombre_seguro(archivo.filename)
-    if not nombre.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF.")
+def _id_seguro(id_cedula):
+    """Id de cédula apto para nombrar una carpeta: letras, números y guiones."""
+    limpio = re.sub(r"[^0-9A-Za-z-]+", "", str(id_cedula or ""))
+    return limpio[:80]
 
-    cabecera = archivo.file.read(5)
-    archivo.file.seek(0)
-    if cabecera != b"%PDF-":
-        raise HTTPException(
-            status_code=400,
-            detail="El archivo no empieza con la cabecera PDF (%PDF-).",
-        )
 
+def _tope_subida():
+    """Tope de subida en bytes (PORTAL_MAX_SUBIDA_MB, mínimo 1 MB)."""
     try:
         max_mb = int(db.config_portal("PORTAL_MAX_SUBIDA_MB", 25))
     except (TypeError, ValueError):
         max_mb = 25
-    max_bytes = max(1, max_mb) * 1024 * 1024
+    return max(1, max_mb) * 1024 * 1024
 
-    carpeta = os.path.join(db.ruta_uploads(), _cuij_seguro(cuij) or "sin_cuij")
-    documento_id = secrets.token_hex(8)
-    destino = os.path.join(carpeta, f"{documento_id}_{nombre}")
-    if not _dentro_de_uploads(carpeta) or not _dentro_de_uploads(destino):
+
+def _firmas_del_pdf(pdf):
+    """Campos de firma del PDF que tengan /ByteRange y /Contents.
+
+    Recorre AcroForm/Fields y las anotaciones de cada página: el campo de
+    firma (`/FT /Sig`) no siempre cuelga de una página. `/Sig` es el valor de
+    `/FT`, no una clave.
+    """
+    encontrados = []
+
+    def visitar(objeto, profundidad=0):
+        if profundidad > 8:
+            return
+        try:
+            objeto = objeto.get_object()
+        except Exception:
+            return
+        if not isinstance(objeto, dict):
+            return
+        if objeto.get("/FT") == "/Sig":
+            encontrados.append(objeto)
+        for clave in ("/AcroForm", "/Fields", "/Kids", "/Annots"):
+            hijos = objeto.get(clave)
+            if hijos is None:
+                continue
+            try:
+                hijos = hijos.get_object()
+            except Exception:
+                pass
+            if isinstance(hijos, list):
+                for hijo in hijos:
+                    visitar(hijo, profundidad + 1)
+            else:
+                visitar(hijos, profundidad + 1)
+
+    visitar(pdf.trailer.get("/Root", {}))
+    return [
+        campo for campo in encontrados
+        if "/ByteRange" in campo and "/Contents" in campo
+    ]
+
+
+def _sha_repetido(huella):
+    """True si otra cédula ya apunta a un PDF con ese sha256."""
+    objetivo = f"{huella}.pdf"
+    datos = estado.cargar()
+    return any(
+        os.path.basename(str(c.get("ruta_firmada") or "")) == objetivo
+        for c in datos.get("cedulas", [])
+        if isinstance(c, dict)
+    )
+
+
+def _cedula_visible(id_cedula, persona):
+    """La cédula en crudo, o 404 si no existe o no es visible.
+
+    Se lee del estado real (`estado.obtener_cedula`), no del hub: el hub
+    recorta campos y acá hacen falta `estado`, `ruta_firmada` y compañía.
+    """
+    cedula = estado.obtener_cedula(id_cedula)
+    if cedula is None or not permisos.puede_ver_cedula(cedula, persona):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No existe la cédula {id_cedula!r} en el estado central.",
+        )
+    return cedula
+
+
+@app.post("/api/portal/cedulas/{id_cedula}/subir")
+def api_portal_subir_firmada(
+    request: Request,
+    id_cedula: str,
+    archivo: UploadFile = File(...),
+    cuij: str = Form(""),
+    caratula: str = Form(""),
+    persona=Depends(_persona),
+):
+    """Sube el PDF firmado de una cédula y la marca firmada.
+
+    Orden: permisos → D25 → estado de la cédula → tamaño → cabecera → pypdf →
+    CUIJ/carátula → firma → sha repetido. El archivo se deja en un temporal
+    dentro de uploads y recién al final se mueve a su lugar definitivo.
+    """
+    permisos.exigir(persona, permisos.SUBIR_DOCUMENTO)
+    cedula = _cedula_visible(id_cedula, persona)
+    # D25: hay que poder actuar como la identidad de la cédula. El admin NO es
+    # excepción: sin delegación explícita, 403.
+    permisos.verificar_cadena(cedula, persona)
+
+    if not str(cedula.get("identidad_cadena") or "").strip():
+        raise HTTPException(400, "La cédula no tiene identidad fijada (D25).")
+    if str(cedula.get("estado") or "") != "generada":
+        raise HTTPException(
+            status_code=409,
+            detail=f"La cédula no está en estado 'generada' (está {cedula.get('estado')!r}).",
+        )
+
+    tope = _tope_subida()
+    carpeta = os.path.join(db.ruta_uploads(), _id_seguro(id_cedula))
+    temporal = os.path.join(
+        db.ruta_uploads(), f".subiendo-{secrets.token_hex(8)}.pdf"
+    )
+    if not _dentro_de_uploads(carpeta) or not _dentro_de_uploads(temporal):
         raise HTTPException(
             status_code=400,
-            detail="El CUIJ no es válido para armar la carpeta de subida.",
+            detail="El id de la cédula no sirve para armar la carpeta de subida.",
         )
     os.makedirs(carpeta, exist_ok=True)
 
     sha = hashlib.sha256()
     total = 0
     try:
-        with open(destino, "wb") as salida:
+        with open(temporal, "wb") as salida:
             while True:
                 bloque = archivo.file.read(1024 * 1024)
                 if not bloque:
                     break
                 total += len(bloque)
-                if total > max_bytes:
+                if total > tope:
                     raise HTTPException(
                         status_code=413,
-                        detail=f"El PDF supera el tope de {max_mb} MB.",
+                        detail=f"El PDF supera el tope de {tope // (1024 * 1024)} MB.",
                     )
                 sha.update(bloque)
                 salida.write(bloque)
+
+        with open(temporal, "rb") as control:
+            if control.read(5) != b"%PDF-":
+                raise HTTPException(
+                    status_code=400,
+                    detail="El archivo no empieza con la cabecera PDF (%PDF-).",
+                )
+
+        # pypdf se importa acá: el portal arranca sin pagar el costo si no se usa.
+        from pypdf import PdfReader
+
+        try:
+            pdf = PdfReader(temporal)
+            if pdf.is_encrypted:
+                raise HTTPException(status_code=400, detail="El PDF está cifrado.")
+            len(pdf.pages)  # fuerza a recorrer el documento
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, detail=f"pypdf no puede abrir el PDF: {e}"
+            )
+
+        if _normalizar(cuij) != _normalizar(cedula.get("cuij")):
+            raise HTTPException(
+                status_code=400, detail="El CUIJ no coincide con el de la cédula."
+            )
+        if _normalizar(caratula) != _normalizar(cedula.get("caratula")):
+            raise HTTPException(
+                status_code=400, detail="La carátula no coincide con la de la cédula."
+            )
+        if not _firmas_del_pdf(pdf):
+            raise HTTPException(
+                status_code=400,
+                detail="El PDF no tiene una firma digital (/Sig con /ByteRange y /Contents).",
+            )
+
+        huella = sha.hexdigest()
+        if _sha_repetido(huella):
+            raise HTTPException(
+                status_code=409, detail="Ese PDF ya está cargado en otra cédula."
+            )
+
+        destino = os.path.join(carpeta, f"{huella}.pdf")
+        if not _dentro_de_uploads(destino):
+            raise HTTPException(
+                status_code=400, detail="El destino queda fuera de PORTAL_UPLOADS."
+            )
+        os.replace(temporal, destino)
     except BaseException:
-        if os.path.exists(destino):
-            os.remove(destino)
+        if os.path.exists(temporal):
+            os.remove(temporal)
         raise
 
-    documento = db.registrar_documento(
-        nombre,
+    if not estado.marcar_firmada(
+        id_cedula,
         destino,
-        sha.hexdigest(),
-        tamano=total,
-        cuij=cuij,
-        subido_por=persona["persona_id"],
-        documento_id=documento_id,
-    )
+        identidad=permisos.identidad_de(persona),
+        solo_si_generada=True,
+    ):
+        # Perdió la carrera contra otro proceso: el archivo no queda colgado.
+        os.remove(destino)
+        raise HTTPException(
+            status_code=409, detail="Otra persona ya subió el PDF de esta cédula."
+        )
+
     _registrar_log(
-        persona, request, "documento_subido",
-        cuij=cuij, detalle=f"{nombre} ({total} bytes)",
+        persona, request, "pdf_subido",
+        id_cedula=id_cedula,
+        cuij=str(cedula.get("cuij") or ""),
+        detalle=huella,
     )
-    return {"ok": True, "documento": documento}
+    return {"ok": True, "sha256": huella, "ruta": destino}
 
 
-@app.get("/api/documentos/{documento_id}")
-def api_descargar_documento(documento_id: str, persona=Depends(_persona)):
+@app.get("/api/portal/cedulas/{id_cedula}/pdf")
+def api_portal_pdf(id_cedula: str, persona=Depends(_persona)):
+    """Sirve el PDF firmado de la cédula (404 uniforme si no es visible)."""
     permisos.exigir(persona, permisos.DESCARGAR_DOCUMENTO)
-    documento = db.obtener_documento(documento_id)
-    if documento is None or not _documento_visible(documento, persona):
-        # Mismo 404 que "no existe": no se filtra qué cédulas tienen PDF.
-        raise HTTPException(status_code=404, detail="No existe ese documento.")
-    ruta = documento.get("ruta", "")
+    cedula = _cedula_visible(id_cedula, persona)
+    permisos.verificar_cadena(cedula, persona)
+    ruta = str(cedula.get("ruta_firmada") or "")
+    if not ruta or not os.path.isfile(ruta):
+        raise HTTPException(status_code=404, detail="La cédula no tiene un PDF firmado.")
     if not _dentro_de_uploads(ruta):
         raise HTTPException(
-            status_code=403, detail="El documento está fuera de la carpeta del portal."
+            status_code=403, detail="El PDF está fuera de la carpeta del portal."
         )
-    if not os.path.isfile(ruta):
-        raise HTTPException(status_code=404, detail="El archivo ya no está en el disco.")
+    nombre = _id_seguro(id_cedula) or "cedula"
     return FileResponse(
         ruta,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'inline; filename="{documento.get("nombre", "documento.pdf")}"'
-        },
+        headers={"Content-Disposition": f'inline; filename="{nombre}.pdf"'},
     )
 
 

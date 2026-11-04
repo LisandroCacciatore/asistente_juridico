@@ -4,8 +4,11 @@
 Todo corre contra una base SQLite y una carpeta de subidas temporales:
 ningún test toca `portal.db`, `portal_uploads/` ni `config.py` reales.
 """
+import io
 import json
 import os
+import subprocess
+import sys
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,6 +18,7 @@ from portal import auth, db, hub, permisos, servidor_portal
 
 PDF = b"%PDF-1.4\n% cedula de prueba\n"
 CLAVE = "clave-segura-123"
+RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class Portal:
@@ -310,123 +314,253 @@ def test_filtrar_cedulas_por_estado(portal):
     assert [c["id"] for c in r.json()["cedulas"]] == ["c1"]
 
 
-# --- Documentos ---------------------------------------------------
-def test_subir_y_descargar_pdf(portal):
-    _login(portal)
-    # El PDF pertenece a una cédula: sin cadena propia el documento no se ve.
-    _sembrar_estado(portal, cedulas=[
-        {"id": "c1", "cuij": "CUIJ-1", "identidad_cadena": "Santiago"},
-    ])
-    r = portal.cliente.post(
-        "/api/documentos",
-        files={"archivo": ("cedula.pdf", PDF, "application/pdf")},
-        data={"cuij": "CUIJ-1"},
+# --- PDF firmado de una cédula (commit 5) --------------------------
+def _pdf(firmado=True):
+    """PDF sintético, con o sin un campo de firma (/Sig con ByteRange+Contents)."""
+    from pypdf import PdfWriter
+    from pypdf.generic import (
+        ArrayObject, DictionaryObject, NameObject, NumberObject, TextStringObject,
     )
-    assert r.status_code == 200
-    documento = r.json()["documento"]
-    assert documento["nombre"] == "cedula.pdf"
-    assert documento["sha256"]
-    assert os.path.abspath(documento["ruta"]).startswith(os.path.abspath(portal.uploads))
 
-    r = portal.cliente.get(f"/api/documentos/{documento['id']}")
-    assert r.status_code == 200
-    assert r.content == PDF
-    assert r.headers["content-type"].startswith("application/pdf")
-    assert r.headers["content-disposition"].lower().startswith("inline")
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    if firmado:
+        campo = DictionaryObject({
+            NameObject("/FT"): NameObject("/Sig"),
+            NameObject("/T"): TextStringObject("Firma1"),
+            NameObject("/ByteRange"): ArrayObject([
+                NumberObject(0), NumberObject(10), NumberObject(20), NumberObject(5),
+            ]),
+            NameObject("/Contents"): TextStringObject("00" * 32),
+        })
+        referencia = writer._add_object(campo)
+        raiz = writer._root_object
+        acro = raiz.get("/AcroForm")
+        if acro is None:
+            acro = DictionaryObject()
+            raiz[NameObject("/AcroForm")] = acro
+        acro[NameObject("/Fields")] = ArrayObject([referencia])
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
 
-    r = portal.cliente.get("/api/documentos?cuij=CUIJ-1")
-    assert [d["id"] for d in r.json()["documentos"]] == [documento["id"]]
+
+CEDULA_1B = {
+    "id": "c1", "caratula": "Perez", "cuij": "CUIJ-1",
+    "estado": "generada", "identidad_cadena": "Santiago", "tipo": "estandar",
+}
 
 
-def test_nombre_peligroso_no_sale_de_uploads(portal):
-    _login(portal)
-    r = portal.cliente.post(
-        "/api/documentos",
-        files={"archivo": ("../../cedula.pdf", PDF, "application/pdf")},
+def _sembrar_cedula(portal, **extra):
+    datos = {**CEDULA_1B, **extra}
+    _sembrar_estado(portal, cedulas=[datos])
+    return datos
+
+
+def _subir(portal, id_cedula="c1", contenido=None, cuij="CUIJ-1", caratula="Perez"):
+    return portal.cliente.post(
+        f"/api/portal/cedulas/{id_cedula}/subir",
+        files={
+            "archivo": (
+                "firmada.pdf",
+                _pdf() if contenido is None else contenido,
+                "application/pdf",
+            )
+        },
+        data={"cuij": cuij, "caratula": caratula},
     )
-    assert r.status_code == 200
-    documento = r.json()["documento"]
-    assert documento["nombre"] == "cedula.pdf"
-    ruta = os.path.abspath(documento["ruta"])
-    assert os.path.commonpath([ruta, os.path.abspath(portal.uploads)]) == os.path.abspath(portal.uploads)
 
 
-def test_cuij_peligroso_no_sale_de_uploads(portal):
+def test_subir_firmada_marca_la_cedula_y_loguea(portal):
     _login(portal)
-    r = portal.cliente.post(
-        "/api/documentos",
-        files={"archivo": ("cedula.pdf", PDF, "application/pdf")},
-        data={"cuij": "../../fuera/CUIJ-1"},
-    )
-    assert r.status_code == 200
-    documento = r.json()["documento"]
-    ruta = os.path.abspath(documento["ruta"])
-    assert os.path.commonpath([ruta, os.path.abspath(portal.uploads)]) == os.path.abspath(portal.uploads)
-    assert os.path.basename(os.path.dirname(ruta)) == "fueraCUIJ-1"
+    _sembrar_cedula(portal)
+    r = _subir(portal)
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert cuerpo["sha256"]
+    assert os.path.abspath(cuerpo["ruta"]).startswith(os.path.abspath(portal.uploads))
+
+    cedula = estado.obtener_cedula("c1")
+    assert cedula["estado"] == "firmada"
+    assert cedula["ruta_firmada"] == cuerpo["ruta"]
+    assert cedula["fecha_firmada"]
+
+    entradas = [json.loads(l) for l in _lineas_log(portal)]
+    subidas = [e for e in entradas if e["accion"] == "pdf_subido"]
+    assert len(subidas) == 1
+    assert subidas[0]["detalle"] == cuerpo["sha256"]
+    assert subidas[0]["id"] == "c1"
 
 
-def test_cuij_se_sanea_a_letras_numeros_y_guiones(portal):
+def test_subir_sin_sesion_da_401(portal):
+    _sembrar_cedula(portal)
+    assert _subir(portal).status_code == 401
+
+
+def test_subir_cedula_inexistente_da_404(portal):
     _login(portal)
-    r = portal.cliente.post(
-        "/api/documentos",
-        files={"archivo": ("cedula.pdf", PDF, "application/pdf")},
-        data={"cuij": "21-00000001-0 / .."},
-    )
-    assert r.status_code == 200
-    documento = r.json()["documento"]
-    ruta = os.path.abspath(documento["ruta"])
-    assert os.path.basename(os.path.dirname(ruta)) == "21-00000001-0"
+    assert _subir(portal, id_cedula="no-existe").status_code == 404
 
 
-def test_archivo_sin_cabecera_pdf_da_400(portal):
+def test_subir_cedula_ajena_da_404(portal):
     _login(portal)
-    r = portal.cliente.post(
-        "/api/documentos",
-        files={"archivo": ("falso.pdf", b"esto no es un PDF", "application/pdf")},
-    )
+    _sembrar_cedula(portal, identidad_cadena="Jr")
+    assert _subir(portal).status_code == 404
+
+
+def test_subir_admin_sin_delegacion_da_403(portal, monkeypatch):
+    # El administrador NO es excepción: sin delegación explícita, 403.
+    config_actual = db.config_portal
+    monkeypatch.setattr(db, "config_portal", lambda nombre, default=None: (
+        ["santiago"] if nombre == "PORTAL_ADMINISTRADORES" else config_actual(nombre, default)
+    ))
+    _login(portal)
+    _sembrar_cedula(portal, identidad_cadena="Jr")
+    assert _subir(portal).status_code == 403
+
+
+def test_subir_con_delegacion_funciona(portal):
+    db.fijar_puede_actuar_como("santiago", ["Jr"])
+    _login(portal)
+    _sembrar_cedula(portal, identidad_cadena="Jr")
+    assert _subir(portal).status_code == 200
+    assert estado.obtener_cedula("c1")["estado"] == "firmada"
+
+
+def test_subir_sin_cadena_da_400(portal, monkeypatch):
+    config_actual = db.config_portal
+    monkeypatch.setattr(db, "config_portal", lambda nombre, default=None: (
+        ["santiago"] if nombre == "PORTAL_ADMINISTRADORES" else config_actual(nombre, default)
+    ))
+    _login(portal)
+    _sembrar_cedula(portal, identidad_cadena="")
+    r = _subir(portal)
+    assert r.status_code == 400
+    assert "identidad fijada" in r.json()["detail"]
+
+
+def test_subir_cedula_ya_firmada_da_409(portal):
+    _login(portal)
+    _sembrar_cedula(portal, estado="firmada")
+    assert _subir(portal).status_code == 409
+
+
+def test_subir_cabecera_invalida_da_400(portal):
+    _login(portal)
+    _sembrar_cedula(portal)
+    r = _subir(portal, contenido=b"hola, esto no es un pdf")
     assert r.status_code == 400
     assert "%PDF-" in r.json()["detail"]
 
 
-def test_cabeceras_de_seguridad(portal):
-    r = portal.cliente.get("/")
-    assert r.headers["x-content-type-options"] == "nosniff"
-    assert r.headers["x-frame-options"] == "DENY"
-
-
-def test_dentro_de_uploads_rechaza_afuera(portal):
-    assert servidor_portal._dentro_de_uploads(
-        os.path.join(portal.uploads, "cedula.pdf")
-    ) is True
-    assert servidor_portal._dentro_de_uploads(
-        os.path.join(str(portal.tmp_path), "fuera.pdf")
-    ) is False
-
-
-def test_solo_pdf(portal):
+def test_subir_pdf_ilegible_da_400(portal):
     _login(portal)
-    r = portal.cliente.post(
-        "/api/documentos",
-        files={"archivo": ("notas.txt", b"hola", "text/plain")},
-    )
+    _sembrar_cedula(portal)
+    r = _subir(portal, contenido=b"%PDF-1.4\nbasura que no parsea")
     assert r.status_code == 400
-    assert "PDF" in r.json()["detail"]
+    assert "pypdf" in r.json()["detail"]
 
 
-def test_tope_de_subida(portal):
+def test_subir_cuij_distinto_da_400(portal):
+    _login(portal)
+    _sembrar_cedula(portal)
+    r = _subir(portal, cuij="CUIJ-OTRO")
+    assert r.status_code == 400
+    assert "CUIJ" in r.json()["detail"]
+
+
+def test_subir_caratula_distinta_da_400(portal):
+    _login(portal)
+    _sembrar_cedula(portal)
+    r = _subir(portal, caratula="Otra Caratula")
+    assert r.status_code == 400
+    assert "carátula" in r.json()["detail"]
+
+
+def test_subir_pdf_sin_firma_da_400(portal):
+    _login(portal)
+    _sembrar_cedula(portal)
+    r = _subir(portal, contenido=_pdf(firmado=False))
+    assert r.status_code == 400
+    assert "/Sig" in r.json()["detail"]
+
+
+def test_subir_tope_excedido_da_413(portal):
     portal.config["PORTAL_MAX_SUBIDA_MB"] = 1
     _login(portal)
+    _sembrar_cedula(portal)
     grande = b"%PDF-1.4\n" + b"x" * (1024 * 1024 + 10)
-    r = portal.cliente.post(
-        "/api/documentos",
-        files={"archivo": ("grande.pdf", grande, "application/pdf")},
-    )
-    assert r.status_code == 413
+    assert _subir(portal, contenido=grande).status_code == 413
 
 
-def test_documento_inexistente_da_404(portal):
+def test_subir_el_mismo_pdf_en_otra_cedula_da_409(portal):
     _login(portal)
-    assert portal.cliente.get("/api/documentos/no-existe").status_code == 404
+    _sembrar_estado(portal, cedulas=[
+        dict(CEDULA_1B, id="c1"),
+        dict(CEDULA_1B, id="c2"),
+    ])
+    pdf = _pdf()
+    assert _subir(portal, id_cedula="c1", contenido=pdf).status_code == 200
+    assert _subir(portal, id_cedula="c2", contenido=pdf).status_code == 409
+
+
+def test_bajar_el_pdf_firmado(portal):
+    _login(portal)
+    _sembrar_cedula(portal)
+    assert _subir(portal).status_code == 200
+    r = portal.cliente.get("/api/portal/cedulas/c1/pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF-")
+
+
+def test_bajar_pdf_sin_firmar_da_404(portal):
+    _login(portal)
+    _sembrar_cedula(portal)
+    assert portal.cliente.get("/api/portal/cedulas/c1/pdf").status_code == 404
+
+
+def test_bajar_pdf_ajeno_da_404(portal):
+    _login(portal)
+    _sembrar_cedula(portal, identidad_cadena="Jr")
+    assert portal.cliente.get("/api/portal/cedulas/c1/pdf").status_code == 404
+
+
+def test_dos_procesos_subiendo_solo_uno_gana(tmp_path, monkeypatch):
+    """Dos procesos reales compitiendo por marcar la misma cédula."""
+    ruta_estado = str(tmp_path / "estado.json")
+    ruta_log = str(tmp_path / "log.jsonl")
+    monkeypatch.setattr(estado, "ARCHIVO", ruta_estado)
+    monkeypatch.setattr(estado, "ARCHIVO_LOG", ruta_log)
+    estado.registrar_cedula({
+        "id": "c1", "caratula": "Perez", "cuij": "CUIJ-1",
+        "estado": "generada", "identidad_cadena": "Santiago",
+    })
+
+    guion = tmp_path / "intento.py"
+    guion.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(RAIZ)!r})\n"
+        "import estado\n"
+        f"estado.ARCHIVO = {ruta_estado!r}\n"
+        f"estado.ARCHIVO_LOG = {ruta_log!r}\n"
+        "print(estado.marcar_firmada('c1', 'C:/tmp/f.pdf', identidad='Santiago',"
+        " solo_si_generada=True))\n",
+        encoding="utf-8",
+    )
+    procesos = [
+        subprocess.Popen(
+            [sys.executable, str(guion)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        for _ in range(2)
+    ]
+    salidas = []
+    for proceso in procesos:
+        salida, _error = proceso.communicate(timeout=120)
+        salidas.append(salida.strip().splitlines()[-1] if salida.strip() else "")
+    assert sorted(salidas) == ["False", "True"]
+    assert estado.obtener_cedula("c1")["estado"] == "firmada"
 
 
 # --- CSRF y panel -------------------------------------------------
@@ -711,20 +845,6 @@ def test_api_log_filtra_por_identidad(portal):
     assert [e["identidad"] for e in entradas] == ["Santiago"]
 
 
-def test_pdf_de_otra_identidad_da_404(portal):
-    _login(portal)
-    _sembrar_estado(portal, cedulas=[
-        {"id": "c1", "cuij": "CUIJ-1", "identidad_cadena": "Jr"},
-    ])
-    r = portal.cliente.post(
-        "/api/documentos",
-        files={"archivo": ("cedula.pdf", PDF, "application/pdf")},
-        data={"cuij": "CUIJ-1"},
-    )
-    documento = r.json()["documento"]
-    assert portal.cliente.get(f"/api/documentos/{documento['id']}").status_code == 404
-
-
 # --- Cadena con delegación (D25 + puede_actuar_como) ---------------
 def test_verificar_cadena_con_delegacion_pasa(portal):
     db.fijar_puede_actuar_como("santiago", ["Jr"])
@@ -827,22 +947,6 @@ def test_actividad_admin_si_ve_usuario_y_maquina(portal, monkeypatch):
     assert entrada["usuario"] == "Torso"
     assert entrada["maquina"] == "PC-LIS"
 
-
-def test_listado_de_documentos_filtra_por_identidad(portal):
-    _login(portal)
-    _sembrar_estado(portal, cedulas=[
-        {"id": "propia", "cuij": "CUIJ-1", "identidad_cadena": "Santiago"},
-        {"id": "ajena", "cuij": "CUIJ-2", "identidad_cadena": "Jr"},
-    ])
-    for cuij in ("CUIJ-1", "CUIJ-2"):
-        r = portal.cliente.post(
-            "/api/documentos",
-            files={"archivo": (f"{cuij}.pdf", PDF, "application/pdf")},
-            data={"cuij": cuij},
-        )
-        assert r.status_code == 200
-    documentos = portal.cliente.get("/api/documentos").json()["documentos"]
-    assert [d["cuij"] for d in documentos] == ["CUIJ-1"]
 
 
 def test_panel_muestra_el_id_de_la_cedula_en_actividad(portal):

@@ -231,9 +231,8 @@ tablas viejas se fueron en el commit 4.
 | `GET /api/cedulas` | lectura | Lista cédulas (filtro `?estado=`) |
 | `GET /api/cedulas/{id}` | lectura | Una cédula (404 si no es visible) |
 | `GET /api/log` | lectura | Igual que actividad (se mantiene por compatibilidad) |
-| `GET /api/documentos` | lectura | Lista documentos (`?cuij=`) |
-| `POST /api/documentos` | escritura | Sube un PDF (multipart, tope `PORTAL_MAX_SUBIDA_MB`) |
-| `GET /api/documentos/{id}` | lectura | Sirve el PDF (404 si la cédula no es visible) |
+| `POST /api/portal/cedulas/{id}/subir` | escritura | Sube el PDF **firmado** de la cédula, la marca firmada y loguea `pdf_subido` |
+| `GET /api/portal/cedulas/{id}/pdf` | lectura | Sirve el PDF firmado (404 si no existe o no es visible) |
 | `GET /api/personas` | lectura | Personas activas, sin hash |
 | `GET /api/admin/personas` | admin | Lista todas (solo `PORTAL_ADMINISTRADORES`) |
 | `POST /api/admin/personas` | admin | Crea persona |
@@ -285,6 +284,33 @@ persona, ej. `"Santiago"`, nunca el `persona_id`). La regla vive en
 otra identidad delegada. El operador puede ser distinto de la identidad
 (D18); lo que no se puede es mezclar.
 
+### Subida del PDF firmado
+
+`POST /api/portal/cedulas/{id}/subir` reemplaza la subida genérica. Valida, en
+este orden, **antes** de dejar el archivo en su lugar definitivo (se escribe en
+un temporal dentro de `PORTAL_UPLOADS` y recién al final se mueve con
+`os.replace`):
+
+1. permisos y visibilidad de la cédula (404 si no es visible);
+2. **D25**: `verificar_cadena` — hay que poder actuar como la identidad de la
+   cédula. **El administrador no es excepción**: sin delegación explícita, 403;
+3. la cédula tiene cadena y está en estado `generada` (si no, 400/409);
+4. tope de tamaño (`PORTAL_MAX_SUBIDA_MB`, 413);
+5. cabecera `%PDF-` (400);
+6. `pypdf` la abre y no está cifrada (400);
+7. `cuij` y `caratula` del formulario coinciden con los de la cédula,
+   comparados normalizados (400);
+8. hay al menos un campo de firma `/FT /Sig` con `/ByteRange` y `/Contents` (400);
+9. el sha256 no está repetido en otra cédula (409).
+
+Se guarda en `PORTAL_UPLOADS/<id saneado>/<sha256>.pdf` y la cédula se marca
+firmada con `estado.marcar_firmada(..., solo_si_generada=True)`, que hace el
+chequeo de estado y la escritura **dentro del mismo lock**: si otro proceso ya
+la marcó, el archivo recién guardado se borra y la respuesta es 409.
+
+⚠️ Validado con un PDF sintético; falta probarlo con un PDF firmado real de
+FirmAr (Santiago) antes de usarlo con cédulas reales.
+
 ### Visibilidad
 
 Un administrador (`PORTAL_ADMINISTRADORES`) ve todo. El resto ve solo las
@@ -313,9 +339,11 @@ nada ni genera backups de más.
   pedidos sin `Origin` (scripts locales) pasan.
 - **CORS**: por defecto `PORTAL_ORIGENES = []` (mismo origen). Si se abre a
   otro dominio, se agrega ahí y se usa `allow_credentials=True`.
-- **Subidas**: solo PDF, nombre saneado (sin rutas), tope de tamaño y
-  descarga restringida a `PORTAL_UPLOADS` (si la metadata apunta afuera,
-  responde 403).
+- **Subidas**: solo el PDF firmado de una cédula visible y operable (D25); tope
+  de tamaño, cabecera PDF, `pypdf` sin cifrado, firma `/Sig` presente, CUIJ y
+  carátula coincidentes, y sha256 único. El archivo vive en
+  `PORTAL_UPLOADS/<id>/<sha256>.pdf` y la descarga exige que la ruta esté
+  dentro de `PORTAL_UPLOADS`.
 - **Nunca `0.0.0.0`**: el bind es `PORTAL_HOST` (loopback). La exposición
   remota es Tailscale Serve/HTTPS, y **no antes del commit 6**.
 
