@@ -22,6 +22,10 @@ python -m pytest tests/ -v
 - `test_portal_db.py`, `test_portal_auth.py`, `test_portal_admin.py` — base
   SQLite del portal (personas, sesiones, estado, log, ficha y documentos),
   hash argon2, login/sesiones/cookie firmada y consola de administración.
+- `test_portal_permisos.py`, `test_portal_servidor.py` — persona activa y
+  regla de la cadena (D25), login HTTP, estado/log/ficha, subida y descarga
+  de PDFs, anti-duplicado (D22), CSRF y panel mínimo. Usan una base y una
+  carpeta de subidas temporales: no tocan `portal.db` ni `portal_uploads/`.
 
 ## Qué NO cubren (y no pueden cubrir así)
 

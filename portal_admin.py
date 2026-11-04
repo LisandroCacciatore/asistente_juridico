@@ -71,8 +71,31 @@ def guardar_password(persona_id, password, ruta=None):
         )
     if not db.obtener_persona(persona_id, ruta=ruta):
         raise db.PersonaNoEncontrada(f"No existe la persona {persona_id!r}.")
-    db.guardar_credencial(persona_id, auth.hashear(password), ruta=ruta)
+    # Una clave puesta desde la consola es provisoria: se cambia al entrar.
+    db.guardar_credencial(
+        persona_id, auth.hashear(password), debe_cambiar=1, ruta=ruta
+    )
     return True
+
+
+def auditar(accion, detalle="", ruta=None):
+    """Deja rastro en `auditoria` de lo que se hace desde la consola.
+
+    Firma como "cli" y agrega el usuario de Windows al detalle: si no, no se
+    sabe desde qué cuenta de la máquina se hizo. Si la auditoría falla, avisa
+    por stderr y sigue: no puede tumbar una operación que ya se hizo.
+    """
+    try:
+        usuario, _maquina = db.quien()
+    except Exception:
+        usuario = ""
+    texto = f"{detalle} [{usuario}]".strip()
+    try:
+        db.registrar_auditoria(
+            persona_id="cli", accion=accion, ip="", detalle=texto[:80], ruta=ruta
+        )
+    except Exception as e:
+        print(f"AVISO: no se pudo auditar {accion!r}: {e}", file=sys.stderr)
 
 
 def pedir_password():
@@ -90,16 +113,17 @@ def listar(ruta=None):
         return []
     print(
         f"{'persona_id':<14} {'nombre':<22} {'mail':<30} {'matricula':<12} "
-        f"{'activo':<7} {'clave':<6} {'sesiones':>8}"
+        f"{'activo':<7} {'clave':<6} {'actua como':<20} {'sesiones':>8}"
     )
     for persona in filas:
         credencial = db.obtener_credencial(persona["persona_id"], ruta=ruta)
         sesiones = db.contar_sesiones(persona["persona_id"], ruta=ruta)
+        actua = (persona.get("puede_actuar_como") or "-")[:20]
         print(
             f"{persona['persona_id']:<14} {persona['nombre'][:22]:<22} "
             f"{persona['mail'][:30]:<30} {persona['matricula'][:12]:<12} "
             f"{'si' if persona['activo'] else 'no':<7} "
-            f"{'si' if credencial else 'no':<6} {sesiones:>8}"
+            f"{'si' if credencial else 'no':<6} {actua:<20} {sesiones:>8}"
         )
     return filas
 
@@ -141,6 +165,17 @@ def main(argv=None):
     p = sub.add_parser("sesiones-borrar", help="Borra las sesiones (todas o de una persona).")
     p.add_argument("persona_id", nargs="?")
 
+    p = sub.add_parser(
+        "puede-actuar",
+        help="Fija qué identidades puede operar una persona (además de la propia).",
+    )
+    p.add_argument("persona_id")
+    p.add_argument(
+        "identidades", nargs="*",
+        help="Nombres tal como figuran en PERSONAS (ej. Santiago Jr).",
+    )
+    p.add_argument("--limpiar", action="store_true", help="Deja la lista vacía.")
+
     args = parser.parse_args(argv)
     ruta = args.db
 
@@ -164,9 +199,11 @@ def main(argv=None):
                 args.persona_id, args.nombre, mail=args.mail,
                 matricula=args.matricula, ruta=ruta,
             )
+            auditar("cli_persona_creada", persona["persona_id"], ruta)
             print(f"Persona creada: {persona['persona_id']} ({persona['nombre']})")
         elif args.comando == "password":
             guardar_password(args.persona_id, pedir_password(), ruta=ruta)
+            auditar("cli_password_actualizada", args.persona_id, ruta)
             print(f"Contraseña actualizada para {args.persona_id}.")
         elif args.comando == "listar":
             listar(ruta=ruta)
@@ -175,6 +212,7 @@ def main(argv=None):
             print(f"Persona activada: {args.persona_id}")
         elif args.comando == "desactivar":
             db.desactivar_persona(args.persona_id, ruta=ruta)
+            auditar("cli_persona_desactivada", args.persona_id, ruta)
             print(f"Persona desactivada y sesiones cerradas: {args.persona_id}")
         elif args.comando == "sesiones-borrar":
             if args.persona_id:
@@ -182,6 +220,18 @@ def main(argv=None):
             else:
                 cantidad = db.eliminar_todas_las_sesiones(ruta=ruta)
             print(f"Sesiones borradas: {cantidad}")
+        elif args.comando == "puede-actuar":
+            identidades = [] if args.limpiar else args.identidades
+            persona = db.fijar_puede_actuar_como(args.persona_id, identidades, ruta=ruta)
+            auditar(
+                "cli_puede_actuar",
+                f"{args.persona_id}: {persona.get('puede_actuar_como') or '-'}",
+                ruta,
+            )
+            print(
+                f"{persona['persona_id']} puede actuar como: "
+                f"{persona.get('puede_actuar_como') or '(ninguna)'}"
+            )
         return 0
     except (ValueError, db.ErrorPortal, auth.ErrorConfiguracion) as e:
         print(f"Error: {e}", file=sys.stderr)
