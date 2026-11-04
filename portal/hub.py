@@ -21,9 +21,9 @@
 import json
 import logging
 import os
+import time
 
 from . import db
-import time
 
 #: Campos de una cédula que el portal puede mostrar.
 CAMPOS_CEDULA = (
