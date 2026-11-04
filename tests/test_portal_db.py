@@ -164,6 +164,27 @@ def test_auditoria_guarda_y_recorta_el_detalle(ruta):
     assert db.leer_log(ruta=ruta) == []
 
 
+def test_auditoria_limpia_controles_y_recorta_campos(ruta):
+    db.registrar_auditoria(
+        persona_id="a\nb" + "x" * 100,
+        accion="login\t" * 20,
+        ip="1.2.3.4\n" + "y" * 60,
+        detalle="d\x01e" + "z" * 100,
+        ruta=ruta,
+    )
+    with db.conexion(ruta) as con:
+        fila = dict(con.execute("SELECT * FROM auditoria").fetchone())
+    assert "\n" not in fila["persona_id"]
+    assert "\t" not in fila["accion"]
+    assert "\x01" not in fila["detalle"]
+    assert len(fila["persona_id"]) == 80
+    assert len(fila["accion"]) == 40
+    assert len(fila["ip"]) == 45
+    assert len(fila["detalle"]) == 80
+    assert fila["persona_id"].startswith("ab")
+    assert fila["detalle"].startswith("de")
+
+
 def test_ficha_merge_y_listado(ruta):
     db.guardar_ficha("CUIJ-1", {"caratula": "Perez", "notas": "hola"}, persona_id="santiago", ruta=ruta)
     db.guardar_ficha("CUIJ-1", {"notas": "chau"}, persona_id="jr", ruta=ruta)

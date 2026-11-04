@@ -34,6 +34,15 @@ def _auditoria_con(accion):
     return [f for f in _auditoria() if f["accion"] == accion]
 
 
+def _pedido(peer, xff=None):
+    """Request mínimo para probar `_ip_cliente` sin levantar HTTP."""
+    cabeceras = {} if xff is None else {"x-forwarded-for": xff}
+    return type("Pedido", (), {
+        "client": type("Cliente", (), {"host": peer})(),
+        "headers": cabeceras,
+    })()
+
+
 @pytest.fixture
 def portal(tmp_path, monkeypatch):
     config = {
@@ -465,7 +474,7 @@ def test_login_fallido_recorta_el_detalle_y_no_ensucia_el_log(portal):
     assert len(filas) == 1
     assert filas[0]["detalle"] == identificador[:80]
     assert len(filas[0]["detalle"]) == 80
-    assert filas[0]["persona_id"] == identificador
+    assert filas[0]["persona_id"] == identificador[:80]
     assert filas[0]["ip"] == "testclient"
     assert db.leer_log() == []
 
@@ -518,3 +527,31 @@ def test_endpoints_de_escritura_borrados_dan_404_o_405(portal, metodo, ruta, cue
     kwargs = {} if cuerpo is None else {"json": cuerpo}
     r = portal.cliente.request(metodo, ruta, **kwargs)
     assert r.status_code in (404, 405)
+
+
+# --- IP del cliente (Tailscale Serve) ------------------------------
+def test_ip_cliente_usa_la_ultima_entrada_de_xff_detras_del_proxy():
+    # Detrás de Serve el peer siempre es 127.0.0.1: la IP real viene en el
+    # header, y vale la ÚLTIMA entrada (la agrega el proxy de confianza).
+    assert servidor_portal._ip_cliente(
+        _pedido("127.0.0.1", "9.9.9.9, 100.64.0.5")
+    ) == "100.64.0.5"
+
+
+def test_ip_cliente_ignora_xff_si_el_peer_no_es_local():
+    # Si la conexión no viene del proxy, el header lo escribió el cliente.
+    assert servidor_portal._ip_cliente(_pedido("100.64.0.9", "1.2.3.4")) == "100.64.0.9"
+
+
+def test_ip_cliente_sin_xff_usa_el_peer():
+    assert servidor_portal._ip_cliente(_pedido("100.64.0.9")) == "100.64.0.9"
+
+
+def test_ip_cliente_recorta_a_45():
+    assert len(servidor_portal._ip_cliente(_pedido("1" * 60))) == 45
+
+
+def test_logout_sin_sesion_no_audita(portal):
+    r = portal.cliente.post("/logout", follow_redirects=False)
+    assert r.status_code == 303
+    assert _auditoria_con("logout") == []

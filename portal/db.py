@@ -230,12 +230,22 @@ CREATE INDEX IF NOT EXISTS idx_auditoria_persona ON auditoria(persona_id);
 
 
 # --- Auditoría (tablas del hub, separada del log de cédulas) ------
+def _limpiar(texto, tope):
+    """Texto en una línea, sin caracteres de control, recortado a `tope`.
+
+    Todo lo que entra a `auditoria` viene de afuera (un identificador de login
+    puede ser cualquier cosa), así que se normaliza acá y no en el llamador.
+    """
+    limpio = "".join(c for c in str(texto or "") if c == " " or c.isprintable())
+    return limpio.strip()[:tope]
+
+
 def registrar_auditoria(persona_id="", accion="", ip="", detalle="", ruta=None):
     """Deja una fila en `auditoria`: login, logout y rechazos del portal.
 
     Es aparte de `log_acciones` (y de `log_acciones.jsonl`), que guarda
-    solo lo que pasa con las cédulas. El detalle se recorta a 80
-    caracteres para que un identificador largo no se convierta en basura.
+    solo lo que pasa con las cédulas. Los cuatro campos se recortan y se
+    limpian: `persona_id` 80, `accion` 40, `ip` 45, `detalle` 80.
     """
     with conexion(ruta) as con, _transaccion(con):
         cur = con.execute(
@@ -243,10 +253,10 @@ def registrar_auditoria(persona_id="", accion="", ip="", detalle="", ruta=None):
             "VALUES (?, ?, ?, ?, ?)",
             (
                 _ahora(),
-                str(persona_id or ""),
-                str(accion or ""),
-                str(ip or ""),
-                str(detalle)[:80],
+                _limpiar(persona_id, 80),
+                _limpiar(accion, 40),
+                _limpiar(ip, 45),
+                _limpiar(detalle, 80),
             ),
         )
         return cur.lastrowid

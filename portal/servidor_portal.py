@@ -194,10 +194,43 @@ def _nombre_seguro(nombre):
     return nombre[:120]
 
 
+def _cabecera(request, nombre):
+    """Valor de una cabecera, tolerante a `dict` planos (tests)."""
+    cabeceras = getattr(request, "headers", None)
+    if cabeceras is None:
+        return ""
+    try:
+        valor = cabeceras.get(nombre)
+        if valor:
+            return str(valor)
+    except Exception:
+        pass
+    try:
+        for clave, valor in cabeceras.items():
+            if str(clave).lower() == nombre:
+                return str(valor or "")
+    except Exception:
+        pass
+    return ""
+
+
 def _ip_cliente(request):
-    """IP del cliente para la auditoría ('' si no se puede saber)."""
+    """IP del cliente para la auditoría ('' si no se puede saber).
+
+    Detrás de Tailscale Serve el peer es siempre 127.0.0.1, así que la IP real
+    viene en X-Forwarded-For. Ese header se cree SOLO cuando la conexión directa
+    es del proxy local: si el peer es otra máquina, el header lo escribió el
+    cliente y se ignora. Se toma la ÚLTIMA entrada, que la agrega el proxy de
+    confianza; las anteriores las puede inventar quien llama.
+    """
     cliente = getattr(request, "client", None)
-    return str(getattr(cliente, "host", "") or "")
+    peer = str(getattr(cliente, "host", "") or "")
+    if peer == "127.0.0.1":
+        reenviado = _cabecera(request, "x-forwarded-for")
+        partes = [p.strip() for p in reenviado.split(",") if p.strip()]
+        if partes:
+            peer = partes[-1]
+    return peer[:45]
 
 
 def _registrar_log(persona, request, accion, id_cedula="", caratula="",
@@ -300,12 +333,14 @@ def logout(request: Request):
     persona = auth.persona_actual(request.cookies.get(auth.NOMBRE_COOKIE))
     if token:
         auth.cerrar_sesion(token)
-    db.registrar_auditoria(
-        persona_id=(persona or {}).get("persona_id", ""),
-        accion="logout",
-        ip=_ip_cliente(request),
-        detalle="",
-    )
+        # Solo se audita un logout real: sin sesión no hay nada que cerrar y
+        # un POST anónimo no puede llenar la tabla de auditoría.
+        db.registrar_auditoria(
+            persona_id=(persona or {}).get("persona_id", ""),
+            accion="logout",
+            ip=_ip_cliente(request),
+            detalle="",
+        )
     respuesta = RedirectResponse("/", status_code=303)
     respuesta.delete_cookie(auth.NOMBRE_COOKIE, path="/")
     return respuesta
