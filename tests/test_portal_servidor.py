@@ -958,3 +958,18 @@ def test_panel_muestra_el_id_de_la_cedula_en_actividad(portal):
     texto = portal.cliente.get("/panel").text
     assert "2026-11-01T10:00:00" in texto
     assert ">c1<" in texto
+
+
+def test_cabeceras_de_seguridad(portal):
+    r = portal.cliente.get("/")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["x-frame-options"] == "DENY"
+
+
+def test_dentro_de_uploads_rechaza_afuera(portal):
+    assert servidor_portal._dentro_de_uploads(
+        os.path.join(portal.uploads, "cedula.pdf")
+    ) is True
+    assert servidor_portal._dentro_de_uploads(
+        os.path.join(str(portal.tmp_path), "fuera.pdf")
+    ) is False
