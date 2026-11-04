@@ -25,6 +25,12 @@ portal.db-journal
 portal.db-wal
 portal.db-shm
 portal_uploads/
+# PDF firmado real de prueba (FirmAr): tiene datos de un cliente. Se usa solo
+# en local y nunca se commitea. No se ignora *.pdf entero porque hay PDFs de
+# ejemplo versionados en skills/.
+*_FIRMADO.pdf
+*_firmado.pdf
+prueba_firmada*.pdf
 # El secreto real del portal va en config.py (ya ignorado). Esto cubre
 # archivos sueltos que se generen con ese nombre.
 portal_secret*
