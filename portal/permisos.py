@@ -20,6 +20,8 @@
 #  `portal_admin.py` sigue siendo la vía normal.
 # ============================================================
 
+import logging
+
 from . import db
 
 LEER_ESTADO = "leer_estado"
@@ -102,9 +104,13 @@ def identidades_de(persona):
     pid = str((persona or {}).get("persona_id") or "").strip()
     try:
         delegadas = db.puede_actuar_como(pid)
-    except Exception:
-        # Sin base accesible (tests de funciones puras, primer arranque) la
-        # persona sigue viendo lo propio; no se cae por no poder leer la lista.
+    except Exception as e:
+        # Se sigue con lo propio (la persona ve menos, nunca más), pero el
+        # aviso queda: un fallo de la base no puede pasar inadvertido.
+        logging.getLogger("portal.permisos").warning(
+            "No se pudo leer puede_actuar_como de %r (%s): se usa solo la "
+            "identidad propia.", pid, e,
+        )
         delegadas = []
     salida, vistas = [], set()
     for valor in [propia, *delegadas]:

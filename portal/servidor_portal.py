@@ -31,7 +31,7 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel
 
-from . import auth, db, permisos
+from . import auth, db, hub, permisos
 
 MIN_LARGO_PASSWORD = 8
 
@@ -176,19 +176,12 @@ def _persona_opcional(request: Request):
     return auth.persona_actual(cookie) if cookie else None
 
 
-def _filtro_log(persona):
-    """Identidades del log que puede ver la persona (None = todas, admin)."""
-    if permisos.es_administrador(persona):
-        return None
-    return permisos.identidades_de(persona)
-
-
 def _documento_visible(documento, persona):
     """True si el documento es de una cédula que la persona puede ver."""
     cuij = str(documento.get("cuij") or "").strip()
     if not cuij:
         return permisos.es_administrador(persona)
-    cedulas = db.leer_estado().get("cedulas", [])
+    cedulas = hub.estado()["cedulas"]
     return any(
         permisos.puede_ver_cedula(c, persona)
         for c in cedulas
@@ -380,26 +373,51 @@ def api_salud():
     return {"ok": True, "portal": "estudio"}
 
 
-# --- Estado -------------------------------------------------------
-@app.get("/api/estado")
-def api_estado(persona=Depends(_persona)):
+# --- Lectura del estado real (solo lectura) ------------------------
+def _log_visible(persona, limite):
+    """Actividad visible: filtro por identidad en Python y límite DESPUÉS.
+
+    El filtro va en Python con `permisos.normalizar` (no en SQL): `lower()` de
+    SQLite solo baja ASCII, así que "José" o "Peña" no coincidirían.
+    """
+    entradas = hub.actividad()
+    if not permisos.es_administrador(persona):
+        visibles = {permisos.normalizar(i) for i in permisos.identidades_de(persona)}
+        entradas = [
+            e for e in entradas if permisos.normalizar(e.get("identidad")) in visibles
+        ]
+    if limite:
+        entradas = entradas[: int(limite)]
+    return entradas
+
+
+@app.get("/api/portal/novedades")
+def api_portal_novedades(limite: int = 50, persona=Depends(_persona)):
+    """Cédulas recientes y —solo para un administrador— pendientes."""
     permisos.exigir(persona, permisos.LEER_ESTADO)
-    datos = db.leer_estado()
-    # El estado completo es el bypass más obvio del filtro por identidad: se
-    # filtra acá igual que en /api/cedulas.
-    datos["cedulas"] = permisos.filtrar_cedulas(datos.get("cedulas", []), persona)
-    return {
-        "ok": True,
-        "version": db.version_estado(),
-        "datos": datos,
-    }
+    datos = hub.estado()
+    cedulas = permisos.filtrar_cedulas(datos["cedulas"], persona)
+    cedulas = hub.ordenar_por_fecha(cedulas)[: int(limite)]
+    # Los pendientes todavía no tienen identidad: los ve solo un admin.
+    pendientes = (
+        datos["pendientes"][: int(limite)]
+        if permisos.es_administrador(persona)
+        else []
+    )
+    return {"ok": True, "cedulas": cedulas, "pendientes": pendientes}
+
+
+@app.get("/api/portal/actividad")
+def api_portal_actividad(limite: int = 50, persona=Depends(_persona)):
+    permisos.exigir(persona, permisos.LEER_LOG)
+    return {"ok": True, "entradas": _log_visible(persona, limite)}
 
 
 # --- Cédulas ------------------------------------------------------
 @app.get("/api/cedulas")
 def api_cedulas(estado: str | None = None, persona=Depends(_persona)):
     permisos.exigir(persona, permisos.LEER_ESTADO)
-    cedulas = permisos.filtrar_cedulas(db.leer_estado().get("cedulas", []), persona)
+    cedulas = permisos.filtrar_cedulas(hub.cedulas(), persona)
     if estado:
         cedulas = [c for c in cedulas if c.get("estado") == estado]
     return {"ok": True, "cedulas": cedulas}
@@ -408,7 +426,7 @@ def api_cedulas(estado: str | None = None, persona=Depends(_persona)):
 @app.get("/api/cedulas/{id_cedula}")
 def api_cedula(id_cedula: str, persona=Depends(_persona)):
     permisos.exigir(persona, permisos.LEER_ESTADO)
-    cedula = db.buscar_cedula(id_cedula)
+    cedula = hub.buscar_cedula(id_cedula)
     # 404 también cuando existe pero no es visible: un 403 confirmaría que la
     # cédula está ahí y de quién es.
     if cedula is None or not permisos.puede_ver_cedula(cedula, persona):
@@ -422,10 +440,7 @@ def api_cedula(id_cedula: str, persona=Depends(_persona)):
 @app.get("/api/log")
 def api_log(limite: int = 50, persona=Depends(_persona)):
     permisos.exigir(persona, permisos.LEER_LOG)
-    return {
-        "ok": True,
-        "entradas": db.leer_log(limite=limite, identidades=_filtro_log(persona)),
-    }
+    return {"ok": True, "entradas": _log_visible(persona, limite)}
 
 
 # --- Ficha del cliente -------------------------------------------
@@ -789,10 +804,11 @@ def _html_login(error=""):
 
 
 def _html_panel(persona, cuij=None):
-    datos = db.leer_estado()
-    cedulas = permisos.filtrar_cedulas(datos.get("cedulas", []), persona)
-    pendientes = datos.get("pendientes", [])
-    entradas = db.leer_log(limite=20, identidades=_filtro_log(persona))
+    datos = hub.estado()
+    cedulas = hub.ordenar_por_fecha(permisos.filtrar_cedulas(datos["cedulas"], persona))
+    # Los pendientes todavía no tienen identidad: solo los ve un administrador.
+    pendientes = datos["pendientes"] if permisos.es_administrador(persona) else []
+    entradas = _log_visible(persona, 20)
 
     filas = []
     for cedula in cedulas:
@@ -830,6 +846,25 @@ def _html_panel(persona, cuij=None):
         )
     if not log_filas:
         log_filas.append('<tr><td colspan="6" class="aviso">Sin movimientos.</td></tr>')
+
+    pendientes_html = ""
+    if pendientes:
+        filas_pendientes = "".join(
+            "<tr>"
+            f"<td>{_e(p.get('id'))}</td>"
+            f"<td>{_e(p.get('caratula'))}</td>"
+            f"<td>{_e(p.get('cuij'))}</td>"
+            f"<td>{_e(p.get('tipo_sugerido'))}</td>"
+            f"<td>{_e(p.get('fecha_decreto'))}</td>"
+            "</tr>"
+            for p in pendientes
+        )
+        pendientes_html = (
+            "<h3>Pendientes de clasificar</h3>"
+            "<table><thead><tr><th>Id</th><th>Carátula</th><th>CUIJ</th>"
+            "<th>Tipo sugerido</th><th>Fecha del decreto</th></tr></thead>"
+            f"<tbody>{filas_pendientes}</tbody></table>"
+        )
 
     ficha_html = ""
     if cuij:
@@ -884,11 +919,12 @@ def _html_panel(persona, cuij=None):
   </div>
 
   <section>
-    <h2>Cédulas</h2>
+    <h2>Novedades</h2>
     <table>
       <thead><tr><th>Id</th><th>Carátula</th><th>CUIJ</th><th>Estado</th><th>Identidad</th></tr></thead>
       <tbody>{''.join(filas)}</tbody>
     </table>
+    {pendientes_html}
   </section>
 
   <section>
@@ -902,7 +938,7 @@ def _html_panel(persona, cuij=None):
   </section>
 
   <section>
-    <h2>Últimos movimientos</h2>
+    <h2>Actividad</h2>
     <table>
       <thead><tr><th>Fecha</th><th>Acción</th><th>Operador</th><th>Identidad</th><th>Cédula/CUIJ</th><th>Detalle</th></tr></thead>
       <tbody>{''.join(log_filas)}</tbody>

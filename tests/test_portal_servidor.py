@@ -4,23 +4,43 @@
 Todo corre contra una base SQLite y una carpeta de subidas temporales:
 ningún test toca `portal.db`, `portal_uploads/` ni `config.py` reales.
 """
+import json
 import os
 
 import pytest
 from fastapi.testclient import TestClient
 
-from portal import auth, db, permisos, servidor_portal
+import estado
+from portal import auth, db, hub, permisos, servidor_portal
 
 PDF = b"%PDF-1.4\n% cedula de prueba\n"
 CLAVE = "clave-segura-123"
 
 
 class Portal:
-    def __init__(self, cliente, config, tmp_path):
+    def __init__(self, cliente, config, tmp_path, ruta_estado, ruta_log):
         self.cliente = cliente
         self.config = config
         self.tmp_path = tmp_path
         self.uploads = os.path.join(str(tmp_path), "uploads")
+        self.ruta_estado = ruta_estado
+        self.ruta_log = ruta_log
+
+
+def _sembrar_estado(portal, cedulas=(), pendientes=()):
+    """Escribe el estado.json de tmp (la fuente de verdad del portal)."""
+    with open(portal.ruta_estado, "w", encoding="utf-8") as archivo:
+        json.dump(
+            {"cedulas": list(cedulas), "pendientes": list(pendientes)},
+            archivo, ensure_ascii=False,
+        )
+
+
+def _sembrar_log(portal, entradas):
+    """Agrega líneas al log_acciones.jsonl de tmp."""
+    with open(portal.ruta_log, "a", encoding="utf-8") as archivo:
+        for entrada in entradas:
+            archivo.write(json.dumps(entrada, ensure_ascii=False) + "\n")
 
 
 def _auditoria():
@@ -60,12 +80,17 @@ def portal(tmp_path, monkeypatch):
         db, "config_portal", lambda nombre, default=None: config.get(nombre, default)
     )
     monkeypatch.setattr(servidor_portal, "_ORIGENES", [])
+    # El portal lee el estado real: en tests, un estado.json de tmp.
+    ruta_estado = str(tmp_path / "estado.json")
+    ruta_log = str(tmp_path / "log_acciones.jsonl")
+    monkeypatch.setattr(estado, "ARCHIVO", ruta_estado)
+    monkeypatch.setattr(estado, "ARCHIVO_LOG", ruta_log)
     db.inicializar()
     db.crear_persona("santiago", "Santiago", mail="santiago@estudio.test")
     db.guardar_credencial("santiago", auth.hashear(CLAVE))
     db.crear_persona("jr", "Jr")
     db.guardar_credencial("jr", auth.hashear("clave-segura-456"))
-    return Portal(TestClient(servidor_portal.app), config, tmp_path)
+    return Portal(TestClient(servidor_portal.app), config, tmp_path, ruta_estado, ruta_log)
 
 
 def _login(portal, identificador="santiago", password=CLAVE):
@@ -78,7 +103,7 @@ def _login(portal, identificador="santiago", password=CLAVE):
 
 # --- Sesión -------------------------------------------------------
 def test_sin_sesion_da_401(portal):
-    assert portal.cliente.get("/api/estado").status_code == 401
+    assert portal.cliente.get("/api/portal/novedades").status_code == 401
 
 
 def test_login_incorrecto_no_abre_sesion(portal):
@@ -122,59 +147,144 @@ def test_persona_desactivada_no_entra(portal):
     assert r.status_code == 401
 
 
-# --- Estado -------------------------------------------------------
-def test_estado_arranca_vacio(portal):
+# --- Novedades y actividad (lectura del estado real) ---------------
+def test_novedades_arranca_vacio(portal):
     _login(portal)
-    r = portal.cliente.get("/api/estado")
+    r = portal.cliente.get("/api/portal/novedades")
     assert r.status_code == 200
-    assert r.json()["datos"] == {"cedulas": [], "pendientes": []}
-    assert r.json()["version"] == 0
+    assert r.json()["cedulas"] == []
+    assert r.json()["pendientes"] == []
 
 
-def test_estado_sembrado_se_lee_por_http(portal):
-    # El PUT se sacó (commit 2): el estado se siembra por db y se lee por GET.
-    # Con la cadena en "Santiago" (nombre) la cédula es visible para santiago.
+def test_novedades_lee_el_estado_json(portal):
     _login(portal)
-    db.sincronizar_estado(
-        {"cedulas": [{"id": "c1", "caratula": "Perez", "identidad_cadena": "Santiago"}]}
-    )
-    r = portal.cliente.get("/api/estado")
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "caratula": "Perez", "identidad_cadena": "Santiago",
+         "fecha_generada": "2026-11-01T10:00:00"},
+    ])
+    r = portal.cliente.get("/api/portal/novedades")
+    assert [c["id"] for c in r.json()["cedulas"]] == ["c1"]
+
+
+def test_novedades_no_devuelve_rutas_ni_textos(portal):
+    _login(portal)
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "identidad_cadena": "Santiago",
+         "ruta_pdf": "C:/privado/cedula.pdf",
+         "ruta_firmada": "C:/privado/firmada.pdf",
+         "texto_decreto": "texto que no debe salir"},
+    ])
+    cedula = portal.cliente.get("/api/portal/novedades").json()["cedulas"][0]
+    assert set(cedula) == set(hub.CAMPOS_CEDULA)
+    assert "ruta_pdf" not in cedula
+    assert "ruta_firmada" not in cedula
+    assert "texto_decreto" not in cedula
+
+
+def test_novedades_filtra_por_identidad(portal):
+    _login(portal)
+    _sembrar_estado(portal, cedulas=[
+        {"id": "propia", "identidad_cadena": "Santiago"},
+        {"id": "ajena", "identidad_cadena": "Jr"},
+        {"id": "sin_cadena"},
+    ])
+    ids = [
+        c["id"]
+        for c in portal.cliente.get("/api/portal/novedades").json()["cedulas"]
+    ]
+    assert ids == ["propia"]
+
+
+def test_novedades_admin_ve_todo(portal, monkeypatch):
+    config_actual = db.config_portal
+    monkeypatch.setattr(db, "config_portal", lambda nombre, default=None: (
+        ["santiago"] if nombre == "PORTAL_ADMINISTRADORES" else config_actual(nombre, default)
+    ))
+    _login(portal)
+    _sembrar_estado(portal, cedulas=[
+        {"id": "propia", "identidad_cadena": "Santiago"},
+        {"id": "ajena", "identidad_cadena": "Jr"},
+        {"id": "sin_cadena"},
+    ])
+    ids = {
+        c["id"]
+        for c in portal.cliente.get("/api/portal/novedades").json()["cedulas"]
+    }
+    assert ids == {"propia", "ajena", "sin_cadena"}
+
+
+def test_pendientes_ocultos_para_quien_no_es_admin(portal):
+    _login(portal)
+    _sembrar_estado(portal, pendientes=[{"id": "p1", "caratula": "Perez"}])
+    assert portal.cliente.get("/api/portal/novedades").json()["pendientes"] == []
+
+
+def test_admin_ve_los_pendientes(portal, monkeypatch):
+    config_actual = db.config_portal
+    monkeypatch.setattr(db, "config_portal", lambda nombre, default=None: (
+        ["santiago"] if nombre == "PORTAL_ADMINISTRADORES" else config_actual(nombre, default)
+    ))
+    _login(portal)
+    _sembrar_estado(portal, pendientes=[{"id": "p1", "caratula": "Perez"}])
+    pendientes = portal.cliente.get("/api/portal/novedades").json()["pendientes"]
+    assert [p["id"] for p in pendientes] == ["p1"]
+
+
+def test_estado_json_corrupto_no_rompe_el_portal(portal):
+    _login(portal)
+    with open(portal.ruta_estado, "w", encoding="utf-8") as archivo:
+        archivo.write("{ esto no es json")
+    r = portal.cliente.get("/api/portal/novedades")
     assert r.status_code == 200
-    assert r.json()["datos"]["cedulas"][0]["id"] == "c1"
-    assert r.json()["version"] == 1
+    assert r.json()["cedulas"] == []
+    assert portal.cliente.get("/panel").status_code == 200
 
 
-def test_estado_conserva_la_cadena_si_no_la_manda(portal):
-    # Convertido del PUT /api/estado (commit 2): mismo contrato, contra db.
-    db.sincronizar_estado({"cedulas": [{"id": "c1", "identidad_cadena": "jr"}]})
-    db.sincronizar_estado({"cedulas": [{"id": "c1", "caratula": "Perez"}]})
-    assert db.buscar_cedula("c1")["identidad_cadena"] == "jr"
-
-
-def test_estado_sincroniza_sin_borrar_las_que_no_vienen(portal):
-    # Convertido del PUT /api/estado (commit 2): sincronizar agrega, no borra.
-    db.sincronizar_estado({"cedulas": [{"id": "c1"}]})
-    db.sincronizar_estado({"cedulas": [{"id": "c2"}]})
-    assert [c["id"] for c in db.leer_estado()["cedulas"]] == ["c1", "c2"]
-
-
-def test_estado_no_puede_cambiar_una_cadena(portal):
-    # Convertido del PUT /api/estado (commit 2): D25 se sostiene en db.
-    db.sincronizar_estado({"cedulas": [{"id": "c1", "identidad_cadena": "jr"}]})
-    with pytest.raises(db.ConflictoCadena):
-        db.sincronizar_estado(
-            {"cedulas": [{"id": "c1", "identidad_cadena": "santiago"}]}
-        )
-    assert db.buscar_cedula("c1")["identidad_cadena"] == "jr"
-
-
-# --- Log ----------------------------------------------------------
-def test_leer_log(portal):
+# --- Actividad (log real) -----------------------------------------
+def test_actividad_lee_el_jsonl(portal):
     _login(portal)
-    db.agregar_log("generada", id_cedula="c1", operador="Santiago", detalle="ok")
-    entradas = portal.cliente.get("/api/log").json()["entradas"]
+    _sembrar_log(portal, [
+        {"fecha_hora": "2026-11-01T10:00:00", "accion": "generada",
+         "identidad": "Santiago", "operador": "Santiago", "id": "c1"},
+    ])
+    entradas = portal.cliente.get("/api/portal/actividad").json()["entradas"]
     assert entradas[0]["accion"] == "generada"
     assert entradas[0]["operador"] == "Santiago"
+
+
+def test_log_tambien_lee_del_hub(portal):
+    _login(portal)
+    _sembrar_log(portal, [
+        {"fecha_hora": "1", "accion": "generada", "identidad": "Santiago"},
+    ])
+    assert portal.cliente.get("/api/log").json()["entradas"][0]["accion"] == "generada"
+
+
+def test_actividad_filtra_por_identidad_con_acentos(portal):
+    # "José" no lo baja lower() de SQLite: el filtro tiene que ser en Python.
+    db.crear_persona("jose", "José")
+    db.guardar_credencial("jose", auth.hashear("clave-jose-1234"))
+    _login(portal, identificador="jose", password="clave-jose-1234")
+    _sembrar_log(portal, [
+        {"fecha_hora": "1", "accion": "generada", "identidad": "José"},
+        {"fecha_hora": "2", "accion": "generada", "identidad": "JOSÉ"},
+        {"fecha_hora": "3", "accion": "generada", "identidad": "Jr"},
+    ])
+    entradas = portal.cliente.get("/api/portal/actividad").json()["entradas"]
+    assert [e["identidad"] for e in entradas] == ["JOSÉ", "José"]
+
+
+def test_actividad_aplica_el_limite_despues_de_filtrar(portal):
+    _login(portal)
+    _sembrar_log(portal, [
+        {"fecha_hora": "1", "accion": "generada", "identidad": "Santiago"},
+        {"fecha_hora": "2", "accion": "generada", "identidad": "Jr"},
+        {"fecha_hora": "3", "accion": "generada", "identidad": "Jr"},
+    ])
+    # Si el límite se aplicara antes del filtro, el único resultado sería "Jr".
+    entradas = portal.cliente.get("/api/portal/actividad?limite=1").json()["entradas"]
+    assert len(entradas) == 1
+    assert entradas[0]["identidad"] == "Santiago"
 
 
 def test_log_rechaza_accion_vacia(portal):
@@ -202,12 +312,15 @@ def test_ficha_ida_y_vuelta(portal):
 # persona.
 def test_cedula_cadena_de_otra_persona_frena(portal):
     _login(portal)
+    # La cédula es de Jr (en el estado real); santiago no puede verla.
+    _sembrar_estado(portal, cedulas=[{"id": "c1", "identidad_cadena": "Jr"}])
+    # Y en db, D25 sigue frenando el cruce.
     db.guardar_cedula({"id": "c1", "identidad_cadena": "jr"})
     with pytest.raises(db.ConflictoCadena, match="D25"):
         db.guardar_cedula({"id": "c1", "identidad_cadena": "santiago"})
     with pytest.raises(db.ConflictoCadena, match="D25"):
         db.fijar_cadena_cedula("c1", "santiago")
-    # Y por HTTP no puede verla: 404, no 403 (no se filtra que existe).
+    # 404, no 403 (no se filtra que existe).
     assert portal.cliente.get("/api/cedulas/c1").status_code == 404
     assert db.buscar_cedula("c1")["identidad_cadena"] == "jr"
 
@@ -226,8 +339,10 @@ def test_cedula_inexistente_da_404(portal):
 
 def test_filtrar_cedulas_por_estado(portal):
     _login(portal)
-    db.guardar_cedula({"id": "c1", "estado": "generada", "identidad_cadena": "Santiago"})
-    db.guardar_cedula({"id": "c2", "estado": "presentada", "identidad_cadena": "Santiago"})
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "estado": "generada", "identidad_cadena": "Santiago"},
+        {"id": "c2", "estado": "presentada", "identidad_cadena": "Santiago"},
+    ])
     r = portal.cliente.get("/api/cedulas?estado=generada")
     assert [c["id"] for c in r.json()["cedulas"]] == ["c1"]
 
@@ -236,7 +351,9 @@ def test_filtrar_cedulas_por_estado(portal):
 def test_subir_y_descargar_pdf(portal):
     _login(portal)
     # El PDF pertenece a una cédula: sin cadena propia el documento no se ve.
-    db.guardar_cedula({"id": "c1", "cuij": "CUIJ-1", "identidad_cadena": "Santiago"})
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "cuij": "CUIJ-1", "identidad_cadena": "Santiago"},
+    ])
     r = portal.cliente.post(
         "/api/documentos",
         files={"archivo": ("cedula.pdf", PDF, "application/pdf")},
@@ -607,9 +724,11 @@ def test_administrador_ve_todo(portal, monkeypatch):
 
 def test_api_cedulas_filtra_y_api_cedula_da_404(portal):
     _login(portal)
-    db.guardar_cedula({"id": "c1", "identidad_cadena": "Santiago"})
-    db.guardar_cedula({"id": "c2", "identidad_cadena": "Jr"})
-    db.guardar_cedula({"id": "c3"})
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "identidad_cadena": "Santiago"},
+        {"id": "c2", "identidad_cadena": "Jr"},
+        {"id": "c3"},
+    ])
     r = portal.cliente.get("/api/cedulas")
     assert [c["id"] for c in r.json()["cedulas"]] == ["c1"]
     assert portal.cliente.get("/api/cedulas/c1").status_code == 200
@@ -617,25 +736,21 @@ def test_api_cedulas_filtra_y_api_cedula_da_404(portal):
     assert portal.cliente.get("/api/cedulas/c3").status_code == 404
 
 
-def test_api_estado_filtra_las_cedulas(portal):
-    _login(portal)
-    db.guardar_cedula({"id": "c1", "identidad_cadena": "Santiago"})
-    db.guardar_cedula({"id": "c2", "identidad_cadena": "Jr"})
-    datos = portal.cliente.get("/api/estado").json()["datos"]
-    assert [c["id"] for c in datos["cedulas"]] == ["c1"]
-
-
 def test_api_log_filtra_por_identidad(portal):
     _login(portal)
-    db.agregar_log("generada", identidad="Santiago", operador="Santiago")
-    db.agregar_log("generada", identidad="Jr", operador="Jr")
+    _sembrar_log(portal, [
+        {"fecha_hora": "1", "accion": "generada", "identidad": "Santiago"},
+        {"fecha_hora": "2", "accion": "generada", "identidad": "Jr"},
+    ])
     entradas = portal.cliente.get("/api/log").json()["entradas"]
     assert [e["identidad"] for e in entradas] == ["Santiago"]
 
 
 def test_pdf_de_otra_identidad_da_404(portal):
     _login(portal)
-    db.guardar_cedula({"id": "c1", "cuij": "CUIJ-1", "identidad_cadena": "Jr"})
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "cuij": "CUIJ-1", "identidad_cadena": "Jr"},
+    ])
     r = portal.cliente.post(
         "/api/documentos",
         files={"archivo": ("cedula.pdf", PDF, "application/pdf")},
@@ -645,6 +760,35 @@ def test_pdf_de_otra_identidad_da_404(portal):
     assert portal.cliente.get(f"/api/documentos/{documento['id']}").status_code == 404
 
 
+# --- Cadena con delegación (D25 + puede_actuar_como) ---------------
+def test_verificar_cadena_con_delegacion_pasa(portal):
+    db.fijar_puede_actuar_como("santiago", ["Jr"])
+    persona = db.obtener_persona("santiago")
+    cedula = {"id": "c1", "identidad_cadena": "Jr"}
+    # Devuelve la identidad de la CÉDULA, no la propia.
+    assert permisos.verificar_cadena(cedula, persona) == "Jr"
+
+
+def test_verificar_cadena_sin_delegacion_frena(portal):
+    persona = db.obtener_persona("santiago")
+    cedula = {"id": "c1", "identidad_cadena": "Jr"}
+    with pytest.raises(permisos.ErrorPermiso, match="D25"):
+        permisos.verificar_cadena(cedula, persona)
+
+
 def test_identidad_de_usa_el_nombre_y_no_el_persona_id(portal):
     persona = db.obtener_persona("santiago")
     assert permisos.identidad_de(persona) == "Santiago"
+
+
+def test_api_estado_ya_no_existe(portal):
+    _login(portal)
+    # Lo reemplaza /api/portal/novedades (commit 4a).
+    assert portal.cliente.get("/api/estado").status_code == 404
+
+
+def test_panel_muestra_novedades_y_actividad(portal):
+    _login(portal)
+    texto = portal.cliente.get("/panel").text
+    assert "Novedades" in texto
+    assert "Actividad" in texto
