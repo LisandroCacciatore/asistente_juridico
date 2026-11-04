@@ -38,6 +38,27 @@ CAMPOS_CEDULA = (
 #: Campos de un pendiente (los textos largos no salen del hub).
 CAMPOS_PENDIENTE = ("id", "caratula", "cuij", "tipo_sugerido", "fecha_decreto")
 
+#: Campos de una entrada del log. `usuario` y `maquina` son el usuario de
+#: Windows y el nombre de la PC: solo salen para un administrador.
+CAMPOS_ACTIVIDAD = (
+    "fecha_hora",
+    "accion",
+    "id",
+    "caratula",
+    "cuij",
+    "operador",
+    "identidad",
+    "detalle",
+)
+CAMPOS_ACTIVIDAD_ORIGEN = ("usuario", "maquina")
+
+#: El `detalle` de una entrada puede traer rutas locales: se recorta.
+TOPE_DETALLE_ACTIVIDAD = 200
+
+#: Techo de `?limite=` en los listados (el hub relee el archivo en cada pedido).
+LIMITE_MAXIMO = 200
+LIMITE_POR_DEFECTO = 50
+
 _REINTENTOS_LECTURA = 3
 
 
@@ -144,8 +165,12 @@ def buscar_cedula(id_cedula, ruta_estado=None, ruta_log=None):
     return None
 
 
-def actividad(ruta_log=None):
-    """Entradas del log, más nuevas primero, sin filtrar.
+def actividad(ruta_log=None, incluir_origen=False):
+    """Entradas del log, más nuevas primero, recortadas a campos fijos.
+
+    `incluir_origen=True` agrega `usuario` y `maquina` (usuario de Windows y
+    nombre de la PC): solo para un administrador. El `detalle` se recorta a
+    200 caracteres porque puede traer rutas locales.
 
     El filtro por identidad lo aplica el servidor (en Python, con
     `permisos.normalizar`) y el límite va DESPUÉS de filtrar.
@@ -154,7 +179,7 @@ def actividad(ruta_log=None):
     if not ruta or not os.path.isfile(ruta):
         _avisar(f"No está {ruta or 'log_acciones.jsonl'}: no hay actividad.")
         return []
-    entradas = []
+    crudas = []
     try:
         with open(ruta, encoding="utf-8") as archivo:
             for numero, linea in enumerate(archivo, 1):
@@ -162,7 +187,7 @@ def actividad(ruta_log=None):
                 if not linea:
                     continue
                 try:
-                    entradas.append(json.loads(linea))
+                    crudas.append(json.loads(linea))
                 except json.JSONDecodeError:
                     # Una escritura concurrente puede dejar la última línea a
                     # medio escribir: se ignora esa línea, no todo el archivo.
@@ -170,11 +195,14 @@ def actividad(ruta_log=None):
     except OSError as e:
         _avisar(f"No pude leer {ruta} ({e}): no hay actividad.")
         return []
-    entradas = [e for e in entradas if isinstance(e, dict)]
-    entradas.reverse()
-    for entrada in entradas:
-        entrada.setdefault("usuario", "")
-        entrada.setdefault("maquina", "")
-        entrada.setdefault("operador", entrada.get("usuario", ""))
-        entrada.setdefault("identidad", "")
-    return entradas
+    campos = CAMPOS_ACTIVIDAD + (
+        CAMPOS_ACTIVIDAD_ORIGEN if incluir_origen else ()
+    )
+    salida = []
+    for entrada in reversed(crudas):
+        if not isinstance(entrada, dict):
+            continue
+        limpia = _campos(entrada, campos)
+        limpia["detalle"] = limpia["detalle"][:TOPE_DETALLE_ACTIVIDAD]
+        salida.append(limpia)
+    return salida

@@ -356,21 +356,31 @@ def api_salud():
 
 
 # --- Lectura del estado real (solo lectura) ------------------------
+def _limite(valor, tope=hub.LIMITE_MAXIMO):
+    """`?limite=` acotado a 1..200 (0 o negativo no tiene sentido)."""
+    try:
+        numero = int(valor)
+    except (TypeError, ValueError):
+        return hub.LIMITE_POR_DEFECTO
+    return max(1, min(numero, tope))
+
+
 def _log_visible(persona, limite):
     """Actividad visible: filtro por identidad en Python y límite DESPUÉS.
 
     El filtro va en Python con `permisos.normalizar` (no en SQL): `lower()` de
     SQLite solo baja ASCII, así que "José" o "Peña" no coincidirían.
     """
-    entradas = hub.actividad()
-    if not permisos.es_administrador(persona):
+    admin = permisos.es_administrador(persona)
+    # `usuario` y `maquina` son el usuario de Windows y el nombre de la PC:
+    # solo salen para un administrador.
+    entradas = hub.actividad(incluir_origen=admin)
+    if not admin:
         visibles = {permisos.normalizar(i) for i in permisos.identidades_de(persona)}
         entradas = [
             e for e in entradas if permisos.normalizar(e.get("identidad")) in visibles
         ]
-    if limite:
-        entradas = entradas[: int(limite)]
-    return entradas
+    return entradas[: _limite(limite)]
 
 
 @app.get("/api/portal/novedades")
@@ -379,10 +389,10 @@ def api_portal_novedades(limite: int = 50, persona=Depends(_persona)):
     permisos.exigir(persona, permisos.LEER_ESTADO)
     datos = hub.estado()
     cedulas = permisos.filtrar_cedulas(datos["cedulas"], persona)
-    cedulas = hub.ordenar_por_fecha(cedulas)[: int(limite)]
+    cedulas = hub.ordenar_por_fecha(cedulas)[: _limite(limite)]
     # Los pendientes todavía no tienen identidad: los ve solo un admin.
     pendientes = (
-        datos["pendientes"][: int(limite)]
+        datos["pendientes"][: _limite(limite)]
         if permisos.es_administrador(persona)
         else []
     )
@@ -430,7 +440,12 @@ def api_log(limite: int = 50, persona=Depends(_persona)):
 @app.get("/api/documentos")
 def api_documentos(cuij: str | None = None, persona=Depends(_persona)):
     permisos.exigir(persona, permisos.LEER_FICHA)
-    return {"ok": True, "documentos": db.listar_documentos(cuij=cuij)}
+    # El listado también filtra: si no, se ven nombres y CUIJ de PDF ajenos.
+    documentos = [
+        d for d in db.listar_documentos(cuij=cuij)
+        if _documento_visible(d, persona)
+    ]
+    return {"ok": True, "documentos": documentos}
 
 
 @app.post("/api/documentos")
@@ -762,7 +777,7 @@ def _html_panel(persona):
             f"<td>{_e(entrada.get('accion'))}</td>"
             f"<td>{_e(entrada.get('operador'))}</td>"
             f"<td>{_e(entrada.get('identidad'))}</td>"
-            f"<td>{_e(entrada.get('id_cedula') or entrada.get('cuij'))}</td>"
+            f"<td>{_e(entrada.get('id') or entrada.get('cuij'))}</td>"
             f"<td>{_e(entrada.get('detalle'))}</td>"
             "</tr>"
         )

@@ -757,3 +757,100 @@ def test_panel_muestra_novedades_y_actividad(portal):
     texto = portal.cliente.get("/panel").text
     assert "Novedades" in texto
     assert "Actividad" in texto
+
+
+# --- Fugas del hub: límites, origen y listado ----------------------
+def test_limite_por_abajo_es_uno():
+    assert servidor_portal._limite(0) == 1
+    assert servidor_portal._limite(-5) == 1
+
+
+def test_limite_por_arriba_es_200():
+    assert servidor_portal._limite(999999) == hub.LIMITE_MAXIMO
+    assert servidor_portal._limite(hub.LIMITE_MAXIMO) == hub.LIMITE_MAXIMO
+
+
+def test_limite_invalido_usa_el_default():
+    assert servidor_portal._limite("no-es-numero") == hub.LIMITE_POR_DEFECTO
+
+
+@pytest.mark.parametrize("limite, esperado", [(0, 1), (-5, 1), (999999, 3)])
+def test_actividad_respeta_el_limite_pedido(portal, limite, esperado):
+    _login(portal)
+    _sembrar_log(portal, [
+        {"fecha_hora": str(numero), "accion": "generada", "identidad": "Santiago"}
+        for numero in range(3)
+    ])
+    entradas = portal.cliente.get(
+        f"/api/portal/actividad?limite={limite}"
+    ).json()["entradas"]
+    assert len(entradas) == esperado
+
+
+def test_novedades_respeta_el_limite(portal):
+    _login(portal)
+    _sembrar_estado(portal, cedulas=[
+        {"id": f"c{numero}", "identidad_cadena": "Santiago",
+         "fecha_generada": f"2026-11-0{numero + 1}T00:00:00"}
+        for numero in range(3)
+    ])
+    assert len(
+        portal.cliente.get("/api/portal/novedades?limite=999999").json()["cedulas"]
+    ) == 3
+    assert len(
+        portal.cliente.get("/api/portal/novedades?limite=1").json()["cedulas"]
+    ) == 1
+
+
+def test_actividad_no_expone_usuario_ni_maquina(portal):
+    _login(portal)
+    _sembrar_log(portal, [{
+        "fecha_hora": "1", "accion": "generada", "identidad": "Santiago",
+        "usuario": "Torso", "maquina": "PC-LIS",
+    }])
+    entrada = portal.cliente.get("/api/portal/actividad").json()["entradas"][0]
+    assert "usuario" not in entrada
+    assert "maquina" not in entrada
+
+
+def test_actividad_admin_si_ve_usuario_y_maquina(portal, monkeypatch):
+    config_actual = db.config_portal
+    monkeypatch.setattr(db, "config_portal", lambda nombre, default=None: (
+        ["santiago"] if nombre == "PORTAL_ADMINISTRADORES" else config_actual(nombre, default)
+    ))
+    _login(portal)
+    _sembrar_log(portal, [{
+        "fecha_hora": "1", "accion": "generada", "identidad": "Santiago",
+        "usuario": "Torso", "maquina": "PC-LIS",
+    }])
+    entrada = portal.cliente.get("/api/portal/actividad").json()["entradas"][0]
+    assert entrada["usuario"] == "Torso"
+    assert entrada["maquina"] == "PC-LIS"
+
+
+def test_listado_de_documentos_filtra_por_identidad(portal):
+    _login(portal)
+    _sembrar_estado(portal, cedulas=[
+        {"id": "propia", "cuij": "CUIJ-1", "identidad_cadena": "Santiago"},
+        {"id": "ajena", "cuij": "CUIJ-2", "identidad_cadena": "Jr"},
+    ])
+    for cuij in ("CUIJ-1", "CUIJ-2"):
+        r = portal.cliente.post(
+            "/api/documentos",
+            files={"archivo": (f"{cuij}.pdf", PDF, "application/pdf")},
+            data={"cuij": cuij},
+        )
+        assert r.status_code == 200
+    documentos = portal.cliente.get("/api/documentos").json()["documentos"]
+    assert [d["cuij"] for d in documentos] == ["CUIJ-1"]
+
+
+def test_panel_muestra_el_id_de_la_cedula_en_actividad(portal):
+    _login(portal)
+    _sembrar_log(portal, [{
+        "fecha_hora": "2026-11-01T10:00:00", "accion": "generada",
+        "identidad": "Santiago", "id": "c1", "cuij": "CUIJ-1",
+    }])
+    texto = portal.cliente.get("/panel").text
+    assert "2026-11-01T10:00:00" in texto
+    assert ">c1<" in texto

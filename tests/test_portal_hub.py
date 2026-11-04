@@ -109,6 +109,85 @@ def test_actividad_faltante_devuelve_vacio(rutas, caplog):
     assert "No está" in caplog.text
 
 
+def _escribir_log(ruta, entradas):
+    with open(ruta, "a", encoding="utf-8") as archivo:
+        for entrada in entradas:
+            archivo.write(json.dumps(entrada, ensure_ascii=False) + "\n")
+
+
+def test_actividad_recorta_campos_y_esconde_el_origen(rutas):
+    _ruta_estado, ruta_log = rutas
+    _escribir_log(ruta_log, [{
+        "fecha_hora": "2026-11-01T10:00:00", "accion": "generada",
+        "id": "c1", "caratula": "Perez", "cuij": "CUIJ-1",
+        "operador": "Santiago", "identidad": "Santiago",
+        "detalle": "x" * 500, "usuario": "Torso", "maquina": "PC-LIS",
+        "campo_raro": "no debe salir",
+    }])
+
+    normal = hub.actividad(ruta_log=ruta_log)[0]
+    assert set(normal) == set(hub.CAMPOS_ACTIVIDAD)
+    assert len(normal["detalle"]) == hub.TOPE_DETALLE_ACTIVIDAD
+    assert "usuario" not in normal and "maquina" not in normal
+    assert "campo_raro" not in normal
+
+    admin = hub.actividad(ruta_log=ruta_log, incluir_origen=True)[0]
+    assert admin["usuario"] == "Torso"
+    assert admin["maquina"] == "PC-LIS"
+
+
+def test_hub_expone_los_nombres_reales_de_estado(tmp_path, monkeypatch):
+    """Integración con las funciones REALES de estado.py (no dicts a mano)."""
+    import estado
+
+    monkeypatch.setattr(estado, "ARCHIVO", str(tmp_path / "estado.json"))
+    monkeypatch.setattr(estado, "ARCHIVO_LOG", str(tmp_path / "log.jsonl"))
+
+    base = {
+        "caratula": "Perez", "cuij": "CUIJ-1", "tipo": "estandar",
+        "ruta_pdf": "C:/privado/cedula.pdf", "ruta_firmada": None,
+        "estado": "generada", "identidad_cadena": "Santiago",
+    }
+    estado.registrar_cedula(
+        {"id": "vieja", **base, "fecha_generada": "2026-01-01T00:00:00"}
+    )
+    estado.registrar_cedula(
+        {"id": "nueva", **base, "fecha_generada": "2026-11-01T00:00:00"}
+    )
+    estado.agregar_pendiente({
+        "id": "p1", "caratula": "Gomez", "cuij": "CUIJ-2",
+        "tipo_sugerido": "aud51", "fecha_decreto": "2026-10-01",
+        "texto_decreto": "no debe salir", "destinatarios": [{"n": "x"}],
+    })
+    estado.marcar_firmada("nueva", "C:/privado/firmada.pdf", identidad="Santiago")
+    estado.registrar_log(
+        "firmada", "nueva", "Perez", "CUIJ-1", "ok", identidad="Santiago"
+    )
+
+    cedulas = hub.cedulas()
+    # El orden por fecha usa la clave real (`fecha_generada`).
+    assert [c["id"] for c in cedulas] == ["nueva", "vieja"]
+    nueva = cedulas[0]
+    assert nueva["tipo"] == "estandar"
+    assert nueva["fecha_generada"] == "2026-11-01T00:00:00"
+    assert nueva["fecha_firmada"]
+    assert nueva["estado"] == "firmada"
+    assert set(nueva) == set(hub.CAMPOS_CEDULA)
+    assert "ruta_firmada" not in nueva
+
+    pendiente = hub.estado()["pendientes"][0]
+    assert pendiente["tipo_sugerido"] == "aud51"
+    assert pendiente["fecha_decreto"] == "2026-10-01"
+    assert "texto_decreto" not in pendiente
+
+    # El log real guarda el id de la cédula en `id` y la fecha en `fecha_hora`.
+    entrada = hub.actividad()[0]
+    assert entrada["accion"] == "firmada"
+    assert entrada["id"] == "nueva"
+    assert entrada["fecha_hora"]
+    assert entrada["cuij"] == "CUIJ-1"
+
+
 def test_rutas_por_defecto_salen_del_modulo_estado(monkeypatch, tmp_path):
     import estado
 
