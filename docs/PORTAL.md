@@ -213,58 +213,63 @@ es a propósito: el módulo usa imports del paquete `portal`.
 Todos los que no son login/salud piden la cookie de sesión. Los errores
 salen como `{"ok": false, "error": "..."}`.
 
-| Método y ruta | Para qué |
-|---|---|
-| `GET /` | Login (o redirige a `/panel` si ya hay sesión) |
-| `POST /login` | Abre sesión y firma la cookie |
-| `POST /logout` | Cierra la sesión en la base y borra la cookie |
-| `GET /panel` | Panel HTML mínimo |
-| `GET /api/sesion` | Quién está autenticado |
-| `GET /api/salud` | Chequeo sin login |
-| `GET /api/estado` | Lee estado + versión |
-| `PUT /api/estado` | Sincroniza cédulas/pendientes sin romper cadenas |
-| `GET /api/cedulas` | Lista cédulas (filtro `?estado=`) |
-| `GET /api/cedulas/{id}` | Una cédula |
-| `PUT /api/cedulas/{id}` | Alta/actualización de una cédula |
-| `POST /api/cedulas/{id}/cadena` | Fija la identidad en el primer acto (D25) |
-| `POST /api/cedulas/{id}/presentar` | Marca presentada con anti-duplicado (D22) |
-| `GET /api/log` | Últimas entradas (`?limite=`) |
-| `POST /api/log` | Agrega una entrada con operador e identidad |
-| `GET /api/ficha/{cuij}` | Lee la ficha |
-| `PUT /api/ficha/{cuij}` | Mezcla claves en la ficha |
-| `GET /api/documentos` | Lista documentos (`?cuij=`) |
-| `POST /api/documentos` | Sube un PDF (multipart, tope `PORTAL_MAX_SUBIDA_MB`) |
-| `GET /api/documentos/{id}` | Sirve el PDF (inline, solo si está dentro de `PORTAL_UPLOADS`) |
-| `GET /api/personas` | Personas activas, sin hash |
-| `GET /api/admin/personas` | Administración (solo `PORTAL_ADMINISTRADORES`) |
-| `POST /api/admin/personas` | Crea persona (admin) |
-| `PUT /api/admin/personas/{id}` | Actualiza persona (admin) |
-| `POST /api/admin/personas/{id}/password` | Cambia clave (admin) |
-| `POST /api/admin/personas/{id}/desactivar` | Desactiva y cierra sesiones (admin) |
-| `POST /api/admin/sesiones-borrar` | Borra todas las sesiones (admin) |
+El portal **no escribe cédulas**: las rutas de escritura de estado, cédulas
+y log se sacaron en el commit 2. Lo que queda por HTTP es lectura, sesión,
+ficha, documentos y administración.
 
-### La cadena (D25) en el servidor
+| Método y ruta | Tipo | Para qué |
+|---|---|---|
+| `GET /` | lectura | Login (o redirige a `/panel` si ya hay sesión) |
+| `POST /login` | sesión | Abre sesión, firma la cookie y audita (`login` / `login_fallido`) |
+| `POST /logout` | sesión | Cierra la sesión en la base, borra la cookie y audita (`logout`) |
+| `GET /panel` | lectura | Panel HTML mínimo (solo consulta) |
+| `GET /api/sesion` | lectura | Quién está autenticado |
+| `GET /api/salud` | lectura | Chequeo sin login |
+| `GET /api/estado` | lectura | Lee estado + versión |
+| `GET /api/cedulas` | lectura | Lista cédulas (filtro `?estado=`) |
+| `GET /api/cedulas/{id}` | lectura | Una cédula |
+| `GET /api/log` | lectura | Últimas entradas (`?limite=`) |
+| `GET /api/ficha/{cuij}` | lectura | Lee la ficha |
+| `PUT /api/ficha/{cuij}` | escritura | Mezcla claves en la ficha |
+| `GET /api/documentos` | lectura | Lista documentos (`?cuij=`) |
+| `POST /api/documentos` | escritura | Sube un PDF (multipart, tope `PORTAL_MAX_SUBIDA_MB`) |
+| `GET /api/documentos/{id}` | lectura | Sirve el PDF (inline, solo si está dentro de `PORTAL_UPLOADS`) |
+| `GET /api/personas` | lectura | Personas activas, sin hash |
+| `GET /api/admin/personas` | admin | Lista todas (solo `PORTAL_ADMINISTRADORES`) |
+| `POST /api/admin/personas` | admin | Crea persona |
+| `PUT /api/admin/personas/{id}` | admin | Actualiza persona |
+| `POST /api/admin/personas/{id}/password` | admin | Cambia clave |
+| `POST /api/admin/personas/{id}/desactivar` | admin | Desactiva y cierra sesiones |
+| `POST /api/admin/sesiones-borrar` | admin | Borra todas las sesiones |
 
-La identidad de una cédula queda en `identidad_cadena`. El servidor la
-respeta en los tres caminos que la pueden tocar:
+Borrados en el commit 2: `PUT /api/estado`, `PUT /api/cedulas/{id}`,
+`POST /api/cedulas/{id}/cadena`, `POST /api/cedulas/{id}/presentar` y
+`POST /api/log`. Responden 404/405.
 
-- `PUT /api/estado` **sincroniza** (agrega/actualiza, no borra) y conserva
-  la cadena ya fijada; si el pedido intenta cambiarla, responde 403.
-- `PUT /api/cedulas/{id}` conserva la cadena existente; un pedido con otra
-  identidad se rechaza.
-- `POST /api/cedulas/{id}/presentar` chequea la cadena **dentro de la misma
-  transacción** que inserta la presentación: o se presenta con la identidad
-  correcta, o no se presenta. La PK de `presentaciones` devuelve 409 si ya
-  estaba presentada.
+### Auditoría y log de cédulas
 
-`POST /api/cedulas/{id}/cadena` es el primer acto: fija la identidad de la
-persona autenticada y no se puede corregir después. El operador puede ser
-distinto de la identidad (D18); lo que no se puede es mezclar.
+Son dos registros distintos:
 
-En el portal, `operador` e `identidad` salen de la sesión autenticada.
-`usuario`/`maquina` del pedido son informativos: el hub no puede verificar
-el usuario de Windows de la máquina del cliente. El control cruzado fuerte
-sigue siendo el login del portal.
+- **`auditoria`** (tabla de `portal.db`): quién entró y quién salió. Las
+  filas las escribe `db.registrar_auditoria(persona_id, accion, ip, detalle)`
+  desde `login` y `logout`. El `detalle` se recorta a 80 caracteres.
+- **`log_acciones` / `log_acciones.jsonl`**: solo actos sobre cédulas.
+  `db.agregar_log` escribe la tabla y el servidor deja el helper
+  `_registrar_log(persona, request, accion, ...)` (commit 4), con
+  `identidad` y `operador` = nombre de la persona de la sesión.
+
+### La cadena (D25)
+
+La identidad de una cédula queda en `identidad_cadena` (el **nombre** de la
+persona, ej. `"Santiago"`). La regla vive en `portal/db.py`:
+`guardar_cedula`, `sincronizar_estado`, `fijar_cadena_cedula` y
+`presentar_cedula` conservan la cadena ya fijada y rechazan un pedido que
+intente cambiarla (`ConflictoCadena`, D25). `presentar_cedula` chequea la
+cadena dentro de la misma transacción que inserta la presentación, y la PK
+de `presentaciones` frena el duplicado (D22).
+
+El operador puede ser distinto de la identidad (D18); lo que no se puede es
+mezclar. El control cruzado fuerte sigue siendo el login del portal.
 
 ### Seguridad del servidor
 
@@ -284,9 +289,9 @@ sigue siendo el login del portal.
 ### Panel mínimo
 
 `/` y `/panel` sirven un HTML sin dependencias externas: login, resumen,
-tabla de cédulas con botones *Presentar* / *Fijar cadena*, búsqueda de ficha
-por CUIJ, notas, documentos y los últimos movimientos. Es un panel de
-trabajo, no la UI final: alcanza para validar el contrato y operar el hub.
+tabla de cédulas (solo lectura), búsqueda de ficha por CUIJ, notas,
+documentos y los últimos movimientos. Es un panel de trabajo, no la UI
+final: alcanza para validar el contrato y consultar el hub.
 
 ## Cómo verificar
 
@@ -298,7 +303,7 @@ Los tests del portal son `tests/test_portal_db.py`,
 `tests/test_portal_auth.py`, `tests/test_portal_admin.py`,
 `tests/test_portal_permisos.py` y `tests/test_portal_servidor.py`. Los del
 Paso 0 siguen en `tests/test_reset_registros.py` y el del lock reentrante
-en `tests/test_estado_atomico.py`. Al cierre del Paso 1b: **381 passed**.
+en `tests/test_estado_atomico.py`.
 
 ## Qué NO hace el Paso 1b
 

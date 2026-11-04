@@ -140,26 +140,8 @@ async def _error_valor(request: Request, exc: ValueError):
 
 
 # --- Modelos ------------------------------------------------------
-class EstadoIn(BaseModel):
-    datos: dict
-
-
-class CedulaIn(BaseModel):
-    cedula: dict
-
-
 class FichaIn(BaseModel):
     datos: dict
-
-
-class LogIn(BaseModel):
-    accion: str
-    id_cedula: str = ""
-    caratula: str = ""
-    cuij: str = ""
-    detalle: str = ""
-    usuario: str = ""
-    maquina: str = ""
 
 
 class PersonaIn(BaseModel):
@@ -212,6 +194,35 @@ def _nombre_seguro(nombre):
     return nombre[:120]
 
 
+def _ip_cliente(request):
+    """IP del cliente para la auditoría ('' si no se puede saber)."""
+    cliente = getattr(request, "client", None)
+    return str(getattr(cliente, "host", "") or "")
+
+
+def _registrar_log(persona, request, accion, id_cedula="", caratula="",
+                   cuij="", detalle=""):
+    """Deja en `log_acciones` (tabla del portal) un acto sobre una CÉDULA.
+
+    Solo para cédulas: el login, el logout y los rechazos van a
+    `auditoria` y no ensucian este log. Recibe la persona ya resuelta.
+    Lo usan los endpoints que actúan sobre cédulas (ver commit 4).
+    """
+    # `identidad_cadena` guarda el NOMBRE (ej. "Santiago"), no el persona_id.
+    return db.agregar_log(
+        accion,
+        id_cedula=id_cedula,
+        caratula=caratula,
+        cuij=cuij,
+        detalle=detalle,
+        usuario="portal",
+        maquina=_ip_cliente(request),
+        operador=persona["nombre"],
+        identidad=persona["nombre"],
+        persona_id=persona["persona_id"],
+    )
+
+
 def _cuij_seguro(cuij):
     """CUIJ apto para nombrar una carpeta: solo letras, números y guiones."""
     limpio = re.sub(r"[^0-9A-Za-z-]+", "", str(cuij or ""))
@@ -243,11 +254,13 @@ def inicio(request: Request):
 
 @app.post("/login")
 def login(
+    request: Request,
     identificador: str = Form(...),
     password: str = Form(...),
 ):
     usuario, maquina = db.quien()
     token = None
+    persona = None
     try:
         token, persona = auth.iniciar_sesion(
             identificador, password, usuario_windows=usuario, maquina=maquina
@@ -260,19 +273,20 @@ def login(
             _html_login(f"El portal no está configurado: {e}"), status_code=500
         )
     if not token:
-        db.agregar_log(
-            "login_fallido",
+        db.registrar_auditoria(
+            persona_id=identificador or "",
+            accion="login_fallido",
+            ip=_ip_cliente(request),
             detalle=str(identificador or ""),
-            operador=str(identificador or ""),
         )
         return HTMLResponse(
             _html_login("Usuario o contraseña incorrectos."), status_code=401
         )
-    db.agregar_log(
-        "login",
-        operador=persona["nombre"],
-        identidad=persona["persona_id"],
+    db.registrar_auditoria(
         persona_id=persona["persona_id"],
+        accion="login",
+        ip=_ip_cliente(request),
+        detalle="",
     )
     respuesta = RedirectResponse("/panel", status_code=303)
     respuesta.set_cookie(auth.NOMBRE_COOKIE, cookie, **auth.opciones_cookie())
@@ -282,8 +296,16 @@ def login(
 @app.post("/logout")
 def logout(request: Request):
     token = auth.verificar_cookie(request.cookies.get(auth.NOMBRE_COOKIE))
+    # La persona se lee ANTES de cerrar la sesión: después ya no existe.
+    persona = auth.persona_actual(request.cookies.get(auth.NOMBRE_COOKIE))
     if token:
         auth.cerrar_sesion(token)
+    db.registrar_auditoria(
+        persona_id=(persona or {}).get("persona_id", ""),
+        accion="logout",
+        ip=_ip_cliente(request),
+        detalle="",
+    )
     respuesta = RedirectResponse("/", status_code=303)
     respuesta.delete_cookie(auth.NOMBRE_COOKIE, path="/")
     return respuesta
@@ -314,17 +336,6 @@ def api_estado(persona=Depends(_persona)):
     }
 
 
-@app.put("/api/estado")
-def api_escribir_estado(entrada: EstadoIn, persona=Depends(_persona)):
-    permisos.exigir(persona, permisos.ESCRIBIR_ESTADO)
-    datos = db.sincronizar_estado(
-        entrada.datos,
-        persona_id=persona["persona_id"],
-        operador=persona["nombre"],
-    )
-    return {"ok": True, "version": db.version_estado(), "datos": datos}
-
-
 # --- Cédulas ------------------------------------------------------
 @app.get("/api/cedulas")
 def api_cedulas(estado: str | None = None, persona=Depends(_persona)):
@@ -346,68 +357,11 @@ def api_cedula(id_cedula: str, persona=Depends(_persona)):
     return {"ok": True, "cedula": cedula}
 
 
-@app.put("/api/cedulas/{id_cedula}")
-def api_guardar_cedula(id_cedula: str, entrada: CedulaIn, persona=Depends(_persona)):
-    permisos.exigir(persona, permisos.ESCRIBIR_ESTADO)
-    cedula = dict(entrada.cedula)
-    cedula["id"] = id_cedula
-    return {
-        "ok": True,
-        "cedula": db.guardar_cedula(
-            cedula, persona_id=persona["persona_id"], operador=persona["nombre"]
-        ),
-    }
-
-
-@app.post("/api/cedulas/{id_cedula}/cadena")
-def api_fijar_cadena(id_cedula: str, persona=Depends(_persona)):
-    permisos.exigir(persona, permisos.ESCRIBIR_ESTADO)
-    identidad = db.fijar_cadena_cedula(
-        id_cedula,
-        persona["persona_id"],
-        persona_id=persona["persona_id"],
-        operador=persona["nombre"],
-    )
-    return {"ok": True, "identidad": identidad}
-
-
-@app.post("/api/cedulas/{id_cedula}/presentar")
-def api_presentar(id_cedula: str, persona=Depends(_persona)):
-    permisos.exigir(persona, permisos.MARCAR_PRESENTADA)
-    return {
-        "ok": True,
-        **db.presentar_cedula(
-            id_cedula,
-            persona["persona_id"],
-            persona_id=persona["persona_id"],
-            operador=persona["nombre"],
-        ),
-    }
-
-
 # --- Log ----------------------------------------------------------
 @app.get("/api/log")
 def api_log(limite: int = 50, persona=Depends(_persona)):
     permisos.exigir(persona, permisos.LEER_LOG)
     return {"ok": True, "entradas": db.leer_log(limite=limite)}
-
-
-@app.post("/api/log")
-def api_agregar_log(entrada: LogIn, persona=Depends(_persona)):
-    permisos.exigir(persona, permisos.AGREGAR_LOG)
-    log = db.agregar_log(
-        entrada.accion,
-        id_cedula=entrada.id_cedula,
-        caratula=entrada.caratula,
-        cuij=entrada.cuij,
-        detalle=entrada.detalle,
-        usuario=entrada.usuario,
-        maquina=entrada.maquina,
-        operador=persona["nombre"],
-        identidad=persona["persona_id"],
-        persona_id=persona["persona_id"],
-    )
-    return {"ok": True, "entrada": log}
 
 
 # --- Ficha del cliente -------------------------------------------
@@ -732,13 +686,6 @@ async function pedir(url, opciones) {
   location.reload();
   return data;
 }
-function accion(url) {
-  if (url.endsWith('/presentar') &&
-      !confirm('¿Marcar esta cédula como presentada?')) return;
-  if (url.endsWith('/cadena') &&
-      !confirm('¿Fijar la identidad de esta cédula? No se puede cambiar después.')) return;
-  return pedir(url, {method: 'POST'});
-}
 function subir(e) {
   e.preventDefault();
   return pedir('/api/documentos', {method: 'POST', body: new FormData(e.target)});
@@ -753,9 +700,6 @@ function guardarNotas() {
     body: JSON.stringify({datos: {notas: notas}})
   });
 }
-document.querySelectorAll('button.accion').forEach(function (b) {
-  b.addEventListener('click', function () { accion(b.dataset.url); });
-});
 """
 
 
@@ -788,18 +732,8 @@ def _html_panel(persona, cuij=None):
     filas = []
     for cedula in cedulas:
         id_cedula = str(cedula.get("id") or "")
-        id_url = quote(id_cedula, safe="")
         estado = str(cedula.get("estado") or "generada")
         identidad = str(cedula.get("identidad_cadena") or "sin fijar")
-        botones = []
-        if estado != "presentada":
-            botones.append(
-                f'<button class="accion" data-url="/api/cedulas/{id_url}/presentar">Presentar</button>'
-            )
-        if not cedula.get("identidad_cadena"):
-            botones.append(
-                f'<button class="accion" data-url="/api/cedulas/{id_url}/cadena">Fijar cadena</button>'
-            )
         enlace_ficha = ""
         if cedula.get("cuij"):
             enlace_ficha = (
@@ -812,11 +746,10 @@ def _html_panel(persona, cuij=None):
             f"<td>{_e(cedula.get('cuij'))}</td>"
             f"<td>{_e(estado)}</td>"
             f"<td>{_e(identidad)}</td>"
-            f"<td>{' '.join(botones)}</td>"
             "</tr>"
         )
     if not filas:
-        filas.append('<tr><td colspan="6" class="aviso">Todavía no hay cédulas.</td></tr>')
+        filas.append('<tr><td colspan="5" class="aviso">Todavía no hay cédulas.</td></tr>')
 
     log_filas = []
     for entrada in entradas:
@@ -888,7 +821,7 @@ def _html_panel(persona, cuij=None):
   <section>
     <h2>Cédulas</h2>
     <table>
-      <thead><tr><th>Id</th><th>Carátula</th><th>CUIJ</th><th>Estado</th><th>Identidad</th><th></th></tr></thead>
+      <thead><tr><th>Id</th><th>Carátula</th><th>CUIJ</th><th>Estado</th><th>Identidad</th></tr></thead>
       <tbody>{''.join(filas)}</tbody>
     </table>
   </section>

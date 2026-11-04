@@ -215,7 +215,41 @@ CREATE TABLE IF NOT EXISTS presentaciones (
     fecha_hora TEXT NOT NULL,
     detalle    TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS auditoria (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha      TEXT NOT NULL,
+    persona_id TEXT NOT NULL DEFAULT '',
+    accion     TEXT NOT NULL,
+    ip         TEXT NOT NULL DEFAULT '',
+    detalle    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_auditoria_fecha ON auditoria(fecha);
+CREATE INDEX IF NOT EXISTS idx_auditoria_persona ON auditoria(persona_id);
 """
+
+
+# --- Auditoría (tablas del hub, separada del log de cédulas) ------
+def registrar_auditoria(persona_id="", accion="", ip="", detalle="", ruta=None):
+    """Deja una fila en `auditoria`: login, logout y rechazos del portal.
+
+    Es aparte de `log_acciones` (y de `log_acciones.jsonl`), que guarda
+    solo lo que pasa con las cédulas. El detalle se recorta a 80
+    caracteres para que un identificador largo no se convierta en basura.
+    """
+    with conexion(ruta) as con, _transaccion(con):
+        cur = con.execute(
+            "INSERT INTO auditoria (fecha, persona_id, accion, ip, detalle) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                _ahora(),
+                str(persona_id or ""),
+                str(accion or ""),
+                str(ip or ""),
+                str(detalle)[:80],
+            ),
+        )
+        return cur.lastrowid
 
 
 def inicializar(ruta=None):

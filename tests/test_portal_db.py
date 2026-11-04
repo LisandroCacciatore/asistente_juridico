@@ -27,6 +27,7 @@ def test_inicializar_crea_tablas_y_es_idempotente(ruta):
     assert {
         "personas", "credenciales", "sesiones", "estado",
         "log_acciones", "fichas", "documentos", "presentaciones",
+        "auditoria",
     } <= tablas
 
 
@@ -146,6 +147,21 @@ def test_log_append_y_orden(ruta):
     log = db.leer_log(ruta=ruta)
     assert [e["accion"] for e in log] == ["presentada", "generada"]
     assert db.leer_log(limite=1, ruta=ruta)[0]["accion"] == "presentada"
+
+
+def test_auditoria_guarda_y_recorta_el_detalle(ruta):
+    db.registrar_auditoria(
+        persona_id="santiago", accion="login", ip="127.0.0.1", detalle="x" * 200, ruta=ruta
+    )
+    with db.conexion(ruta) as con:
+        fila = dict(con.execute("SELECT * FROM auditoria").fetchone())
+    assert fila["persona_id"] == "santiago"
+    assert fila["accion"] == "login"
+    assert fila["ip"] == "127.0.0.1"
+    assert fila["detalle"] == "x" * 80
+    assert fila["fecha"]
+    # La auditoría no va al log de cédulas.
+    assert db.leer_log(ruta=ruta) == []
 
 
 def test_ficha_merge_y_listado(ruta):

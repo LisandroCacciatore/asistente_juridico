@@ -23,6 +23,17 @@ class Portal:
         self.uploads = os.path.join(str(tmp_path), "uploads")
 
 
+def _auditoria():
+    with db.conexion() as con:
+        return [dict(f) for f in con.execute(
+            "SELECT * FROM auditoria ORDER BY id"
+        ).fetchall()]
+
+
+def _auditoria_con(accion):
+    return [f for f in _auditoria() if f["accion"] == accion]
+
+
 @pytest.fixture
 def portal(tmp_path, monkeypatch):
     config = {
@@ -111,65 +122,53 @@ def test_estado_arranca_vacio(portal):
     assert r.json()["version"] == 0
 
 
-def test_escribir_estado_sincroniza(portal):
+def test_estado_sembrado_se_lee_por_http(portal):
+    # El PUT se sacó (commit 2): el estado se siembra por db y se lee por GET.
     _login(portal)
-    r = portal.cliente.put(
-        "/api/estado",
-        json={"datos": {"cedulas": [{"id": "c1", "caratula": "Perez"}], "pendientes": []}},
-    )
+    db.sincronizar_estado({"cedulas": [{"id": "c1", "caratula": "Perez"}]})
+    r = portal.cliente.get("/api/estado")
     assert r.status_code == 200
     assert r.json()["datos"]["cedulas"][0]["id"] == "c1"
-    assert portal.cliente.get("/api/estado").json()["version"] == 1
-
-
-def test_estado_no_borra_cedulas_que_no_vienen(portal):
-    _login(portal)
-    portal.cliente.put("/api/estado", json={"datos": {"cedulas": [{"id": "c1"}]}})
-    portal.cliente.put("/api/estado", json={"datos": {"cedulas": [{"id": "c2"}]}})
-    ids = [c["id"] for c in portal.cliente.get("/api/estado").json()["datos"]["cedulas"]]
-    assert ids == ["c1", "c2"]
-
-
-def test_estado_no_puede_cambiar_una_cadena(portal):
-    _login(portal)
-    portal.cliente.put(
-        "/api/estado", json={"datos": {"cedulas": [{"id": "c1", "identidad_cadena": "jr"}]}}
-    )
-    r = portal.cliente.put(
-        "/api/estado", json={"datos": {"cedulas": [{"id": "c1", "identidad_cadena": "santiago"}]}}
-    )
-    assert r.status_code == 403
-    assert "D25" in r.json()["error"]
+    assert r.json()["version"] == 1
 
 
 def test_estado_conserva_la_cadena_si_no_la_manda(portal):
-    _login(portal)
-    portal.cliente.put(
-        "/api/estado", json={"datos": {"cedulas": [{"id": "c1", "identidad_cadena": "jr"}]}}
-    )
-    portal.cliente.put(
-        "/api/estado", json={"datos": {"cedulas": [{"id": "c1", "caratula": "Perez"}]}}
-    )
-    assert portal.cliente.get("/api/cedulas/c1").json()["cedula"]["identidad_cadena"] == "jr"
+    # Convertido del PUT /api/estado (commit 2): mismo contrato, contra db.
+    db.sincronizar_estado({"cedulas": [{"id": "c1", "identidad_cadena": "jr"}]})
+    db.sincronizar_estado({"cedulas": [{"id": "c1", "caratula": "Perez"}]})
+    assert db.buscar_cedula("c1")["identidad_cadena"] == "jr"
+
+
+def test_estado_sincroniza_sin_borrar_las_que_no_vienen(portal):
+    # Convertido del PUT /api/estado (commit 2): sincronizar agrega, no borra.
+    db.sincronizar_estado({"cedulas": [{"id": "c1"}]})
+    db.sincronizar_estado({"cedulas": [{"id": "c2"}]})
+    assert [c["id"] for c in db.leer_estado()["cedulas"]] == ["c1", "c2"]
+
+
+def test_estado_no_puede_cambiar_una_cadena(portal):
+    # Convertido del PUT /api/estado (commit 2): D25 se sostiene en db.
+    db.sincronizar_estado({"cedulas": [{"id": "c1", "identidad_cadena": "jr"}]})
+    with pytest.raises(db.ConflictoCadena):
+        db.sincronizar_estado(
+            {"cedulas": [{"id": "c1", "identidad_cadena": "santiago"}]}
+        )
+    assert db.buscar_cedula("c1")["identidad_cadena"] == "jr"
 
 
 # --- Log ----------------------------------------------------------
-def test_agregar_y_leer_log(portal):
+def test_leer_log(portal):
     _login(portal)
-    r = portal.cliente.post(
-        "/api/log", json={"accion": "generada", "id_cedula": "c1", "detalle": "ok"}
-    )
-    assert r.status_code == 200
-    assert r.json()["entrada"]["operador"] == "Santiago"
-    assert r.json()["entrada"]["identidad"] == "santiago"
+    db.agregar_log("generada", id_cedula="c1", operador="Santiago", detalle="ok")
     entradas = portal.cliente.get("/api/log").json()["entradas"]
     assert entradas[0]["accion"] == "generada"
+    assert entradas[0]["operador"] == "Santiago"
 
 
 def test_log_rechaza_accion_vacia(portal):
-    _login(portal)
-    r = portal.cliente.post("/api/log", json={"accion": ""})
-    assert r.status_code == 400
+    # Convertido del POST /api/log (commit 2): la validación vive en db.
+    with pytest.raises(ValueError):
+        db.agregar_log("")
 
 
 # --- Ficha --------------------------------------------------------
@@ -183,61 +182,38 @@ def test_ficha_ida_y_vuelta(portal):
     assert portal.cliente.get("/api/ficha/NO-EXISTE").status_code == 404
 
 
-# --- Cédulas, cadena y anti-duplicado -----------------------------
-def _guardar_cedula(portal, id_cedula="c1", **datos):
-    return portal.cliente.put(
-        f"/api/cedulas/{id_cedula}", json={"cedula": datos}
-    )
-
-
-def test_cedula_cadena_y_presentar(portal):
+# --- Cédulas (lectura) --------------------------------------------
+# Los endpoints de escritura (`PUT /api/cedulas/{id}`, `/cadena`,
+# `/presentar`) se sacaron en el commit 2. Lo que prueban en db ya está
+# cubierto por `tests/test_portal_db.py` y `tests/test_cadena.py`; acá
+# queda solo lo que hace el servidor: leer y chequear la cadena de otra
+# persona.
+def test_cedula_cadena_de_otra_persona_frena(portal):
     _login(portal)
-    r = _guardar_cedula(portal, "c1", caratula="Perez", cuij="CUIJ-1")
-    assert r.status_code == 200
-    r = portal.cliente.post("/api/cedulas/c1/cadena")
-    assert r.status_code == 200
-    assert r.json()["identidad"] == "santiago"
-    assert portal.cliente.get("/api/cedulas/c1").json()["cedula"]["identidad_cadena"] == "santiago"
-
-    r = portal.cliente.post("/api/cedulas/c1/presentar")
-    assert r.status_code == 200
-    assert r.json()["cedula"]["estado"] == "presentada"
-    assert r.json()["cedula"]["identidad_cadena"] == "santiago"
-
-    r = portal.cliente.post("/api/cedulas/c1/presentar")
-    assert r.status_code == 409
-    assert "presentada" in r.json()["error"]
-    assert portal.cliente.get("/api/cedulas/c1").json()["cedula"]["estado"] == "presentada"
+    db.guardar_cedula({"id": "c1", "identidad_cadena": "jr"})
+    with pytest.raises(db.ConflictoCadena, match="D25"):
+        db.guardar_cedula({"id": "c1", "identidad_cadena": "santiago"})
+    with pytest.raises(db.ConflictoCadena, match="D25"):
+        db.fijar_cadena_cedula("c1", "santiago")
+    assert portal.cliente.get("/api/cedulas/c1").json()["cedula"]["identidad_cadena"] == "jr"
 
 
 def test_guardar_cedula_conserva_la_cadena(portal):
-    _login(portal)
-    _guardar_cedula(portal, "c1", identidad_cadena="jr")
-    _guardar_cedula(portal, "c1", caratula="Perez")
-    assert portal.cliente.get("/api/cedulas/c1").json()["cedula"]["identidad_cadena"] == "jr"
-
-
-def test_cadena_de_otra_persona_frena(portal):
-    _login(portal)
-    _guardar_cedula(portal, "c1", identidad_cadena="jr")
-    r = portal.cliente.post("/api/cedulas/c1/presentar")
-    assert r.status_code == 403
-    assert "D25" in r.json()["error"]
-    r = portal.cliente.post("/api/cedulas/c1/cadena")
-    assert r.status_code == 403
-    assert portal.cliente.get("/api/cedulas/c1").json()["cedula"]["identidad_cadena"] == "jr"
+    # Convertido del PUT /api/cedulas/{id} (commit 2): upsert que no pisa D25.
+    db.guardar_cedula({"id": "c1", "identidad_cadena": "jr"})
+    db.guardar_cedula({"id": "c1", "caratula": "Perez"})
+    assert db.buscar_cedula("c1")["identidad_cadena"] == "jr"
 
 
 def test_cedula_inexistente_da_404(portal):
     _login(portal)
     assert portal.cliente.get("/api/cedulas/no-existe").status_code == 404
-    assert portal.cliente.post("/api/cedulas/no-existe/presentar").status_code == 404
 
 
 def test_filtrar_cedulas_por_estado(portal):
     _login(portal)
-    _guardar_cedula(portal, "c1", estado="generada")
-    _guardar_cedula(portal, "c2", estado="presentada")
+    db.guardar_cedula({"id": "c1", "estado": "generada"})
+    db.guardar_cedula({"id": "c2", "estado": "presentada"})
     r = portal.cliente.get("/api/cedulas?estado=generada")
     assert [c["id"] for c in r.json()["cedulas"]] == ["c1"]
 
@@ -360,12 +336,16 @@ def test_documento_inexistente_da_404(portal):
 # --- CSRF y panel -------------------------------------------------
 def test_csrf_bloquea_origen_externo(portal):
     _login(portal)
-    r = portal.cliente.post(
-        "/api/log", json={"accion": "x"}, headers={"Origin": "https://evil.example"}
+    r = portal.cliente.put(
+        "/api/ficha/CUIJ-1",
+        json={"datos": {"caratula": "Perez"}},
+        headers={"Origin": "https://evil.example"},
     )
     assert r.status_code == 403
-    r = portal.cliente.post(
-        "/api/log", json={"accion": "x"}, headers={"Origin": "http://testserver"}
+    r = portal.cliente.put(
+        "/api/ficha/CUIJ-1",
+        json={"datos": {"caratula": "Perez"}},
+        headers={"Origin": "http://testserver"},
     )
     assert r.status_code == 200
 
@@ -464,3 +444,77 @@ def test_admin_persona_duplicada_da_400(portal):
         "/api/admin/personas", json={"persona_id": "jr", "nombre": "Otro Jr"}
     )
     assert r.status_code == 400
+
+
+# --- Auditoría (commit 2) -----------------------------------------
+def test_login_ok_queda_en_auditoria_y_no_en_el_log(portal):
+    r = _login(portal)
+    assert r.status_code == 303
+    filas = _auditoria_con("login")
+    assert len(filas) == 1
+    assert filas[0]["persona_id"] == "santiago"
+    assert filas[0]["ip"] == "testclient"
+    assert db.leer_log() == []
+
+
+def test_login_fallido_recorta_el_detalle_y_no_ensucia_el_log(portal):
+    identificador = "x" * 200
+    r = _login(portal, identificador=identificador)
+    assert r.status_code == 401
+    filas = _auditoria_con("login_fallido")
+    assert len(filas) == 1
+    assert filas[0]["detalle"] == identificador[:80]
+    assert len(filas[0]["detalle"]) == 80
+    assert filas[0]["persona_id"] == identificador
+    assert filas[0]["ip"] == "testclient"
+    assert db.leer_log() == []
+
+
+def test_logout_queda_en_auditoria_con_la_persona(portal):
+    _login(portal)
+    r = portal.cliente.post("/logout", follow_redirects=False)
+    assert r.status_code == 303
+    filas = _auditoria_con("logout")
+    assert len(filas) == 1
+    assert filas[0]["persona_id"] == "santiago"
+    assert db.leer_log() == []
+
+
+def test_registrar_log_escribe_una_linea_con_el_nombre_de_la_sesion(portal):
+    _login(portal)
+    persona = auth.persona_actual(
+        portal.cliente.cookies.get(auth.NOMBRE_COOKIE)
+    )
+    request = type("Pedido", (), {"client": type("Cliente", (), {"host": "10.0.0.7"})()})()
+
+    entrada = servidor_portal._registrar_log(
+        persona, request, "firmada", id_cedula="c1", detalle="ok"
+    )
+
+    assert entrada["accion"] == "firmada"
+    filas = db.leer_log()
+    assert len(filas) == 1
+    fila = filas[0]
+    assert fila["identidad"] == "Santiago"
+    assert fila["operador"] == "Santiago"
+    assert fila["usuario"] == "portal"
+    assert fila["maquina"] == "10.0.0.7"
+    assert fila["id_cedula"] == "c1"
+    assert fila["persona_id"] == "santiago"
+
+
+@pytest.mark.parametrize(
+    "metodo, ruta, cuerpo",
+    [
+        ("PUT", "/api/estado", {"datos": {"cedulas": []}}),
+        ("PUT", "/api/cedulas/c1", {"cedula": {"id": "c1"}}),
+        ("POST", "/api/cedulas/c1/cadena", None),
+        ("POST", "/api/cedulas/c1/presentar", None),
+        ("POST", "/api/log", {"accion": "generada"}),
+    ],
+)
+def test_endpoints_de_escritura_borrados_dan_404_o_405(portal, metodo, ruta, cuerpo):
+    _login(portal)
+    kwargs = {} if cuerpo is None else {"json": cuerpo}
+    r = portal.cliente.request(metodo, ruta, **kwargs)
+    assert r.status_code in (404, 405)
