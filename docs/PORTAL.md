@@ -396,10 +396,32 @@ nada ni genera backups de más.
 
 ### Panel mínimo
 
-`/` y `/panel` sirven un HTML sin dependencias externas ni JavaScript: login,
-resumen, tabla de **Novedades** (cédulas visibles, con pendientes si sos
-admin) y tabla de **Actividad** (log filtrado por identidad). Es un panel de
-trabajo, no la UI final.
+`/` y `/panel` sirven un HTML sin dependencias externas: login, resumen, tabla
+de **Novedades** (cédulas visibles, con pendientes si sos admin) y tabla de
+**Actividad** (log filtrado por identidad).
+
+Por cada cédula, la columna **Acciones** muestra una de tres cosas, decididas
+en el servidor:
+
+- **`generada` y operable** (`verificar_cadena` pasa): formulario *Subir
+  firmado* con un input de archivo. El envío va por `fetch` con
+  `X-CSRF-Token` (de `GET /api/sesion`) y el CUIJ/carátula precargados desde
+  la fila; el resultado o el error se muestran en la propia página
+  (`textContent`, nunca `innerHTML`).
+- **`generada` pero no operable**: texto gris *Cadena de &lt;identidad&gt;*.
+  El booleano se calcula en el servidor: la lista de delegaciones no se expone.
+- **`firmada` con PDF en disco**: enlace *Descargar firmado* a
+  `/api/portal/cedulas/{id}/pdf`.
+
+### Encabezados de seguridad
+
+Todas las respuestas llevan `Cache-Control: no-store` (son datos de clientes)
+y `Referrer-Policy: no-referrer`. Las HTML suman
+`Content-Security-Policy` con `default-src 'self'`, `form-action 'self'`,
+`frame-ancestors 'none'`, `base-uri 'self'` y un **nonce por pedido** para el
+script en línea (`script-src 'self' 'nonce-…'`); los PDF se sirven con
+`default-src 'none'`. `X-Content-Type-Options: nosniff` y
+`X-Frame-Options: DENY` ya estaban.
 
 ## Cómo verificar
 

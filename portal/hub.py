@@ -156,6 +156,23 @@ def ordenar_por_fecha(lista):
     return sorted(lista, key=lambda c: c.get("fecha_generada") or "", reverse=True)
 
 
+def ids_con_pdf(ruta_estado=None, ruta_log=None):
+    """Ids de cédulas cuyo PDF firmado existe en disco.
+
+    Una sola lectura del archivo para todo el panel. Devuelve solo ids: el hub
+    no expone `ruta_firmada` ni ninguna otra ruta.
+    """
+    datos = _leer_json(rutas(ruta_estado, ruta_log)[0]) or {}
+    salida = set()
+    for cedula in datos.get("cedulas", []):
+        if not isinstance(cedula, dict):
+            continue
+        ruta = str(cedula.get("ruta_firmada") or "")
+        if ruta and os.path.isfile(ruta):
+            salida.add(str(cedula.get("id") or ""))
+    return salida
+
+
 def buscar_cedula(id_cedula, ruta_estado=None, ruta_log=None):
     """La cédula con ese id, o None."""
     buscado = str(id_cedula or "").strip()

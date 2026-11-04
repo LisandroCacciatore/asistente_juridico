@@ -1290,3 +1290,111 @@ def test_los_fallos_de_contrasena_actual_cuentan_para_el_bloqueo(portal):
         follow_redirects=False,
     )
     assert r.status_code == 401
+
+
+# --- Interfaz de subida y descarga (commit 7) ----------------------
+def test_el_formulario_de_subida_aparece_en_generadas_operables(portal):
+    _login(portal)
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "cuij": "CUIJ-1", "caratula": "Perez",
+         "estado": "generada", "identidad_cadena": "Santiago"},
+    ])
+    html = portal.cliente.get("/panel").text
+    assert 'class="subir"' in html
+    assert 'data-id="c1"' in html
+    assert 'data-cuij="CUIJ-1"' in html
+    assert "Subir firmado" in html
+
+
+def test_el_formulario_no_aparece_en_cedulas_que_no_puede_operar(portal, monkeypatch):
+    # El admin ve la cédula de Jr pero, sin delegación, no puede operarla.
+    config_actual = db.config_portal
+    monkeypatch.setattr(db, "config_portal", lambda nombre, default=None: (
+        ["santiago"] if nombre == "PORTAL_ADMINISTRADORES" else config_actual(nombre, default)
+    ))
+    _login(portal)
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "estado": "generada", "identidad_cadena": "Jr"},
+    ])
+    html = portal.cliente.get("/panel").text
+    assert 'class="subir"' not in html
+    assert "Cadena de Jr" in html
+
+
+def test_la_cedula_ajena_no_aparece_ni_como_fila(portal):
+    _login(portal)
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "estado": "generada", "identidad_cadena": "Jr"},
+    ])
+    html = portal.cliente.get("/panel").text
+    assert ">c1<" not in html
+
+
+def test_el_formulario_no_aparece_en_firmadas_ni_presentadas(portal):
+    _login(portal)
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "estado": "firmada", "identidad_cadena": "Santiago"},
+        {"id": "c2", "estado": "presentada", "identidad_cadena": "Santiago"},
+    ])
+    html = portal.cliente.get("/panel").text
+    assert 'class="subir"' not in html
+    assert "Descargar firmado" not in html
+
+
+def test_el_enlace_de_descarga_solo_en_firmadas_con_pdf(portal):
+    _login(portal)
+    ruta = os.path.join(portal.uploads, "c1", "firmado.pdf")
+    os.makedirs(os.path.dirname(ruta), exist_ok=True)
+    with open(ruta, "wb") as archivo:
+        archivo.write(b"%PDF-1.4\n")
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "estado": "firmada", "identidad_cadena": "Santiago",
+         "ruta_firmada": ruta},
+        {"id": "c2", "estado": "generada", "identidad_cadena": "Santiago"},
+    ])
+    html = portal.cliente.get("/panel").text
+    assert 'href="/api/portal/cedulas/c1/pdf"' in html
+    assert html.count("Descargar firmado") == 1
+
+
+def test_el_script_usa_el_token_csrf_y_no_usa_innerhtml(portal):
+    _login(portal)
+    html = portal.cliente.get("/panel").text
+    assert "X-CSRF-Token" in html
+    assert "/api/sesion" in html
+    assert "innerHTML" not in html
+    assert "<script nonce=" in html
+
+
+def test_el_nonce_del_csp_coincide_con_el_del_script(portal):
+    import re as _re
+
+    _login(portal)
+    r = portal.cliente.get("/panel")
+    nonce_html = _re.search(r'<script nonce="([^"]+)"', r.text).group(1)
+    assert f"nonce-{nonce_html}" in r.headers["content-security-policy"]
+
+
+def test_los_encabezados_de_seguridad_estan(portal):
+    _login(portal)
+    panel = portal.cliente.get("/panel")
+    csp = panel.headers["content-security-policy"]
+    assert "default-src 'self'" in csp
+    assert "form-action 'self'" in csp
+    assert "frame-ancestors 'none'" in csp
+    assert panel.headers["cache-control"] == "no-store"
+    assert panel.headers["referrer-policy"] == "no-referrer"
+
+    api = portal.cliente.get("/api/portal/novedades")
+    assert api.headers["cache-control"] == "no-store"
+    assert api.headers["referrer-policy"] == "no-referrer"
+
+
+def test_el_pdf_se_sirve_sin_cache(portal):
+    _login(portal)
+    _sembrar_cedula(portal)
+    assert _subir(portal).status_code == 200
+    r = portal.cliente.get("/api/portal/cedulas/c1/pdf")
+    assert r.status_code == 200
+    assert r.headers["cache-control"] == "no-store"
+    assert "default-src 'none'" in r.headers["content-security-policy"]

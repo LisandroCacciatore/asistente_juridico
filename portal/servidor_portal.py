@@ -20,7 +20,7 @@ import html
 import os
 import re
 import secrets
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -107,12 +107,34 @@ async def _cabeceras_seguridad(request: Request, call_next):
 
     `nosniff` evita que el navegador adivine el tipo de archivo y ejecute
     como HTML algo que se sirvió como PDF. `DENY` impide embeber el portal
-    en un iframe ajeno (clickjacking). Se agregan al final, así también
-    cubren las respuestas de error.
+    en un iframe ajeno (clickjacking). `no-store` va en todo porque son
+    datos de clientes. El CSP solo se arma para HTML (con un nonce por
+    pedido para el script en línea) y para PDF. Se agregan al final, así
+    también cubren las respuestas de error.
     """
+    nonce = secrets.token_urlsafe(16)
+    request.state.nonce = nonce
     respuesta = await call_next(request)
     respuesta.headers.setdefault("X-Content-Type-Options", "nosniff")
     respuesta.headers.setdefault("X-Frame-Options", "DENY")
+    respuesta.headers.setdefault("Referrer-Policy", "no-referrer")
+    respuesta.headers.setdefault("Cache-Control", "no-store")
+    tipo = respuesta.headers.get("content-type", "")
+    if "text/html" in tipo:
+        respuesta.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            f"script-src 'self' 'nonce-{nonce}'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "form-action 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'",
+        )
+    elif "application/pdf" in tipo:
+        respuesta.headers.setdefault(
+            "Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"
+        )
     return respuesta
 
 
@@ -1050,7 +1072,9 @@ def panel(request: Request):
     if persona.get("debe_cambiar"):
         return RedirectResponse("/cambiar-password", status_code=303)
     cookie = request.cookies.get(auth.NOMBRE_COOKIE)
-    return HTMLResponse(_html_panel(persona, csrf.token(cookie)))
+    return HTMLResponse(
+        _html_panel(persona, csrf.token(cookie), request.state.nonce)
+    )
 
 
 # --- HTML ---------------------------------------------------------
@@ -1156,29 +1180,73 @@ def _html_cambiar_password(persona, csrf_token="", error=""):
 </main></body></html>"""
 
 
-def _html_panel(persona, csrf_token=""):
+def _puede_operar(cedula, persona):
+    """True si la persona puede actuar como la identidad de esa cédula.
+
+    Se calcula acá y se manda un booleano al HTML: la lista de delegaciones de
+    cada persona no se expone en la página.
+    """
+    try:
+        permisos.verificar_cadena(cedula, persona)
+    except permisos.ErrorPermiso:
+        return False
+    return True
+
+
+def _accion_de_la_cedula(cedula, persona, con_pdf):
+    """Botón de subida, enlace de descarga o el motivo por el que no hay nada."""
+    id_cedula = str(cedula.get("id") or "")
+    estado_cedula = str(cedula.get("estado") or "generada")
+    identidad = str(cedula.get("identidad_cadena") or "")
+
+    if estado_cedula == "generada":
+        if not _puede_operar(cedula, persona):
+            return f'<span class="aviso">Cadena de {_e(identidad or "otra identidad")}</span>'
+        cuij = str(cedula.get("cuij") or "")
+        caratula = str(cedula.get("caratula") or "")
+        return (
+            f'<form class="subir" data-id="{_e(id_cedula)}" '
+            f'data-cuij="{_e(cuij)}" data-caratula="{_e(caratula)}">'
+            '<input type="file" name="archivo" accept="application/pdf" required>'
+            '<button type="submit">Subir firmado</button>'
+            "</form>"
+        )
+    if estado_cedula == "firmada" and id_cedula in con_pdf:
+        return (
+            '<a class="descarga" '
+            f'href="/api/portal/cedulas/{quote(id_cedula, safe="")}/pdf">'
+            "Descargar firmado</a>"
+        )
+    return ""
+
+
+def _html_panel(persona, csrf_token="", nonce=""):
     datos = hub.estado()
     cedulas = hub.ordenar_por_fecha(permisos.filtrar_cedulas(datos["cedulas"], persona))
     # Los pendientes todavía no tienen identidad: solo los ve un administrador.
     pendientes = datos["pendientes"] if permisos.es_administrador(persona) else []
     entradas = _log_visible(persona, 20)
+    con_pdf = hub.ids_con_pdf()
 
     filas = []
     for cedula in cedulas:
         id_cedula = str(cedula.get("id") or "")
-        estado = str(cedula.get("estado") or "generada")
+        estado_cedula = str(cedula.get("estado") or "generada")
         identidad = str(cedula.get("identidad_cadena") or "sin fijar")
         filas.append(
             "<tr>"
             f"<td>{_e(id_cedula)}</td>"
             f"<td>{_e(cedula.get('caratula'))}</td>"
             f"<td>{_e(cedula.get('cuij'))}</td>"
-            f"<td>{_e(estado)}</td>"
+            f"<td>{_e(estado_cedula)}</td>"
             f"<td>{_e(identidad)}</td>"
+            f"<td>{_accion_de_la_cedula(cedula, persona, con_pdf)}</td>"
             "</tr>"
         )
     if not filas:
-        filas.append('<tr><td colspan="5" class="aviso">Todavía no hay cédulas.</td></tr>')
+        filas.append(
+            '<tr><td colspan="6" class="aviso">Todavía no hay cédulas.</td></tr>'
+        )
 
     log_filas = []
     for entrada in entradas:
@@ -1232,10 +1300,12 @@ def _html_panel(persona, csrf_token=""):
     <div><strong>{len(pendientes)}</strong>pendientes</div>
   </div>
 
+  <p id="aviso" class="aviso" role="status"></p>
+
   <section>
     <h2>Novedades</h2>
     <table>
-      <thead><tr><th>Id</th><th>Carátula</th><th>CUIJ</th><th>Estado</th><th>Identidad</th></tr></thead>
+      <thead><tr><th>Id</th><th>Carátula</th><th>CUIJ</th><th>Estado</th><th>Identidad</th><th>Acciones</th></tr></thead>
       <tbody>{''.join(filas)}</tbody>
     </table>
     {pendientes_html}
@@ -1249,6 +1319,63 @@ def _html_panel(persona, csrf_token=""):
     </table>
   </section>
 </main>
+<script nonce="{_e(nonce)}">
+(function () {{
+  var aviso = document.getElementById('aviso');
+
+  function mostrar(texto, esError) {{
+    aviso.textContent = texto;
+    aviso.className = esError ? 'error' : 'aviso';
+  }}
+
+  function mensajeDe(salida) {{
+    if (salida && typeof salida.detail === 'string') {{ return salida.detail; }}
+    if (salida && typeof salida.error === 'string') {{ return salida.error; }}
+    return 'No se pudo subir el PDF.';
+  }}
+
+  document.querySelectorAll('form.subir').forEach(function (form) {{
+    form.addEventListener('submit', function (evento) {{
+      evento.preventDefault();
+      var archivo = form.querySelector('input[type=file]').files[0];
+      if (!archivo) {{ mostrar('Elegí el PDF firmado.', true); return; }}
+
+      fetch('/api/sesion', {{ credentials: 'same-origin' }})
+        .then(function (r) {{ return r.json(); }})
+        .then(function (sesion) {{
+          var cuerpo = new FormData();
+          cuerpo.append('archivo', archivo);
+          cuerpo.append('cuij', form.dataset.cuij || '');
+          cuerpo.append('caratula', form.dataset.caratula || '');
+          return fetch(
+            '/api/portal/cedulas/' + encodeURIComponent(form.dataset.id) + '/subir',
+            {{
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {{ 'X-CSRF-Token': sesion.csrf || '' }},
+              body: cuerpo
+            }}
+          );
+        }})
+        .then(function (respuesta) {{
+          return respuesta.json().catch(function () {{ return {{}}; }})
+            .then(function (salida) {{ return {{ ok: respuesta.ok, salida: salida }}; }});
+        }})
+        .then(function (resultado) {{
+          if (resultado.ok) {{
+            mostrar('PDF subido: la cédula quedó firmada.', false);
+            setTimeout(function () {{ window.location.reload(); }}, 800);
+          }} else {{
+            mostrar(mensajeDe(resultado.salida), true);
+          }}
+        }})
+        .catch(function () {{
+          mostrar('No se pudo hablar con el servidor.', true);
+        }});
+    }});
+  }});
+}})();
+</script>
 </body></html>"""
 
 
