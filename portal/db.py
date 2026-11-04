@@ -489,6 +489,18 @@ def eliminar_otras_sesiones(persona_id, token_hash_actual, ruta=None):
 
 
 # --- Intentos de login (bloqueo) -----------------------------------
+def hay_auditoria(accion, desde, detalle=None, ruta=None):
+    """True si ya hay una fila de esa acción desde `desde` (y ese detalle)."""
+    sql = "SELECT COUNT(*) FROM auditoria WHERE accion = ? AND fecha >= ?"
+    parametros = [str(accion), str(desde)]
+    if detalle is not None:
+        sql += " AND detalle = ?"
+        parametros.append(str(detalle))
+    with conexion(ruta) as con:
+        return con.execute(sql, parametros).fetchone()[0] > 0
+
+
+
 def registrar_intento(clave, ruta=None):
     """Anota un intento fallido para una clave ("id:..." o "ip:...")."""
     with conexion(ruta) as con, _transaccion(con):

@@ -1248,3 +1248,45 @@ def test_el_token_se_publica_en_sesion(portal):
     assert cuerpo["csrf"] == csrf.token(
         portal.cliente.cookies.get(auth.NOMBRE_COOKIE)
     )
+
+
+# --- Endurecimiento del bloqueo (commit chico) ---------------------
+def test_bloqueado_hace_el_mismo_trabajo_que_un_fallo(portal):
+    import time
+
+    for _ in range(servidor_portal.FALLOS_POR_IDENTIFICADOR):
+        _intentar(portal)
+    inicio = time.perf_counter()
+    r = _intentar(portal, password=CLAVE)
+    transcurrido = time.perf_counter() - inicio
+    assert r.status_code == 401
+    # Sin la verificación falsa esto sería casi instantáneo y delataría el bloqueo.
+    assert transcurrido > 0.005
+
+
+def test_el_bloqueo_se_audita_una_sola_vez_por_ventana(portal):
+    for _ in range(servidor_portal.FALLOS_POR_IDENTIFICADOR):
+        _intentar(portal)
+    for _ in range(4):
+        _intentar(portal, password=CLAVE)
+    assert len(_auditoria_con("login_bloqueado")) == 1
+
+
+def test_los_fallos_de_contrasena_actual_cuentan_para_el_bloqueo(portal):
+    _persona_con_clave_provisoria(portal)
+    _entrar_como_nuevo(portal)
+    token = _token_del_form(portal)
+    for _ in range(servidor_portal.FALLOS_POR_IDENTIFICADOR):
+        portal.cliente.post(
+            "/cambiar-password",
+            data={"actual": "no-es-la-clave", "nueva": "clave-nueva-larga-1",
+                  "repetida": "clave-nueva-larga-1", "csrf": token},
+            follow_redirects=False,
+        )
+    # El identificador quedó bloqueado: ni con la clave correcta se entra.
+    r = portal.cliente.post(
+        "/login",
+        data={"identificador": "nuevo", "password": CLAVE_PROVISORIA},
+        follow_redirects=False,
+    )
+    assert r.status_code == 401

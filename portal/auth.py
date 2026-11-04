@@ -187,6 +187,15 @@ def _hash_falso():
     return _HASH_FALSO
 
 
+def quemar_tiempo(password):
+    """Hace el mismo trabajo que un login fallido.
+
+    Se usa cuando la respuesta ya está decidida (bloqueo): sin esto, un login
+    bloqueado contesta mucho más rápido que uno fallido y delata el bloqueo.
+    """
+    verificar(str(password or ""), _hash_falso())
+
+
 def autenticar(identificador, password, ruta=None):
     """Devuelve la persona o None. Acepta persona_id o mail."""
     persona = db.obtener_persona_por_identificador(identificador, ruta=ruta)
@@ -275,25 +284,27 @@ LARGO_MINIMO_CAMBIO = 12
 
 
 def cambiar_password(persona_id, actual, nueva, ruta=None):
-    """Cambia la contraseña de una persona. Devuelve (ok, motivo).
+    """Cambia la contraseña de una persona.
 
-    Exige la contraseña actual, que la nueva sea distinta y que tenga al menos
-    `LARGO_MINIMO_CAMBIO` caracteres. Al guardarla se limpia `debe_cambiar`.
+    Devuelve `(ok, motivo, cuenta_como_fallo)`. `cuenta_como_fallo` es True
+    cuando lo que falló fue la contraseña actual: eso lo usa el servidor para
+    contar el intento contra el bloqueo (una sesión robada no puede probar
+    claves sin límite).
     """
     credencial = db.obtener_credencial(persona_id, ruta=ruta)
     if not credencial:
-        return False, "Esa persona no tiene contraseña guardada."
+        return False, "Esa persona no tiene contraseña guardada.", False
     if not verificar(str(actual or ""), credencial["hash"]):
-        return False, "La contraseña actual no es correcta."
+        return False, "La contraseña actual no es correcta.", True
     if len(str(nueva or "")) < LARGO_MINIMO_CAMBIO:
         return False, (
             "La contraseña nueva tiene que tener al menos "
             f"{LARGO_MINIMO_CAMBIO} caracteres."
-        )
+        ), False
     if verificar(str(nueva), credencial["hash"]):
-        return False, "La contraseña nueva tiene que ser distinta de la anterior."
+        return False, "La contraseña nueva tiene que ser distinta de la anterior.", False
     db.guardar_credencial(persona_id, hashear(nueva), debe_cambiar=0, ruta=ruta)
-    return True, ""
+    return True, "", False
 
 
 def iniciar_sesion(identificador, password, usuario_windows="", maquina="", ruta=None):

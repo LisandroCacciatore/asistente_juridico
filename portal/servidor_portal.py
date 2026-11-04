@@ -324,14 +324,14 @@ def _desde_la_ventana():
     return ahora.isoformat(timespec="seconds")
 
 
-def _esta_bloqueado(claves):
-    """True si alguna clave superó su umbral de fallos en la ventana."""
+def _clave_bloqueada(claves):
+    """La clave que superó su umbral de fallos en la ventana, o None."""
     desde = _desde_la_ventana()
     db.podar_intentos(desde)
     for clave, tope in claves:
         if clave and db.contar_intentos(clave, desde) >= tope:
-            return True
-    return False
+            return clave
+    return None
 
 
 @app.post("/login")
@@ -354,14 +354,21 @@ def login(
         (_clave_intentos(identificador), FALLOS_POR_IDENTIFICADOR),
         (_clave_ip_intentos(request), FALLOS_POR_IP),
     ]
-    if _esta_bloqueado(claves):
-        # Misma respuesta que un fallo normal: no se revela el bloqueo.
-        db.registrar_auditoria(
-            persona_id=str(identificador or "")[:80],
-            accion="login_bloqueado",
-            ip=_ip_cliente(request),
-            detalle="",
-        )
+    bloqueada = _clave_bloqueada(claves)
+    if bloqueada:
+        # Mismo trabajo que un fallo normal: si no, el tiempo delata el bloqueo.
+        auth.quemar_tiempo(password)
+        # Se audita una sola vez por clave y ventana: si no, cada intento
+        # bloqueado suma una fila y cualquiera puede inflar la tabla.
+        if not db.hay_auditoria(
+            "login_bloqueado", _desde_la_ventana(), detalle=bloqueada[:80]
+        ):
+            db.registrar_auditoria(
+                persona_id=str(identificador or "")[:80],
+                accion="login_bloqueado",
+                ip=_ip_cliente(request),
+                detalle=bloqueada[:80],
+            )
         return HTMLResponse(_html_login(MENSAJE_LOGIN), status_code=401)
 
     usuario, maquina = db.quien()
@@ -1009,8 +1016,15 @@ def cambiar_password(
             ),
             status_code=400,
         )
-    ok, motivo = auth.cambiar_password(persona["persona_id"], actual, nueva)
+    ok, motivo, cuenta_como_fallo = auth.cambiar_password(
+        persona["persona_id"], actual, nueva
+    )
     if not ok:
+        if cuenta_como_fallo:
+            # Probar claves desde una sesión abierta también se bloquea.
+            db.registrar_intento(
+                "id:" + permisos.normalizar(persona["persona_id"])[:80]
+            )
         return HTMLResponse(
             _html_cambiar_password(persona, csrf.token(cookie), motivo),
             status_code=400,

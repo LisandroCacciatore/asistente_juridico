@@ -79,14 +79,23 @@ def guardar_password(persona_id, password, ruta=None):
 
 
 def auditar(accion, detalle="", ruta=None):
-    """Deja rastro en `auditoria` de lo que se hace desde la consola."""
+    """Deja rastro en `auditoria` de lo que se hace desde la consola.
+
+    Firma como "cli" y agrega el usuario de Windows al detalle: si no, no se
+    sabe desde qué cuenta de la máquina se hizo. Si la auditoría falla, avisa
+    por stderr y sigue: no puede tumbar una operación que ya se hizo.
+    """
+    try:
+        usuario, _maquina = db.quien()
+    except Exception:
+        usuario = ""
+    texto = f"{detalle} [{usuario}]".strip()
     try:
         db.registrar_auditoria(
-            persona_id="cli", accion=accion, ip="", detalle=detalle, ruta=ruta
+            persona_id="cli", accion=accion, ip="", detalle=texto[:80], ruta=ruta
         )
-    except Exception:
-        # Auditar no puede tumbar una operación que ya se hizo.
-        pass
+    except Exception as e:
+        print(f"AVISO: no se pudo auditar {accion!r}: {e}", file=sys.stderr)
 
 
 def pedir_password():

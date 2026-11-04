@@ -145,3 +145,21 @@ def test_el_cli_marca_debe_cambiar_al_resetear(ruta, monkeypatch):
 
     assert db.obtener_credencial("jr", ruta=ruta)["debe_cambiar"] == 1
     assert ("cli", "cli_password_actualizada") in _acciones(ruta)
+
+
+def test_la_auditoria_del_cli_lleva_el_usuario_de_windows(ruta):
+    portal_admin.main(["--db", ruta, "crear", "jr", "Jr"])
+    with db.conexion(ruta) as con:
+        detalle = con.execute("SELECT detalle FROM auditoria").fetchone()[0]
+    usuario, _maquina = db.quien()
+    assert detalle == f"jr [{usuario}]"
+    assert len(detalle) <= 80
+
+
+def test_auditar_avisa_por_stderr_si_falla(ruta, monkeypatch, capsys):
+    def romper(*args, **kwargs):
+        raise RuntimeError("sin base")
+
+    monkeypatch.setattr(db, "registrar_auditoria", romper)
+    portal_admin.auditar("cli_prueba", "algo", ruta)
+    assert "AVISO" in capsys.readouterr().err
