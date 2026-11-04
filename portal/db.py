@@ -57,6 +57,24 @@ def ruta_db():
     return config_portal("PORTAL_DB", os.path.join(RAIZ, "portal.db"))
 
 
+def dentro_de_uploads(ruta):
+    """True solo si `ruta` queda dentro de PORTAL_UPLOADS.
+
+    Se resuelven symlinks y se normaliza el caso (Windows) antes de comparar:
+    una metadata vieja o un nombre armado con `..` no puede hacer que el
+    servidor lea o escriba fuera de la carpeta de subidas.
+
+    Vive acá (y no en el servidor) para que el hub use EXACTAMENTE la misma
+    comprobación al decidir si muestra el enlace de descarga.
+    """
+    raiz = os.path.normcase(os.path.realpath(ruta_uploads()))
+    destino = os.path.normcase(os.path.realpath(str(ruta or "")))
+    try:
+        return os.path.commonpath([destino, raiz]) == raiz
+    except ValueError:
+        return False
+
+
 def ruta_uploads():
     return config_portal("PORTAL_UPLOADS", os.path.join(RAIZ, "portal_uploads"))
 

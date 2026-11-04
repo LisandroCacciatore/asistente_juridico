@@ -21,6 +21,8 @@
 import json
 import logging
 import os
+
+from . import db
 import time
 
 #: Campos de una cédula que el portal puede mostrar.
@@ -157,10 +159,19 @@ def ordenar_por_fecha(lista):
 
 
 def ids_con_pdf(ruta_estado=None, ruta_log=None):
-    """Ids de cédulas cuyo PDF firmado existe en disco.
+    """Ids de cédulas cuyo PDF firmado existe DENTRO de PORTAL_UPLOADS.
 
     Una sola lectura del archivo para todo el panel. Devuelve solo ids: el hub
     no expone `ruta_firmada` ni ninguna otra ruta.
+
+    Se usa la misma validación de ruta que el endpoint de descarga
+    (`db.dentro_de_uploads`): si acá alcanzara con que el archivo exista, el
+    panel mostraría "Descargar firmado" para un PDF guardado fuera de la
+    carpeta y el enlace respondería 404.
+
+    Costo: un `os.path.isfile` por cédula en cada render. Con el volumen del
+    estudio (decenas a algunos cientos de cédulas) es despreciable; si algún
+    día crece, conviene cachear el set por versión del estado.
     """
     datos = _leer_json(rutas(ruta_estado, ruta_log)[0]) or {}
     salida = set()
@@ -168,7 +179,7 @@ def ids_con_pdf(ruta_estado=None, ruta_log=None):
         if not isinstance(cedula, dict):
             continue
         ruta = str(cedula.get("ruta_firmada") or "")
-        if ruta and os.path.isfile(ruta):
+        if ruta and db.dentro_de_uploads(ruta) and os.path.isfile(ruta):
             salida.add(str(cedula.get("id") or ""))
     return salida
 

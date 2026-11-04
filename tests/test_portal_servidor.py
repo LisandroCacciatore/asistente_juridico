@@ -7,6 +7,7 @@ ningún test toca `portal.db`, `portal_uploads/` ni `config.py` reales.
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -1398,3 +1399,53 @@ def test_el_pdf_se_sirve_sin_cache(portal):
     assert r.status_code == 200
     assert r.headers["cache-control"] == "no-store"
     assert "default-src 'none'" in r.headers["content-security-policy"]
+
+
+# --- Ajustes post-revisión -----------------------------------------
+def test_hay_una_sola_csp_en_el_panel(portal):
+    _login(portal)
+    r = portal.cliente.get("/panel")
+    valores = r.headers.get_list("content-security-policy")
+    assert len(valores) == 1
+    assert valores[0].count("default-src") == 1
+
+
+def _verificar_nonce(respuesta):
+    nonces = re.findall(r'<script nonce="([^"]*)"', respuesta.text)
+    # Ningún <script> sin nonce, y cada nonce presente en la cabecera.
+    assert respuesta.text.count("<script") == len(nonces)
+    for nonce in nonces:
+        assert nonce
+        assert f"nonce-{nonce}" in respuesta.headers["content-security-policy"]
+    # El CSS va inline: el CSP tiene que permitirlo explícitamente.
+    assert "style-src 'self' 'unsafe-inline'" in respuesta.headers[
+        "content-security-policy"
+    ]
+
+
+def test_las_paginas_html_llevan_el_nonce(portal):
+    _login(portal)
+    for ruta in ("/panel", "/cambiar-password"):
+        respuesta = portal.cliente.get(ruta)
+        assert respuesta.status_code == 200
+        _verificar_nonce(respuesta)
+
+    # El login se pide sin sesión, con un cliente limpio.
+    limpio = TestClient(servidor_portal.app)
+    respuesta = limpio.get("/")
+    assert respuesta.status_code == 200
+    _verificar_nonce(respuesta)
+
+
+def test_no_muestra_descarga_si_el_pdf_esta_fuera_de_uploads(portal, tmp_path):
+    _login(portal)
+    fuera = tmp_path / "firmado-fuera.pdf"
+    fuera.write_bytes(b"%PDF-1.4\n")
+    assert not str(fuera).startswith(str(portal.uploads))
+
+    _sembrar_estado(portal, cedulas=[
+        {"id": "c1", "estado": "firmada", "identidad_cadena": "Santiago",
+         "ruta_firmada": str(fuera)},
+    ])
+    html = portal.cliente.get("/panel").text
+    assert "Descargar firmado" not in html

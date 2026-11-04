@@ -102,7 +102,7 @@ async def _proteger_csrf(request: Request, call_next):
 
 
 @app.middleware("http")
-async def _cabeceras_seguridad(request: Request, call_next):
+async def _encabezados(request: Request, call_next):
     """Cabeceras que el navegador no puede dejar de recibir.
 
     `nosniff` evita que el navegador adivine el tipo de archivo y ejecute
@@ -288,18 +288,13 @@ def _registrar_log(persona, request, accion, id_cedula="", caratula="",
 
 
 def _dentro_de_uploads(ruta):
-    """True solo si `ruta` queda dentro de PORTAL_UPLOADS.
+    """Alias de `db.dentro_de_uploads`.
 
-    Se resuelven symlinks y se normaliza el caso (Windows) antes de
-    comparar: una metadata vieja o un nombre armado con `..` no puede
-    hacer que el servidor lea o escriba fuera de la carpeta de subidas.
+    La regla vive en `db` para que el hub aplique EXACTAMENTE la misma al
+    decidir si muestra el enlace de descarga: si acá fuera más laxa, el panel
+    ofrecería un enlace que después responde 404.
     """
-    raiz = os.path.normcase(os.path.realpath(db.ruta_uploads()))
-    destino = os.path.normcase(os.path.realpath(ruta))
-    try:
-        return os.path.commonpath([destino, raiz]) == raiz
-    except ValueError:
-        return False
+    return db.dentro_de_uploads(ruta)
 
 
 # --- Login / sesión ----------------------------------------------
