@@ -10,7 +10,7 @@ Este documento existe para decidir antes de escribir código.
 | **Quién puede pedir firmar y presentar** | ✅ **Cerrada**: sólo el dueño de la cédula. El administrador ve pero **no pide en nombre de otro** | Épica 8: el botón no aparece en cédulas ajenas, ni para el admin |
 | **Dónde vive el portal** | ✅ **Cerrada**: en la máquina del estudio, expuesto con Tailscale. **VPS descartado** | Épica 9: portal y asistente comparten la cola local; no hace falta canal de red |
 | **Dónde está el token de cada firmante** | ⛔ **ABIERTA** | Bloquea la épica 4. Si el token no está en la máquina del estudio, la firma remota cambia de diseño |
-| **Qué pasa cuando un trabajo se traba** | ⛔ **ABIERTA** (parcial) | El panel con el estado ya está definido; falta si **además** avisa por correo |
+| **Qué pasa cuando un trabajo se traba** | ✅ **Cerrada**: queda visible en el panel **y además** se avisa por correo **al dueño de la cédula**. El administrador lo ve en el panel | Épica 3 y 8: estado visible para el dueño y para el admin; correo solo al dueño |
 
 Las dos abiertas se preguntan antes de empezar la épica 4. Las cerradas no se
 vuelven a discutir.
