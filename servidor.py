@@ -39,6 +39,7 @@ import estado
 import sesion
 import generar_cedula
 import acciones
+import faseb_acciones
 import mail_gmail
 
 app = FastAPI(title="Asistente Jurídico — Estudio Segovia")
@@ -488,7 +489,19 @@ def api_continuar(job_id: str):
 # skill cargada). Corre en un job: el dashboard muestra el avance y
 # las puertas humanas se destraban desde ahí.
 @app.post("/api/skill/{accion}")
-def api_skill(accion: str, d: DatosAccion):
+def api_skill(accion: str, d: DatosAccion, request: Request):
+    # Un pedido del portal sólo puede pedir las acciones de la lista cerrada
+    # (épica 2). El dashboard local no manda este header y conserva todo.
+    if request.headers.get("x-origen-pedido", "").strip().lower() == "portal":
+        try:
+            accion = faseb_acciones.resolver(accion)
+        except faseb_acciones.AccionNoPermitida as e:
+            try:
+                estado.registrar_log("pedido_rechazado", "", detalle=str(e))
+            except Exception:
+                pass
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
     def trabajo(pausar):
         return acciones.ejecutar(accion, d.datos or {}, pausar=pausar)
 
