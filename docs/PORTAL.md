@@ -337,6 +337,21 @@ El 403 de D25 lleva el mensaje de `permisos.ErrorPermiso` (no se puede actuar
 como esa identidad). El 404 es **uniforme** para "no existe" y "no la podés
 ver": no se revela la existencia de cédulas ajenas.
 
+**Ojo con la cédula que ya firmó el asistente.** Si se firmó desde el dashboard
+(`POST /api/firmar`), el asistente ya la marcó `firmada` y guardó su
+`ruta_firmada` (`servidor.py:297`). El portal sólo acepta cédulas en `generada`,
+así que subir ese mismo PDF devuelve **409**: no es un error de permisos ni del
+archivo, es que el trabajo ya está hecho.
+
+Son **dos caminos alternativos**, no dos pasos:
+
+- el asistente firma y deja la cédula lista para presentar, o
+- el PDF se firma por fuera (FirmAr) y el portal lo recibe, y es el portal el
+  que marca `firmada` con su propia ruta.
+
+Para probar la subida hace falta una cédula que el asistente **no** haya
+firmado. La cédula marca el camino: no se puede recorrer los dos.
+
 **Alcance de la validación**: es un control contra errores humanos (subir el
 PDF equivocado, uno sin firmar, el de otra causa), **no** una validación
 criptográfica. No verifica el certificado del firmante ni la integridad del
