@@ -19,7 +19,7 @@ vuelven a discutir.
 
 | Épica | Estado | Evidencia |
 |---|---|---|
-| 1 · Autenticación del asistente | ✅ **Implementada** (rama `faseb/epica-1-auth`) | 8 tests nuevos en `tests/test_faseb_auth_asistente.py`; suite 492 en verde |
+| 1 · Autenticación del asistente | ✅ **Implementada** (rama `faseb/epica-1-auth`) | 12 tests en `tests/test_faseb_auth_asistente.py`; suite **496** en verde |
 
 **Qué se encontró en la épica 1:** el escenario "pedido desde una página web
 ajena" **ya estaba cubierto** por el middleware `_proteger_csrf` de `servidor.py`
@@ -34,9 +34,31 @@ ajena" **ya estaba cubierto** por el middleware `_proteger_csrf` de `servidor.py
 - se inyecta en el HTML del dashboard al servir la página, y el dashboard lo
   manda en cada `fetch`. Un sitio de otro origen no puede leer ese HTML.
 
-**Modo compatible:** si `TOKEN_ASISTENTE` está vacío, el servidor no lo exige.
-Eso deja el dashboard actual funcionando hasta que se configure. Para activarlo:
-definir el valor en `config.py` y reiniciar el asistente.
+**Alcance real del token (corregido):** protege del **navegador y de otros
+hosts**, no de un proceso local. `GET /` entrega el token sin credencial, así que
+cualquier proceso del mismo usuario puede leerlo —igual que puede leer
+`config.py`—. Un proceso local malicioso queda **fuera de alcance**: para eso
+haría falta otra cosa (usuario de SO distinto, o pedir el token en el arranque).
+
+**Cierre del DNS rebinding:** `_proteger_csrf` comparaba `Origin` contra `Host`;
+un dominio que resuelve a `127.0.0.1` manda ambos iguales y pasaba. Ahora hay
+`HOSTS_PERMITIDOS` (`127.0.0.1`, `localhost`, `::1`, más los de
+`config.HOSTS_ASISTENTE` para Tailscale) y un middleware `_validar_host` que
+responde **403** a cualquier otro host, también en `GET /`.
+
+**POST cubiertos:** se exige token en **todos** los POST salvo `POSTS_SIN_TOKEN`
+(hoy vacío). Los POST actuales: `/api/sesion`, `/api/generar_desde_pendiente`,
+`/api/firmar`, `/api/firmar_lote`, `/api/destinatarios`,
+`/api/continuar/{job_id}`, `/api/skill/{accion}`.
+
+**Modo compatible:** si `TOKEN_ASISTENTE` está vacío, el servidor no exige nada
+y **avisa al arrancar** (consola y log). La épica **no está cerrada** hasta
+activarlo:
+
+1. Generar el valor sin imprimirlo.
+2. Guardarlo en `config.py` (`TOKEN_ASISTENTE = "..."`).
+3. Reiniciar el asistente.
+4. Verificar: un POST sin token responde 401 y el dashboard sigue funcionando.
 
 Sin datos de clientes: no hay nombres, CUIJ ni rutas de expedientes.
 

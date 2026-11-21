@@ -88,26 +88,67 @@ async def _proteger_csrf(request: Request, call_next):
     return await call_next(request)
 
 # --- Token compartido portal -> asistente (Fase B, épica 1) --------
-# El portal manda este token en cada pedido de acción. Vive en config.py, que
-# está en .gitignore. Si está vacío el servidor no lo exige: es el modo
-# compatible con el dashboard actual, que todavía no lo manda.
+# El portal manda este token en cada pedido. Vive en config.py, que está en
+# .gitignore. Si está vacío el servidor no lo exige: es el modo compatible con
+# el dashboard actual, que todavía no lo manda.
+#
+# ALCANCE REAL: esto protege del navegador y de otros hosts, NO de un proceso
+# local. `GET /` entrega el token sin credencial, así que cualquier proceso del
+# mismo usuario puede leerlo —igual que puede leer config.py—. El objetivo es
+# que un sitio web ajeno no pueda disparar acciones ni leer el estado.
 TOKEN_ASISTENTE = str(getattr(config, "TOKEN_ASISTENTE", "") or "")
 
-RUTAS_ACCION = ("/api/firmar", "/api/firmar_lote", "/api/skill/", "/api/continuar/")
+# Hosts propios. Un dominio que resuelve a 127.0.0.1 (DNS rebinding) manda
+# `Host: evil.com` con `Origin: https://evil.com`: ambos coinciden, así que el
+# control de Origin solo no alcanza. Esto sí lo frena.
+# "testserver" es el Host que usa el TestClient de FastAPI en la suite; no
+# existe en producción.
+HOSTS_PERMITIDOS = {"127.0.0.1", "localhost", "::1", "testserver"}
+_extra = str(getattr(config, "HOSTS_ASISTENTE", "") or "")
+HOSTS_PERMITIDOS |= {h.strip().lower() for h in _extra.split(",") if h.strip()}
+
+# Un POST nuevo queda protegido por olvido: se exige token en TODOS salvo los
+# que se listen acá. Hoy no hay excepciones.
+POSTS_SIN_TOKEN = frozenset()
+
+
+def _host_de(request):
+    """Host sin puerto, en minúsculas."""
+    host = (request.headers.get("host") or "").strip().lower()
+    if host.startswith("["):            # IPv6 literal: [::1]:8000
+        return host.split("]")[0].lstrip("[")
+    return host.split(":")[0]
+
+
+@app.middleware("http")
+async def _validar_host(request: Request, call_next):
+    """Rechaza el DNS rebinding: sólo se atiende a hosts propios."""
+    if _host_de(request) not in HOSTS_PERMITIDOS:
+        try:
+            estado.registrar_log(
+                "pedido_rechazado", "",
+                detalle=f"host no permitido: {_host_de(request)[:40]}",
+            )
+        except Exception:
+            pass
+        return JSONResponse(
+            {"ok": False, "error": "Host no permitido"},
+            status_code=403,
+        )
+    return await call_next(request)
 
 
 @app.middleware("http")
 async def _exigir_token(request: Request, call_next):
     """Sin token válido no se ejecuta ninguna acción.
 
-    Se aplica sólo a los pedidos de acción, no a las lecturas: el panel del
-    dashboard sigue consultando estado y PDFs sin credencial. Si
-    TOKEN_ASISTENTE está vacío no se exige nada (modo compatible).
+    Se aplica a todos los POST salvo `POSTS_SIN_TOKEN`, no a las lecturas: el
+    panel del dashboard sigue consultando estado y PDFs. Si TOKEN_ASISTENTE
+    está vacío no se exige nada (modo compatible).
     """
     esperado = TOKEN_ASISTENTE
     if esperado and request.method == "POST":
-        ruta = request.url.path
-        if any(ruta == r or ruta.startswith(r) for r in RUTAS_ACCION):
+        if request.url.path not in POSTS_SIN_TOKEN:
             recibido = request.headers.get("x-asistente-token", "")
             if not hmac.compare_digest(recibido, esperado):
                 try:
@@ -520,4 +561,17 @@ if __name__ == "__main__":
     print("  Abrí http://localhost:8000 en el navegador")
     print("  (podés minimizar esta ventana)")
     print("=" * 52)
+    if not TOKEN_ASISTENTE:
+        print()
+        print("  AVISO: TOKEN_ASISTENTE está vacío.")
+        print("  Cualquier proceso local puede disparar acciones contra este")
+        print("  servidor. Definí el valor en config.py para exigir credencial.")
+        try:
+            estado.registrar_log(
+                "aviso_arranque", "",
+                detalle="TOKEN_ASISTENTE vacio: acciones sin credencial",
+            )
+        except Exception:
+            pass
+        print()
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")

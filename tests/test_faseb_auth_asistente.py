@@ -98,3 +98,36 @@ def test_dashboard_sin_token_no_deja_marcador(monkeypatch):
     monkeypatch.setattr(servidor, "TOKEN_ASISTENTE", "", raising=False)
     r = TestClient(servidor.app).get("/")
     assert "__TOKEN_ASISTENTE__" not in r.text
+
+
+def test_dns_rebinding_host_ajeno(monkeypatch):
+    """Un dominio que resuelve a 127.0.0.1 manda Host y Origin iguales."""
+    monkeypatch.setattr(servidor, "TOKEN_ASISTENTE", TOKEN, raising=False)
+    c = TestClient(servidor.app, base_url="http://evil.example")
+    r = c.get("/")
+    assert r.status_code == 403, "no debe servir el HTML a un host ajeno"
+    assert "asistente-token" not in r.text
+
+
+def test_dns_rebinding_post_con_origin_igual(monkeypatch):
+    monkeypatch.setattr(servidor, "TOKEN_ASISTENTE", TOKEN, raising=False)
+    c = TestClient(servidor.app, base_url="http://evil.example")
+    r = c.post(
+        "/api/firmar",
+        json={"id_cedula": "x"},
+        headers={"X-Asistente-Token": TOKEN, "Origin": "http://evil.example"},
+    )
+    assert r.status_code == 403
+
+
+def test_token_en_todos_los_post(cliente):
+    """Un POST nuevo no puede quedar abierto por olvido."""
+    for ruta in ("/api/destinatarios", "/api/sesion", "/api/generar_desde_pendiente"):
+        r = cliente.post(ruta, json={})
+        assert r.status_code == 401, f"{ruta} debe exigir token"
+
+
+def test_host_local_sigue_pasando(monkeypatch):
+    monkeypatch.setattr(servidor, "TOKEN_ASISTENTE", TOKEN, raising=False)
+    c = TestClient(servidor.app, base_url="http://localhost:8000")
+    assert c.get("/").status_code == 200
