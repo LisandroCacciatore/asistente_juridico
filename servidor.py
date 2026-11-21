@@ -101,9 +101,9 @@ TOKEN_ASISTENTE = str(getattr(config, "TOKEN_ASISTENTE", "") or "")
 # Hosts propios. Un dominio que resuelve a 127.0.0.1 (DNS rebinding) manda
 # `Host: evil.com` con `Origin: https://evil.com`: ambos coinciden, así que el
 # control de Origin solo no alcanza. Esto sí lo frena.
-# "testserver" es el Host que usa el TestClient de FastAPI en la suite; no
-# existe en producción.
-HOSTS_PERMITIDOS = {"127.0.0.1", "localhost", "::1", "testserver"}
+# El host que usa el TestClient de la suite se inyecta en tests/conftest.py:
+# no debe existir en el código de producción.
+HOSTS_PERMITIDOS = {"127.0.0.1", "localhost", "::1"}
 _extra = str(getattr(config, "HOSTS_ASISTENTE", "") or "")
 HOSTS_PERMITIDOS |= {h.strip().lower() for h in _extra.split(",") if h.strip()}
 

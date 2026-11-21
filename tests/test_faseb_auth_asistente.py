@@ -131,3 +131,9 @@ def test_host_local_sigue_pasando(monkeypatch):
     monkeypatch.setattr(servidor, "TOKEN_ASISTENTE", TOKEN, raising=False)
     c = TestClient(servidor.app, base_url="http://localhost:8000")
     assert c.get("/").status_code == 200
+
+
+def test_testserver_no_esta_en_el_codigo():
+    """El host del TestClient se inyecta en conftest, no vive en producción."""
+    fuente = open(os.path.join(RAIZ, "servidor.py"), encoding="utf-8").read()
+    assert "testserver" not in fuente
