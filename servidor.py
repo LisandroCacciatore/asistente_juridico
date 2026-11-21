@@ -12,6 +12,7 @@
 #  Luego abrir http://localhost:8000
 # ============================================================
 
+import hmac
 import os
 import sys
 import uuid
@@ -33,6 +34,7 @@ from pydantic import BaseModel
 import uvicorn
 
 from firma import firmar, firmar_lote
+import config
 import estado
 import sesion
 import generar_cedula
@@ -84,6 +86,43 @@ async def _proteger_csrf(request: Request, call_next):
                     status_code=403,
                 )
     return await call_next(request)
+
+# --- Token compartido portal -> asistente (Fase B, épica 1) --------
+# El portal manda este token en cada pedido de acción. Vive en config.py, que
+# está en .gitignore. Si está vacío el servidor no lo exige: es el modo
+# compatible con el dashboard actual, que todavía no lo manda.
+TOKEN_ASISTENTE = str(getattr(config, "TOKEN_ASISTENTE", "") or "")
+
+RUTAS_ACCION = ("/api/firmar", "/api/firmar_lote", "/api/skill/", "/api/continuar/")
+
+
+@app.middleware("http")
+async def _exigir_token(request: Request, call_next):
+    """Sin token válido no se ejecuta ninguna acción.
+
+    Se aplica sólo a los pedidos de acción, no a las lecturas: el panel del
+    dashboard sigue consultando estado y PDFs sin credencial. Si
+    TOKEN_ASISTENTE está vacío no se exige nada (modo compatible).
+    """
+    esperado = TOKEN_ASISTENTE
+    if esperado and request.method == "POST":
+        ruta = request.url.path
+        if any(ruta == r or ruta.startswith(r) for r in RUTAS_ACCION):
+            recibido = request.headers.get("x-asistente-token", "")
+            if not hmac.compare_digest(recibido, esperado):
+                try:
+                    estado.registrar_log(
+                        "pedido_rechazado", "",
+                        detalle="credencial del asistente ausente o invalida",
+                    )
+                except Exception:
+                    pass  # el rechazo no puede depender del registro
+                return JSONResponse(
+                    {"ok": False, "error": "Credencial invalida"},
+                    status_code=401,
+                )
+    return await call_next(request)
+
 
 # --- Registro de trabajos en curso -------------------------------
 # job_id -> {status, message, event, result, error, tipo, id_cedula}
@@ -168,7 +207,10 @@ class DatosSesion(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
     with open(os.path.join(BASE, "asistente_juridico.html"), encoding="utf-8") as f:
-        return f.read()
+        html = f.read()
+    # El token se inyecta acá, no en un archivo: un sitio de otro origen no
+    # puede leer este HTML, así que no puede obtenerlo.
+    return html.replace("__TOKEN_ASISTENTE__", TOKEN_ASISTENTE)
 
 
 # --- Lista de cédulas (lee estado.json) --------------------------

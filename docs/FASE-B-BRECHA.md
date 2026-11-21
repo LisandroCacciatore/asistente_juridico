@@ -15,6 +15,29 @@ Este documento existe para decidir antes de escribir código.
 Las dos abiertas se preguntan antes de empezar la épica 4. Las cerradas no se
 vuelven a discutir.
 
+## Constancia de avance
+
+| Épica | Estado | Evidencia |
+|---|---|---|
+| 1 · Autenticación del asistente | ✅ **Implementada** (rama `faseb/epica-1-auth`) | 8 tests nuevos en `tests/test_faseb_auth_asistente.py`; suite 492 en verde |
+
+**Qué se encontró en la épica 1:** el escenario "pedido desde una página web
+ajena" **ya estaba cubierto** por el middleware `_proteger_csrf` de `servidor.py`
+(rechaza con 403 si el `Origin` no coincide con el `Host`). Lo que faltaba era el
+**token compartido**, que ahora:
+
+- se lee de `config.py` (`TOKEN_ASISTENTE`, fuera del repo);
+- se exige en los `POST` de acción (`/api/firmar`, `/api/firmar_lote`,
+  `/api/skill/`, `/api/continuar/`), no en las lecturas;
+- responde **401** con `{"ok": false, "error": "Credencial invalida"}` —nunca
+  repite el token— y deja el rechazo en el log;
+- se inyecta en el HTML del dashboard al servir la página, y el dashboard lo
+  manda en cada `fetch`. Un sitio de otro origen no puede leer ese HTML.
+
+**Modo compatible:** si `TOKEN_ASISTENTE` está vacío, el servidor no lo exige.
+Eso deja el dashboard actual funcionando hasta que se configure. Para activarlo:
+definir el valor en `config.py` y reiniciar el asistente.
+
 Sin datos de clientes: no hay nombres, CUIJ ni rutas de expedientes.
 
 ---
