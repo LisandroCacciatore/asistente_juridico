@@ -38,7 +38,7 @@ bien: muestra que el log es acumulativo).
 (hoy está vencido, ver §4). Es un acto tuyo, con consentimiento en el navegador:
 
 ```bash
-python "C:/Users/Torso/AppData/Local/hermes/skills/productivity/google-workspace/scripts/setup.py"
+python "%LOCALAPPDATA%/hermes/skills/productivity/google-workspace/scripts/setup.py"
 ```
 
 ---

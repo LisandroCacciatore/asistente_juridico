@@ -33,11 +33,12 @@ copy config.example.py config.py
 
 Después editar `config.py` con el Bloc de notas y completar:
 
-1. **`PERSONAS`**: dejar la persona dueña de esa PC. Las demás pueden quedar,
-   pero el asistente sólo va a usar la propia.
+1. **`PERSONAS`**: dejar **sólo** la persona dueña de esa PC. Si quedan las
+   otras, el asistente puede tomar el perfil equivocado y la sesión de otra.
 2. **`PERFIL_CHROME`** (en `config_portales.py`): dejar el valor por defecto
    salvo que se quiera usar un perfil de Chrome ya existente.
-3. **Las tres claves**: se generan en el paso 5.
+3. **`TOKEN_ASISTENTE`**: se genera en el paso 5. Es la única clave necesaria
+   en una PC donde no corre el portal.
 
 `config.py` está en `.gitignore`: no se sube al repositorio y no se comparte.
 
@@ -55,17 +56,21 @@ se copia, la sesión viaja y queda en dos lugares.
 Verificar que la carpeta exista:
 `chrome_profile_portales\chrome_profile_<persona>`
 
-## 5. Generar las tres claves sin imprimirlas
+## 5. Generar el `TOKEN_ASISTENTE` sin imprimirlo
 
-Las claves tienen que quedar escritas en `config.py` **sin pasar por la
-pantalla**. Este comando las genera y sólo informa que terminó:
+En una PC de Jr o del Socio **no corre el portal**, así que `TOKEN_PORTAL` y
+`PORTAL_SECRETO` no hacen falta: esas dos son de la máquina del estudio, donde
+sí vive el portal.
+
+La clave tiene que quedar escrita en `config.py` **sin pasar por la pantalla**.
+Este comando la genera y sólo informa que terminó:
 
 ```bash
 python - << 'EOF'
 import re, secrets
 p = "config.py"
 t = open(p, encoding="utf-8").read()
-for nombre in ("TOKEN_ASISTENTE", "TOKEN_PORTAL", "PORTAL_SECRETO"):
+for nombre in ("TOKEN_ASISTENTE",):
     valor = secrets.token_urlsafe(32)
     if re.search(rf'{nombre}\s*=\s*"[^"]*"', t):
         t = re.sub(rf'{nombre}\s*=\s*"[^"]*"', f'{nombre} = "{valor}"', t)
@@ -79,10 +84,10 @@ EOF
 Para comprobar que quedaron, sin ver el valor:
 
 ```bash
-python -c "import config; print('largo:', len(config.TOKEN_ASISTENTE), len(config.TOKEN_PORTAL), len(config.PORTAL_SECRETO))"
+python -c "import config; print('largo:', len(config.TOKEN_ASISTENTE))"
 ```
 
-Tienen que dar tres números mayores a 30.
+Tiene que dar un número mayor a 30.
 
 ## 6. Rutas: qué es relativo y qué no
 
@@ -96,10 +101,11 @@ Todo cuelga de la carpeta del repositorio (`_CARPETA_BASE`):
 | Perfil de Chrome | `chrome_profile_portales\` |
 | Cola de trabajos | `data\cola.json` |
 
-**No hay rutas absolutas en el código**: si el repo está en
-`C:\Users\<quien>\asistente_juridico`, funciona igual. La única excepción es
-si se quiere reutilizar un perfil de Chrome que ya existe en otro lado: ahí hay
-que apuntar `PERFIL_CHROME` a esa carpeta.
+**No hay rutas absolutas en el código.** Verificado con una búsqueda en todo el
+repo (`C:\Users` y `C:/Users`): el único resultado estaba en un documento de
+demo, y se corrigió. Si la carpeta está en `C:\Users\<quien>\asistente_juridico`,
+funciona igual. La única excepción es reutilizar un perfil de Chrome que ya
+existe en otro lado: ahí hay que apuntar `PERFIL_CHROME` a esa carpeta.
 
 Las carpetas `portal_uploads`, `data` y `chrome_profile_portales` se crean solas.
 

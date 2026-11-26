@@ -1,7 +1,7 @@
 # Fase B — Brecha técnica
 
-Estado: **evaluación, no implementación.** Nada de lo que sigue está construido.
-Este documento existe para decidir antes de escribir código.
+Estado: **épicas 1 a 3 construidas y con tests; 4 a 9 en pausa.** Lo que sigue
+describe el diseño completo; al final está la constancia de qué está hecho.
 
 ## Decisión del estudio — 26/11/2026
 
