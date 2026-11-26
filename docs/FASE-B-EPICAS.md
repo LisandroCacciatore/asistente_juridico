@@ -141,7 +141,7 @@ Característica: Trabajos que sobreviven a un reinicio
 
 ---
 
-## Épica 4 · Identidad, perfil y firma con pausa local
+## Épica 4 · ⏸️ EN PAUSA (26/11/2026) Identidad, perfil y firma con pausa local
 
 ```gherkin
 # language: es
@@ -179,7 +179,7 @@ Característica: El asistente decide quién es quién
 
 ---
 
-## Épica 5 · Pausa dirigida al firmante
+## Épica 5 · ⏸️ EN PAUSA (26/11/2026) Pausa dirigida al firmante
 
 ```gherkin
 # language: es
@@ -197,7 +197,7 @@ Característica: La pausa le llega a quien pidió el trabajo
 
 ---
 
-## Épica 6 · Presentar con idempotencia
+## Épica 6 · ⏸️ EN PAUSA (26/11/2026) Presentar con idempotencia
 
 Presentar en SISFE no se deshace. Esta épica es la más delicada.
 
@@ -234,7 +234,7 @@ Característica: Una cédula se presenta una sola vez
 
 ---
 
-## Épica 7 · Auditoría unificada
+## Épica 7 · ⏸️ EN PAUSA (26/11/2026) Auditoría unificada
 
 ```gherkin
 # language: es
@@ -253,7 +253,7 @@ Característica: Un solo registro, cruzado por id de trabajo
 
 ---
 
-## Épica 8 · Interfaz en el portal
+## Épica 8 · ⏸️ EN PAUSA (26/11/2026) Interfaz en el portal
 
 Va al final. Sin las capas anteriores, el botón es un peligro.
 
@@ -281,7 +281,7 @@ Característica: Pedir y seguir un trabajo desde el portal
 
 ---
 
-## Épica 9 · Canal portal-asistente (solo si hace falta)
+## Épica 9 · ⏸️ EN PAUSA (26/11/2026) Canal portal-asistente (solo si hace falta)
 
 ```gherkin
 # language: es
@@ -312,3 +312,16 @@ Característica: Ventana de prueba con Santiago y Jr
     Entonces la cédula queda firmada con la identidad correcta
     Y la auditoría muestra el recorrido completo
 ```
+
+---
+
+## Estado de las épicas (26/11/2026)
+
+Santiago decidió: **un asistente por PC, sin portal central**. Por eso:
+
+- **Épicas 1 a 3**: hechas.
+- **Épicas 4 a 9**: en pausa. No se empiezan.
+- **Sincronización central**: descartada por ahora.
+
+La épica 0 (decisiones) sigue abierta en dos puntos que dependen de Santiago:
+el correo cuando un trabajo se traba, y si quiere una vista consolidada.
