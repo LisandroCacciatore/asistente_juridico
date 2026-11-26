@@ -103,3 +103,32 @@ def test_listar_por_estado(cola):
     cola.encolar(a["id"])
     assert [t["id"] for t in cola.listar("en_cola")] == [a["id"]]
     assert len(cola.listar()) == 2
+
+
+def test_dos_workers_no_toman_el_mismo_trabajo(tmp_path):
+    """El lock de siguiente() evita que dos workers tomen el mismo trabajo."""
+    import threading
+
+    cola = faseb_cola.Cola(str(tmp_path / "cola.json"))
+    for _ in range(6):
+        cola.encolar(cola.crear("firmar")["id"])
+
+    tomados = []
+    cerrojo = threading.Lock()
+
+    def worker():
+        while True:
+            trabajo = cola.siguiente()
+            if not trabajo:
+                break
+            with cerrojo:
+                tomados.append(trabajo["id"])
+
+    hilos = [threading.Thread(target=worker) for _ in range(4)]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join()
+
+    assert len(tomados) == 6
+    assert len(set(tomados)) == 6, "un trabajo se tomo dos veces"

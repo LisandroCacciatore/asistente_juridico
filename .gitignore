@@ -51,3 +51,6 @@ prueba_adjunto.pdf
 .hermes/
 # --- Capturas de verificación (dev/shot.py) ---
 dev/*.png
+
+# Cola de trabajos de la Fase B: estado en ejecucion, no se versiona
+data/

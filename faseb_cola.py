@@ -44,7 +44,12 @@ TRANSICIONES = {
 # Los que no sobreviven como estaban: al reiniciar quedan dudosos.
 INCIERTOS = {"corriendo", "esperando_humano"}
 
-_LOCK = threading.Lock()
+# Reentrante: `siguiente()` y `vencidos()` toman el lock y adentro llaman a
+# `pasar()`, que también lo toma. Con un Lock común eso sería un deadlock.
+_LOCK = threading.RLock()
+
+# Ruta por defecto: fuera del repo. `data/` está en .gitignore.
+RUTA_POR_DEFECTO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cola.json")
 
 
 class TransicionInvalida(Exception):
@@ -130,23 +135,29 @@ class Cola:
         return self.pasar(id_trabajo, "en_cola")
 
     def siguiente(self):
-        """Toma el trabajo en cola más viejo y lo pasa a corriendo."""
-        en_cola = self.listar("en_cola")
-        if not en_cola:
-            return None
-        return self.pasar(en_cola[0]["id"], "corriendo")
+        """Toma el trabajo en cola más viejo y lo pasa a corriendo.
+
+        Atómico: entre leer la cola y pasarla a `corriendo` no se puede meter
+        otro worker, o dos tomarían el mismo trabajo.
+        """
+        with _LOCK:
+            en_cola = [t for t in self.listar() if t["estado"] == "en_cola"]
+            if not en_cola:
+                return None
+            return self.pasar(en_cola[0]["id"], "corriendo")
 
     def recuperar(self):
         """Al arrancar: los inciertos pasan a dudoso y se informan."""
-        dudosos = []
-        for trabajo in self.lista_incierta():
-            dudosos.append(
-                self.pasar(
-                    trabajo["id"], "dudoso",
-                    motivo="el asistente se reinició mientras corría: revisar en SISFE antes de reintentar",
+        with _LOCK:
+            dudosos = []
+            for trabajo in self.lista_incierta():
+                dudosos.append(
+                    self.pasar(
+                        trabajo["id"], "dudoso",
+                        motivo="el asistente se reinició mientras corría: revisar en SISFE antes de reintentar",
+                    )
                 )
-            )
-        return dudosos
+            return dudosos
 
     def lista_incierta(self):
         return [t for t in self.listar() if t["estado"] in INCIERTOS]
@@ -154,12 +165,13 @@ class Cola:
     def vencidos(self, ahora=None):
         """Pasa a error los trabajos que superaron su tiempo límite."""
         ahora = ahora or time.time()
-        vencidos = []
-        for trabajo in self.listar():
-            if trabajo["estado"] in ("listo", "error", "dudoso"):
-                continue
-            if ahora - trabajo["creado"] > self.ttl:
-                vencidos.append(
-                    self.pasar(trabajo["id"], "error", motivo="tiempo límite superado")
-                )
-        return vencidos
+        with _LOCK:
+            vencidos = []
+            for trabajo in self.listar():
+                if trabajo["estado"] in ("listo", "error", "dudoso"):
+                    continue
+                if ahora - trabajo["creado"] > self.ttl:
+                    vencidos.append(
+                        self.pasar(trabajo["id"], "error", motivo="tiempo límite superado")
+                    )
+            return vencidos
