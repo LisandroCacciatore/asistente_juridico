@@ -20,3 +20,14 @@ def _host_de_testclient(monkeypatch):
         "HOSTS_PERMITIDOS",
         set(servidor.HOSTS_PERMITIDOS) | {"testserver"},
     )
+
+
+@pytest.fixture(autouse=True)
+def _sin_token_por_defecto(monkeypatch):
+    """La suite corre sin token, como el dashboard. Los tests de la épica 1 lo
+    activan con monkeypatch para probar el 401."""
+    try:
+        import servidor
+    except Exception:
+        return
+    monkeypatch.setattr(servidor, "TOKEN_ASISTENTE", "", raising=False)
