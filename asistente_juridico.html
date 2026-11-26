@@ -662,6 +662,9 @@ let cedulas = [
   }
 ];
 
+// Trabajos que quedaron dudosos en la cola (Fase B): JOBS se vacia al
+// reiniciar, asi que se leen del disco.
+let colaDudosos = [];
 let atencion = [
   {
     caratula:"PEREZ c/ ART EJEMPLO S/ EJECUCION",
@@ -868,7 +871,7 @@ function renderListas(){ renderFilas(); renderMetricas(); }
 
 function renderAtencion(){
   const el = document.getElementById("atencion");
-  el.innerHTML = atencion.map(c=>`
+  const filasCedulas = atencion.map(c=>`
     <div class="row attn">
       <div class="row-top">
         <div class="row-main">
@@ -885,6 +888,20 @@ function renderAtencion(){
         </div>
       </div>
     </div>`).join("");
+  const filasCola = colaDudosos.map(t=>`
+    <div class="row attn">
+      <div class="row-top">
+        <div class="row-main">
+          <div class="caratula">Trabajo sin terminar</div>
+          <div class="meta">
+            <span class="cuij">${esc(t.tipo||"")}</span>
+            <span class="sep">·</span><span>${esc(t.id_cedula||"sin cedula")}</span>
+          </div>
+          <div class="attn-note"><span class="ic">!</span><span>Se corto mientras corria (${esc(t.motivo||"sin motivo")}). Revisa en SISFE antes de reintentar.</span></div>
+        </div>
+      </div>
+    </div>`).join("");
+  el.innerHTML = filasCedulas + filasCola;
 }
 
 /* ---------------- Pendientes de clasificar ---------------- */
@@ -1943,6 +1960,10 @@ async function loadData(){
       atencion = todas.filter(c=>c.estado==='atencion');
     }
   }catch(e){ /* sin servidor: queda la demo cargada arriba */ }
+  try{
+    const rc = await fetch('/api/cola?estado=dudoso');
+    if(rc.ok){ const jc = await rc.json(); colaDudosos = Array.isArray(jc.trabajos) ? jc.trabajos : []; }
+  }catch(e){ colaDudosos = []; }
   pintarConexion();
   renderListas();
   renderAtencion();

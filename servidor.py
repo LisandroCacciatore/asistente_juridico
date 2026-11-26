@@ -599,13 +599,24 @@ def api_mail_borradores(max: int = 8):
         return {"error": _error_mail(e)}
 
 
+@app.get("/api/cola")
+def api_cola(estado: str = ""):
+    """Trabajos de la cola persistente (Fase B, epica 3).
+
+    Sirve para ver los que quedaron dudosos tras un reinicio: JOBS vive en
+    memoria y se vacia, asi que el panel no los mostraria.
+    """
+    trabajos = _registrar_cola(COLA.listar, estado or None) or []
+    return {"ok": True, "trabajos": trabajos}
+
+
 if __name__ == "__main__":
     # Trabajos que quedaron a medias en la corrida anterior: no se reintentan
     # solos, se marcan como dudosos para que los revise una persona.
     dudosos = _registrar_cola(COLA.recuperar) or []
     if dudosos:
         print(f"  ATENCION: {len(dudosos)} trabajo(s) quedaron a medias.")
-        print("  Revisalos en el panel antes de reintentar.")
+        print("  Revisalos en el panel, seccion Atencion, antes de reintentar.")
     print("=" * 52)
     print("  Asistente Jurídico — Estudio Segovia")
     print("  Abrí http://localhost:8000 en el navegador")
