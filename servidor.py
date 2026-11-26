@@ -39,6 +39,7 @@ import estado
 import sesion
 import generar_cedula
 import acciones
+import faseb_cola
 import faseb_acciones
 import mail_gmail
 
@@ -177,6 +178,19 @@ async def _exigir_token(request: Request, call_next):
 # job_id -> {status, message, event, result, error, tipo, id_cedula}
 JOBS = {}
 
+# Cola persistente (Fase B, épica 3). Es un registro en disco: si falla, el
+# dashboard sigue funcionando igual.
+COLA = faseb_cola.Cola(faseb_cola.RUTA_POR_DEFECTO)
+
+
+def _registrar_cola(accion, *args, **kwargs):
+    """Toda escritura en la cola pasa por acá: si falla, se loguea y sigue."""
+    try:
+        return accion(*args, **kwargs)
+    except Exception:
+        traceback.print_exc()
+        return None
+
 
 def _pausar_factory(job_id):
     """Devuelve una función de pausa que, en vez de esperar ENTER en
@@ -189,28 +203,37 @@ def _pausar_factory(job_id):
         job["message"] = mensaje
         job["status"] = "esperando"
         job["event"].clear()
+        _registrar_cola(COLA.pasar, job_id, "esperando_humano", mensaje[:200])
         job["event"].wait()          # se destraba desde el dashboard
         job["status"] = "corriendo"
         job["message"] = ""
+        _registrar_cola(COLA.pasar, job_id, "corriendo")
     return pausar
 
 
-def _lanzar(tipo, id_cedula, trabajo):
-    """Crea un job y corre `trabajo(pausar)` en un hilo aparte."""
+def _lanzar(tipo, id_cedula, trabajo, identidad=None):
+    """Crea un job y corre `trabajo(pausar)` en un hilo aparte.
+
+    Además lo registra en la cola persistente (Fase B, épica 3), para que un
+    reinicio no borre el rastro. Si la cola falla, el job sigue igual.
+    """
     job_id = uuid.uuid4().hex[:8]
     JOBS[job_id] = {
         "status": "corriendo", "message": "", "event": threading.Event(),
         "result": None, "error": None, "tipo": tipo, "id_cedula": id_cedula,
     }
+    _registrar_cola(COLA.crear, job_id, tipo, id_cedula, identidad)
 
     def correr():
         job = JOBS[job_id]
         try:
             job["result"] = trabajo(_pausar_factory(job_id))
             job["status"] = "listo"
+            _registrar_cola(COLA.pasar, job_id, "listo")
         except Exception as e:
             job["status"] = "error"
             job["error"] = str(e)
+            _registrar_cola(COLA.pasar, job_id, "error", str(e)[:200])
             traceback.print_exc()
 
     threading.Thread(target=correr, daemon=True).start()
@@ -577,6 +600,12 @@ def api_mail_borradores(max: int = 8):
 
 
 if __name__ == "__main__":
+    # Trabajos que quedaron a medias en la corrida anterior: no se reintentan
+    # solos, se marcan como dudosos para que los revise una persona.
+    dudosos = _registrar_cola(COLA.recuperar) or []
+    if dudosos:
+        print(f"  ATENCION: {len(dudosos)} trabajo(s) quedaron a medias.")
+        print("  Revisalos en el panel antes de reintentar.")
     print("=" * 52)
     print("  Asistente Jurídico — Estudio Segovia")
     print("  Abrí http://localhost:8000 en el navegador")
