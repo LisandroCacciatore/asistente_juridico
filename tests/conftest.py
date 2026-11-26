@@ -31,3 +31,4 @@ def _sin_token_por_defecto(monkeypatch):
     except Exception:
         return
     monkeypatch.setattr(servidor, "TOKEN_ASISTENTE", "", raising=False)
+    monkeypatch.setattr(servidor, "TOKEN_PORTAL", "", raising=False)

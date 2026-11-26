@@ -98,6 +98,9 @@ async def _proteger_csrf(request: Request, call_next):
 # mismo usuario puede leerlo —igual que puede leer config.py—. El objetivo es
 # que un sitio web ajeno no pueda disparar acciones ni leer el estado.
 TOKEN_ASISTENTE = str(getattr(config, "TOKEN_ASISTENTE", "") or "")
+# El portal tiene su propia credencial: sólo puede pedir ACCIONES_PORTAL.
+# Así, aunque el portal se vea comprometido, no puede ordenar cualquier cosa.
+TOKEN_PORTAL = str(getattr(config, "TOKEN_PORTAL", "") or "")
 
 # Hosts propios. Un dominio que resuelve a 127.0.0.1 (DNS rebinding) manda
 # `Host: evil.com` con `Origin: https://evil.com`: ambos coinciden, así que el
@@ -147,22 +150,26 @@ async def _exigir_token(request: Request, call_next):
     panel del dashboard sigue consultando estado y PDFs. Si TOKEN_ASISTENTE
     está vacío no se exige nada (modo compatible).
     """
-    esperado = TOKEN_ASISTENTE
-    if esperado and request.method == "POST":
-        if request.url.path not in POSTS_SIN_TOKEN:
-            recibido = request.headers.get("x-asistente-token", "")
-            if not hmac.compare_digest(recibido, esperado):
-                try:
-                    estado.registrar_log(
-                        "pedido_rechazado", "",
-                        detalle="credencial del asistente ausente o invalida",
-                    )
-                except Exception:
-                    pass  # el rechazo no puede depender del registro
-                return JSONResponse(
-                    {"ok": False, "error": "Credencial invalida"},
-                    status_code=401,
+    if request.method == "POST" and request.url.path not in POSTS_SIN_TOKEN:
+        recibido = request.headers.get("x-asistente-token", "")
+        origen = ""
+        if TOKEN_ASISTENTE and hmac.compare_digest(recibido, TOKEN_ASISTENTE):
+            origen = "asistente"
+        elif TOKEN_PORTAL and hmac.compare_digest(recibido, TOKEN_PORTAL):
+            origen = "portal"
+        elif TOKEN_ASISTENTE or TOKEN_PORTAL:
+            try:
+                estado.registrar_log(
+                    "pedido_rechazado", "",
+                    detalle="credencial ausente o invalida",
                 )
+            except Exception:
+                pass  # el rechazo no puede depender del registro
+            return JSONResponse(
+                {"ok": False, "error": "Credencial invalida"},
+                status_code=401,
+            )
+        request.state.origen = origen
     return await call_next(request)
 
 
@@ -490,9 +497,10 @@ def api_continuar(job_id: str):
 # las puertas humanas se destraban desde ahí.
 @app.post("/api/skill/{accion}")
 def api_skill(accion: str, d: DatosAccion, request: Request):
-    # Un pedido del portal sólo puede pedir las acciones de la lista cerrada
-    # (épica 2). El dashboard local no manda este header y conserva todo.
-    if request.headers.get("x-origen-pedido", "").strip().lower() == "portal":
+    # Un pedido autenticado con TOKEN_PORTAL sólo puede pedir las acciones de
+    # la lista cerrada (épica 2). El dashboard usa TOKEN_ASISTENTE y conserva
+    # todas las acciones del asistente.
+    if getattr(request.state, "origen", "") == "portal":
         try:
             accion = faseb_acciones.resolver(accion)
         except faseb_acciones.AccionNoPermitida as e:
