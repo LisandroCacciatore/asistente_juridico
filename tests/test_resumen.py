@@ -44,3 +44,14 @@ def test_resumen_json(cliente, tmp_path, monkeypatch):
     assert d["total"] == 2
     assert d["por_estado"]["firmada"] == 1
     assert d["por_identidad"]["Jr"] == 1
+
+
+def test_cors_no_expone_a_origen_ajeno(cliente):
+    r = cliente.get("/api/resumen", headers={"Origin": "https://evil.example"})
+    claves = {k.lower() for k in r.headers}
+    assert "access-control-allow-origin" not in claves
+
+
+def test_cors_permite_el_origen_propio(cliente):
+    r = cliente.get("/api/resumen", headers={"Origin": "http://localhost:8000"})
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:8000"

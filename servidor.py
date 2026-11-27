@@ -57,8 +57,13 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 # de confianza). Un sitio externo que intente POSTear queda bloqueado.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=[
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8100",
+        "http://localhost:8100",
+    ],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
