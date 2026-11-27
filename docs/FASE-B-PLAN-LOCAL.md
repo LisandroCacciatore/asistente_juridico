@@ -1,5 +1,9 @@
 # Fase B local — plan (sin construir)
 
+**Estado (27/11): aprobado con cuatro ajustes, ya aplicados acá.**
+Arranque limitado a las épicas 0 y 1, y la 0 **espera el OK de Lisandro** por la
+prueba del dashboard con el token activo.
+
 Propuesta de Lisandro (27/11): un asistente y un portal **en la misma PC**, que se
 hablan por `127.0.0.1`. Sin canal de red, sin portal central, sin sincronización
 entre PCs.
@@ -74,6 +78,51 @@ Criterio igual al de la épica 2: si no está en el conjunto, el asistente respo
 | `firmar` | no (FirmAr local) | **sí** (token) | no |
 | `presentar` | **escritura** | **sí** (confirmación) | **no** |
 
+### El punto único: `POST /api/faseb/pedido`
+
+Un solo endpoint para todo lo que pide el portal. **La lista cerrada se aplica
+adentro**, no antes, y el endpoint exige:
+
+1. **`TOKEN_PORTAL`** (no sirve `TOKEN_ASISTENTE`).
+2. **Host permitido** (la validación de DNS rebinding).
+3. **Acción en la lista**, o 400 sin ejecutar nada.
+
+Tres tests obligatorios, uno por cada barrera:
+
+| Test | Espera |
+|---|---|
+| pedido sin token | 401 |
+| pedido con `Host` ajeno | 403 |
+| acción fuera de la lista | 400 |
+
+### `traer_novedades`: de a uno y con freno
+
+Es la única acción que toca SISFE en lectura, y el monitor hoy corre por horario
+propio. Reglas:
+
+- **Un solo trabajo de lectura por vez**: si ya hay uno corriendo, el segundo
+  pedido se rechaza (409), no se encola.
+- **Tiempo mínimo entre pedidos** (propuesto: 5 minutos). Un pedido antes del
+  plazo se rechaza con el tiempo que falta.
+- El freno se guarda en disco, para que un reinicio no lo reinicie.
+
+### Reintento tras un trabajo `dudoso`
+
+**Manual, siempre.** La persona revisa en SISFE si la acción ya entró y recién
+entonces decide. **Nunca automático.** El sistema no reintenta nada por su
+cuenta: sólo marca y avisa.
+
+### Modo ensayo: siempre visible
+
+Mientras el ensayo está activado:
+
+- **Un cartel fijo en pantalla** en el portal, que no se puede tapar ni olvidar.
+- **Cada trabajo de ensayo queda en la auditoría** con la marca, incluso los que
+  terminaron bien.
+
+El riesgo no es técnico: es que alguien crea que presentó cuando sólo hizo el
+ensayo. El cartel y la auditoría existen para que eso no pueda pasar.
+
 ## 4. Orden de épicas (de menor a mayor riesgo)
 
 Coincido con tu orden. Cada una es una rama y un PR.
@@ -87,7 +136,13 @@ Coincido con tu orden. Cada una es una rama y un PR.
 | 4 | `presentar` | idempotencia, modo ensayo, confirmación | doble de `sisfe_notificar`, nunca SISFE | presentación doble o a medias | 4 |
 | 5 | Auditoría unificada | cruce por id de trabajo | pedido y ejecución con el mismo id | registros que no se correlacionan | 2 |
 
-**Total: ~14 días.** La 4 sola es casi un tercio, y no se toca sin ventana acordada.
+**Total: ~14 días de trabajo de Hermes**, que en calendario son **≈3 semanas**:
+la épica 4 necesita una ventana de prueba real con Santiago y Jr, y esa ventana
+manda el ritmo, no el código.
+
+**Arranque: sólo épicas 0 y 1.** Nada más hasta que las dos estén revisadas.
+Y la épica 0 no empieza hasta que Lisandro confirme la prueba del dashboard con
+el token activo.
 
 ## 5. Identidad: una persona por PC
 
@@ -99,10 +154,17 @@ Con este marco la identidad deja de ser un problema:
   (`verificar_cadena`), y no hay forma de pedir por otro porque no existe otro.
 - Si una cédula no es de esa identidad, el agente la rechaza.
 
-**Lo que hay que cambiar:** el portal hoy tiene tres cuentas y `es_administrador`
-con bypass de lectura. En una PC con una sola persona, el admin y el usuario son
-el mismo: el bypass deja de tener sentido y conviene **quitar la noción de admin**
-del portal local.
+**Lo que hay que cambiar: nada de código.** La Fase A está construida y
+verificada con el bypass de lectura de `es_administrador`, y no se toca lo que
+funciona. Para una PC de una sola persona alcanza con configuración:
+
+```python
+PORTAL_ADMINISTRADORES = []      # nadie es admin: cada uno ve sólo lo suyo
+```
+
+Con la lista vacía, `es_administrador` devuelve `False` para todos y el bypass
+nunca se activa. El concepto de administrador sigue existiendo para la máquina
+del estudio, donde sí tiene sentido.
 
 ## 6. Preguntas para Santiago (propuestas, NO decisiones)
 
