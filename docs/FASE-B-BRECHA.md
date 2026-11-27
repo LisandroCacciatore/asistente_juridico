@@ -1,7 +1,46 @@
 # Fase B — Brecha técnica
 
-Estado: **evaluación, no implementación.** Nada de lo que sigue está construido.
-Este documento existe para decidir antes de escribir código.
+Estado: **épicas 1 a 3 construidas y con tests; 4 a 9 en pausa.** Lo que sigue
+describe el diseño completo; al final está la constancia de qué está hecho.
+
+## Decisión del estudio — 26/11/2026
+
+Santiago confirmó: **cada persona instala el asistente en su propia PC** y
+trabaja con lo suyo (su SISFE, su FirmAr, su token), igual que hoy en la máquina
+del estudio.
+
+- **No hay portal central de sincronización.**
+- **No hay carpeta compartida.**
+- **No hay escritorio remoto.**
+- Revisable más adelante, **sólo si Santiago pide ver el estado de los tres en un
+  solo lugar**.
+
+### Qué significa para las épicas
+
+| Épicas | Estado |
+|---|---|
+| 1 · Autenticación | ✅ hecha |
+| 2 · Lista cerrada | ✅ hecha |
+| 3 · Cola persistente | ✅ hecha (integración incluida) |
+| **4 a 9** | ⏸️ **en pausa por decisión del estudio** |
+| Sincronización central | ❌ **descartada por ahora** |
+
+Lo construido **no se borra**: las épicas 1 a 3 son independientes del modelo de
+instalación y sirven igual con un asistente por PC.
+
+### Qué cambia para la Fase A
+
+El portal **no desaparece**: queda para quien lo use en la máquina del estudio y
+sigue leyendo el `estado.json` local de esa máquina.
+
+```
+Santiago (máquina del estudio)  -> asistente + portal + su estado.json
+Jr (su PC)                      -> asistente propio + su estado.json
+Socio (su PC)                   -> asistente propio + su estado.json
+```
+
+No hay vista consolidada. Cada instalación ve lo suyo. El portal **no** lee los
+estados de las otras PCs, y no hay que construirlo salvo que Santiago lo pida.
 
 ## Épica 0 — estado de las decisiones
 
@@ -170,3 +209,15 @@ promesa de "firma automática" sin token es falsa.
 - Instancia propia de n8n (depende de la decisión de hosting).
 - Validación criptográfica de la firma (pyHanko), que es un tema aparte del
   portal y no del agente.
+
+## Pendientes de Santiago (no decididos)
+
+Ninguno de los dos está decidido. Quedan como preguntas abiertas.
+
+1. **El correo cuando un trabajo se traba.** Sin portal central, no hay un solo
+   lugar que avise: hay que definir **quién manda el correo desde cada PC** (la
+   propia persona, o una casilla del estudio). Hoy el trabajo trabado se ve en el
+   panel de esa máquina, y nada más.
+2. **Una vista consolidada de los tres.** No se construye. Queda como posibilidad
+   si Santiago pide ver el estado de los tres en un solo lugar; en ese momento se
+   retoma el diseño de sincronización, que hoy está descartado.
