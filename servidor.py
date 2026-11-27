@@ -12,7 +12,10 @@
 #  Luego abrir http://localhost:8000
 # ============================================================
 
+import csv
+import datetime
 import hmac
+import io
 import os
 import sys
 import uuid
@@ -27,7 +30,7 @@ for _flujo in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -597,6 +600,37 @@ def api_mail_borradores(max: int = 8):
     except Exception as e:
         _avisar_mail(e)
         return {"error": _error_mail(e)}
+
+
+@app.get("/api/reporte.csv")
+def api_reporte_csv():
+    """Reporte de cédulas para archivar o enviar al estudio.
+
+    OJO: el archivo contiene datos de clientes (carátula y CUIJ). Es de uso
+    interno; no se comparte sin cuidarlo.
+    """
+    datos = estado.cargar()
+    salida = io.StringIO()
+    campos = ["id", "caratula", "cuij", "estado", "identidad", "fecha_generada", "tiene_firmado"]
+    escritor = csv.DictWriter(salida, fieldnames=campos)
+    escritor.writeheader()
+    for c in datos.get("cedulas", []):
+        escritor.writerow({
+            "id": c.get("id", ""),
+            "caratula": c.get("caratula", ""),
+            "cuij": c.get("cuij", ""),
+            "estado": c.get("estado", ""),
+            "identidad": c.get("identidad_cadena", ""),
+            "fecha_generada": c.get("fecha_generada", ""),
+            "tiene_firmado": "si" if c.get("ruta_firmada") else "no",
+        })
+    nombre = "reporte-" + datetime.date.today().isoformat() + ".csv"
+    # BOM: para que Excel abra bien los acentos
+    return Response(
+        content="\ufeff" + salida.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="' + nombre + '"'},
+    )
 
 
 @app.get("/api/cola")
