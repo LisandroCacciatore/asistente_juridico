@@ -10,10 +10,60 @@ Este documento existe para decidir antes de escribir código.
 | **Quién puede pedir firmar y presentar** | ✅ **Cerrada**: sólo el dueño de la cédula. El administrador ve pero **no pide en nombre de otro** | Épica 8: el botón no aparece en cédulas ajenas, ni para el admin |
 | **Dónde vive el portal** | ✅ **Cerrada**: en la máquina del estudio, expuesto con Tailscale. **VPS descartado** | Épica 9: portal y asistente comparten la cola local; no hace falta canal de red |
 | **Dónde está el token de cada firmante** | ⛔ **ABIERTA** | Bloquea la épica 4. Si el token no está en la máquina del estudio, la firma remota cambia de diseño |
-| **Qué pasa cuando un trabajo se traba** | ⛔ **ABIERTA** (parcial) | El panel con el estado ya está definido; falta si **además** avisa por correo |
+| **Qué pasa cuando un trabajo se traba** | 🟡 **PROPUESTA, pendiente de Santiago**: panel visible + correo al dueño; el administrador lo ve en el panel. **No es decisión tomada** | Épica 3 y 8 avanzan sobre la propuesta, sin darla por cerrada |
 
 Las dos abiertas se preguntan antes de empezar la épica 4. Las cerradas no se
 vuelven a discutir.
+
+**Aviso sobre el estado de las decisiones:** una propuesta de quien revisa **no
+es** una decisión de Santiago. La fila marcada 🟡 sigue siendo propuesta hasta
+que él responda; la épica 3 puede implementarla, pero no se da por cerrada ni se
+presenta como acordada.
+
+## Constancia de avance
+
+| Épica | Estado | Evidencia |
+|---|---|---|
+| 1 · Autenticación del asistente | ✅ **Implementada** (rama `faseb/epica-1-auth`) | 12 tests en `tests/test_faseb_auth_asistente.py`; suite **496** en verde |
+
+**Qué se encontró en la épica 1:** el escenario "pedido desde una página web
+ajena" **ya estaba cubierto** por el middleware `_proteger_csrf` de `servidor.py`
+(rechaza con 403 si el `Origin` no coincide con el `Host`). Lo que faltaba era el
+**token compartido**, que ahora:
+
+- se lee de `config.py` (`TOKEN_ASISTENTE`, fuera del repo);
+- se exige en los `POST` de acción (`/api/firmar`, `/api/firmar_lote`,
+  `/api/skill/`, `/api/continuar/`), no en las lecturas;
+- responde **401** con `{"ok": false, "error": "Credencial invalida"}` —nunca
+  repite el token— y deja el rechazo en el log;
+- se inyecta en el HTML del dashboard al servir la página, y el dashboard lo
+  manda en cada `fetch`. Un sitio de otro origen no puede leer ese HTML.
+
+**Alcance real del token (corregido):** protege del **navegador y de otros
+hosts**, no de un proceso local. `GET /` entrega el token sin credencial, así que
+cualquier proceso del mismo usuario puede leerlo —igual que puede leer
+`config.py`—. Un proceso local malicioso queda **fuera de alcance**: para eso
+haría falta otra cosa (usuario de SO distinto, o pedir el token en el arranque).
+
+**Cierre del DNS rebinding:** `_proteger_csrf` comparaba `Origin` contra `Host`;
+un dominio que resuelve a `127.0.0.1` manda ambos iguales y pasaba. Ahora hay
+`HOSTS_PERMITIDOS` (`127.0.0.1`, `localhost`, `::1`, más los de
+`config.HOSTS_ASISTENTE` para Tailscale) y un middleware `_validar_host` que
+responde **403** a cualquier otro host, también en `GET /`.
+
+**POST cubiertos:** se exige token en **todos** los POST salvo `POSTS_SIN_TOKEN`
+(hoy vacío). Los POST actuales: `/api/sesion`, `/api/generar_desde_pendiente`,
+`/api/firmar`, `/api/firmar_lote`, `/api/destinatarios`,
+`/api/continuar/{job_id}`, `/api/skill/{accion}`.
+
+**Modo compatible:** si `TOKEN_ASISTENTE` está vacío, el servidor no exige nada
+y **avisa al arrancar** (consola y log). La épica **no está cerrada** hasta
+activarlo:
+
+1. Generar el valor sin imprimirlo.
+2. Guardarlo en `config.py` (`TOKEN_ASISTENTE = "..."`).
+3. Reiniciar el asistente.
+4. Verificar: un POST sin token responde 401 y el dashboard sigue funcionando.
 
 Sin datos de clientes: no hay nombres, CUIJ ni rutas de expedientes.
 

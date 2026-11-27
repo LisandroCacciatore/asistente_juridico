@@ -3,6 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Token compartido con el servidor (Fase B, épica 1). El servidor lo
+     reemplaza al servir la página; si está vacío, el servidor no lo exige. -->
+<meta name="asistente-token" content="__TOKEN_ASISTENTE__">
+<script>
+// Manda el token compartido en cada pedido. Sin esto, el servidor rechaza
+// las acciones con 401 cuando TOKEN_ASISTENTE está configurado.
+// Un sitio de otro origen no puede leer este HTML, así que no obtiene el token.
+(function () {
+  var meta = document.querySelector('meta[name="asistente-token"]');
+  var token = meta ? (meta.getAttribute('content') || '').trim() : '';
+  if (!token || token.charAt(0) === '_') return;  // sin configurar
+  var original = window.fetch;
+  window.fetch = function (url, opts) {
+    opts = opts || {};
+    var headers = new Headers(opts.headers || {});
+    headers.set('X-Asistente-Token', token);
+    opts.headers = headers;
+    return original.call(window, url, opts);
+  };
+})();
+</script>
 <title>Asistente Jurídico — Estudio Segovia</title>
 <!-- Ícono de la pestaña: la misma «§» del encabezado, embebida para que no
      dependa de un archivo (y para que el navegador no pida un favicon.ico
