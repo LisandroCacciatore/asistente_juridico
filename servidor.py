@@ -12,6 +12,11 @@
 #  Luego abrir http://localhost:8000
 # ============================================================
 
+import collections
+import csv
+import datetime
+import hmac
+import io
 import os
 import sys
 import uuid
@@ -26,17 +31,20 @@ for _flujo in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
 from firma import firmar, firmar_lote
+import config
 import estado
 import sesion
 import generar_cedula
 import acciones
+import faseb_cola
+import faseb_acciones
 import mail_gmail
 
 app = FastAPI(title="Asistente Jurídico — Estudio Segovia")
@@ -49,8 +57,13 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 # de confianza). Un sitio externo que intente POSTear queda bloqueado.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=[
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8100",
+        "http://localhost:8100",
+    ],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -85,9 +98,107 @@ async def _proteger_csrf(request: Request, call_next):
                 )
     return await call_next(request)
 
+# --- Token compartido portal -> asistente (Fase B, épica 1) --------
+# El portal manda este token en cada pedido. Vive en config.py, que está en
+# .gitignore. Si está vacío el servidor no lo exige: es el modo compatible con
+# el dashboard actual, que todavía no lo manda.
+#
+# ALCANCE REAL: esto protege del navegador y de otros hosts, NO de un proceso
+# local. `GET /` entrega el token sin credencial, así que cualquier proceso del
+# mismo usuario puede leerlo —igual que puede leer config.py—. El objetivo es
+# que un sitio web ajeno no pueda disparar acciones ni leer el estado.
+TOKEN_ASISTENTE = str(getattr(config, "TOKEN_ASISTENTE", "") or "")
+# El portal tiene su propia credencial: sólo puede pedir ACCIONES_PORTAL.
+# Así, aunque el portal se vea comprometido, no puede ordenar cualquier cosa.
+TOKEN_PORTAL = str(getattr(config, "TOKEN_PORTAL", "") or "")
+
+# Hosts propios. Un dominio que resuelve a 127.0.0.1 (DNS rebinding) manda
+# `Host: evil.com` con `Origin: https://evil.com`: ambos coinciden, así que el
+# control de Origin solo no alcanza. Esto sí lo frena.
+# El host que usa el TestClient de la suite se inyecta en tests/conftest.py:
+# no debe existir en el código de producción.
+HOSTS_PERMITIDOS = {"127.0.0.1", "localhost", "::1"}
+_extra = str(getattr(config, "HOSTS_ASISTENTE", "") or "")
+HOSTS_PERMITIDOS |= {h.strip().lower() for h in _extra.split(",") if h.strip()}
+
+# Un POST nuevo queda protegido por olvido: se exige token en TODOS salvo los
+# que se listen acá. Hoy no hay excepciones.
+POSTS_SIN_TOKEN = frozenset()
+
+
+def _host_de(request):
+    """Host sin puerto, en minúsculas."""
+    host = (request.headers.get("host") or "").strip().lower()
+    if host.startswith("["):            # IPv6 literal: [::1]:8000
+        return host.split("]")[0].lstrip("[")
+    return host.split(":")[0]
+
+
+@app.middleware("http")
+async def _validar_host(request: Request, call_next):
+    """Rechaza el DNS rebinding: sólo se atiende a hosts propios."""
+    if _host_de(request) not in HOSTS_PERMITIDOS:
+        try:
+            estado.registrar_log(
+                "pedido_rechazado", "",
+                detalle=f"host no permitido: {_host_de(request)[:40]}",
+            )
+        except Exception:
+            pass
+        return JSONResponse(
+            {"ok": False, "error": "Host no permitido"},
+            status_code=403,
+        )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def _exigir_token(request: Request, call_next):
+    """Sin token válido no se ejecuta ninguna acción.
+
+    Se aplica a todos los POST salvo `POSTS_SIN_TOKEN`, no a las lecturas: el
+    panel del dashboard sigue consultando estado y PDFs. Si TOKEN_ASISTENTE
+    está vacío no se exige nada (modo compatible).
+    """
+    if request.method == "POST" and request.url.path not in POSTS_SIN_TOKEN:
+        recibido = request.headers.get("x-asistente-token", "")
+        origen = ""
+        if TOKEN_ASISTENTE and hmac.compare_digest(recibido, TOKEN_ASISTENTE):
+            origen = "asistente"
+        elif TOKEN_PORTAL and hmac.compare_digest(recibido, TOKEN_PORTAL):
+            origen = "portal"
+        elif TOKEN_ASISTENTE or TOKEN_PORTAL:
+            try:
+                estado.registrar_log(
+                    "pedido_rechazado", "",
+                    detalle="credencial ausente o invalida",
+                )
+            except Exception:
+                pass  # el rechazo no puede depender del registro
+            return JSONResponse(
+                {"ok": False, "error": "Credencial invalida"},
+                status_code=401,
+            )
+        request.state.origen = origen
+    return await call_next(request)
+
+
 # --- Registro de trabajos en curso -------------------------------
 # job_id -> {status, message, event, result, error, tipo, id_cedula}
 JOBS = {}
+
+# Cola persistente (Fase B, épica 3). Es un registro en disco: si falla, el
+# dashboard sigue funcionando igual.
+COLA = faseb_cola.Cola(faseb_cola.RUTA_POR_DEFECTO)
+
+
+def _registrar_cola(accion, *args, **kwargs):
+    """Toda escritura en la cola pasa por acá: si falla, se loguea y sigue."""
+    try:
+        return accion(*args, **kwargs)
+    except Exception:
+        traceback.print_exc()
+        return None
 
 
 def _pausar_factory(job_id):
@@ -101,28 +212,37 @@ def _pausar_factory(job_id):
         job["message"] = mensaje
         job["status"] = "esperando"
         job["event"].clear()
+        _registrar_cola(COLA.pasar, job_id, "esperando_humano", mensaje[:200])
         job["event"].wait()          # se destraba desde el dashboard
         job["status"] = "corriendo"
         job["message"] = ""
+        _registrar_cola(COLA.pasar, job_id, "corriendo")
     return pausar
 
 
-def _lanzar(tipo, id_cedula, trabajo):
-    """Crea un job y corre `trabajo(pausar)` en un hilo aparte."""
+def _lanzar(tipo, id_cedula, trabajo, identidad=None):
+    """Crea un job y corre `trabajo(pausar)` en un hilo aparte.
+
+    Además lo registra en la cola persistente (Fase B, épica 3), para que un
+    reinicio no borre el rastro. Si la cola falla, el job sigue igual.
+    """
     job_id = uuid.uuid4().hex[:8]
     JOBS[job_id] = {
         "status": "corriendo", "message": "", "event": threading.Event(),
         "result": None, "error": None, "tipo": tipo, "id_cedula": id_cedula,
     }
+    _registrar_cola(COLA.crear, job_id, tipo, id_cedula, identidad)
 
     def correr():
         job = JOBS[job_id]
         try:
             job["result"] = trabajo(_pausar_factory(job_id))
             job["status"] = "listo"
+            _registrar_cola(COLA.pasar, job_id, "listo")
         except Exception as e:
             job["status"] = "error"
             job["error"] = str(e)
+            _registrar_cola(COLA.pasar, job_id, "error", str(e)[:200])
             traceback.print_exc()
 
     threading.Thread(target=correr, daemon=True).start()
@@ -168,7 +288,10 @@ class DatosSesion(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
     with open(os.path.join(BASE, "asistente_juridico.html"), encoding="utf-8") as f:
-        return f.read()
+        html = f.read()
+    # El token se inyecta acá, no en un archivo: un sitio de otro origen no
+    # puede leer este HTML, así que no puede obtenerlo.
+    return html.replace("__TOKEN_ASISTENTE__", TOKEN_ASISTENTE)
 
 
 # --- Lista de cédulas (lee estado.json) --------------------------
@@ -405,7 +528,20 @@ def api_continuar(job_id: str):
 # skill cargada). Corre en un job: el dashboard muestra el avance y
 # las puertas humanas se destraban desde ahí.
 @app.post("/api/skill/{accion}")
-def api_skill(accion: str, d: DatosAccion):
+def api_skill(accion: str, d: DatosAccion, request: Request):
+    # Un pedido autenticado con TOKEN_PORTAL sólo puede pedir las acciones de
+    # la lista cerrada (épica 2). El dashboard usa TOKEN_ASISTENTE y conserva
+    # todas las acciones del asistente.
+    if getattr(request.state, "origen", "") == "portal":
+        try:
+            accion = faseb_acciones.resolver(accion)
+        except faseb_acciones.AccionNoPermitida as e:
+            try:
+                estado.registrar_log("pedido_rechazado", "", detalle=str(e))
+            except Exception:
+                pass
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
     def trabajo(pausar):
         return acciones.ejecutar(accion, d.datos or {}, pausar=pausar)
 
@@ -472,10 +608,104 @@ def api_mail_borradores(max: int = 8):
         return {"error": _error_mail(e)}
 
 
+@app.get("/api/resumen")
+def api_resumen(formato: str = "txt"):
+    """Resumen agregado: cantidades por estado y por identidad.
+
+    Sin datos de clientes: no lleva caratulas, CUIJ ni ids. Es lo que se puede
+    mandar por correo o archivar en Drive. El CSV completo es de uso interno.
+    """
+    datos = estado.cargar()
+    cedulas = datos.get("cedulas", [])
+    por_estado = collections.Counter((c.get("estado") or "sin estado") for c in cedulas)
+    por_identidad = collections.Counter((c.get("identidad_cadena") or "sin identidad") for c in cedulas)
+    hoy = datetime.date.today().isoformat()
+    if formato == "json":
+        return {
+            "ok": True,
+            "fecha": hoy,
+            "total": len(cedulas),
+            "por_estado": dict(por_estado),
+            "por_identidad": dict(por_identidad),
+        }
+    lineas = [f"Resumen de cedulas - {hoy}", "-" * 40, f"Total: {len(cedulas)}", ""]
+    lineas.append("Por estado:")
+    for k, v in sorted(por_estado.items()):
+        lineas.append(f"  {k}: {v}")
+    lineas.append("")
+    lineas.append("Por identidad:")
+    for k, v in sorted(por_identidad.items()):
+        lineas.append(f"  {k}: {v}")
+    lineas.append("")
+    lineas.append("Sin datos de clientes: solo cantidades.")
+    return PlainTextResponse(chr(10).join(lineas) + chr(10))
+
+
+@app.get("/api/reporte.csv")
+def api_reporte_csv():
+    """Reporte de cédulas para archivar o enviar al estudio.
+
+    OJO: el archivo contiene datos de clientes (carátula y CUIJ). Es de uso
+    interno; no se comparte sin cuidarlo.
+    """
+    datos = estado.cargar()
+    salida = io.StringIO()
+    campos = ["id", "caratula", "cuij", "estado", "identidad", "fecha_generada", "tiene_firmado"]
+    escritor = csv.DictWriter(salida, fieldnames=campos)
+    escritor.writeheader()
+    for c in datos.get("cedulas", []):
+        escritor.writerow({
+            "id": c.get("id", ""),
+            "caratula": c.get("caratula", ""),
+            "cuij": c.get("cuij", ""),
+            "estado": c.get("estado", ""),
+            "identidad": c.get("identidad_cadena", ""),
+            "fecha_generada": c.get("fecha_generada", ""),
+            "tiene_firmado": "si" if c.get("ruta_firmada") else "no",
+        })
+    nombre = "reporte-" + datetime.date.today().isoformat() + ".csv"
+    # BOM: para que Excel abra bien los acentos
+    return Response(
+        content="\ufeff" + salida.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="' + nombre + '"'},
+    )
+
+
+@app.get("/api/cola")
+def api_cola(estado: str = ""):
+    """Trabajos de la cola persistente (Fase B, epica 3).
+
+    Sirve para ver los que quedaron dudosos tras un reinicio: JOBS vive en
+    memoria y se vacia, asi que el panel no los mostraria.
+    """
+    trabajos = _registrar_cola(COLA.listar, estado or None) or []
+    return {"ok": True, "trabajos": trabajos}
+
+
 if __name__ == "__main__":
+    # Trabajos que quedaron a medias en la corrida anterior: no se reintentan
+    # solos, se marcan como dudosos para que los revise una persona.
+    dudosos = _registrar_cola(COLA.recuperar) or []
+    if dudosos:
+        print(f"  ATENCION: {len(dudosos)} trabajo(s) quedaron a medias.")
+        print("  Revisalos en el panel, seccion Atencion, antes de reintentar.")
     print("=" * 52)
     print("  Asistente Jurídico — Estudio Segovia")
     print("  Abrí http://localhost:8000 en el navegador")
     print("  (podés minimizar esta ventana)")
     print("=" * 52)
+    if not TOKEN_ASISTENTE:
+        print()
+        print("  AVISO: TOKEN_ASISTENTE está vacío.")
+        print("  Cualquier proceso local puede disparar acciones contra este")
+        print("  servidor. Definí el valor en config.py para exigir credencial.")
+        try:
+            estado.registrar_log(
+                "aviso_arranque", "",
+                detalle="TOKEN_ASISTENTE vacio: acciones sin credencial",
+            )
+        except Exception:
+            pass
+        print()
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")

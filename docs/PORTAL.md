@@ -314,6 +314,44 @@ la marcó, el archivo recién guardado se borra y la respuesta es 409.
 La respuesta trae solo `ok`, `id`, `sha256` y `estado`: **nunca la ruta del
 servidor**.
 
+**Mensajes de rechazo (texto literal que ve el usuario)**
+
+| HTTP | Texto |
+|---|---|
+| 400 | `La cédula no tiene identidad fijada (D25).` |
+| 409 | `La cédula no está en estado 'generada' (está '<estado>').` |
+| 413 | `El PDF supera el tope de <N> MB.` |
+| 400 | `El archivo no empieza con la cabecera PDF (%PDF-).` |
+| 400 | `El PDF está cifrado.` |
+| 400 | `pypdf no puede abrir el PDF: <detalle>` |
+| 400 | `El CUIJ no coincide con el de la cédula.` |
+| 400 | `La carátula no coincide con la de la cédula.` |
+| 400 | `No se pudo extraer texto del PDF para verificar el CUIJ.` |
+| 400 | `El CUIJ de la cédula no aparece en el texto del PDF.` |
+| 400 | `El PDF no tiene una firma digital válida (/Sig con /V, /ByteRange y /Contents firmados).` |
+| 409 | `Ese PDF ya está cargado en otra cédula.` |
+| 409 | `Otra persona ya subió el PDF de esta cédula.` |
+| 404 | `No existe la cédula '<id>' en el estado central.` |
+
+El 403 de D25 lleva el mensaje de `permisos.ErrorPermiso` (no se puede actuar
+como esa identidad). El 404 es **uniforme** para "no existe" y "no la podés
+ver": no se revela la existencia de cédulas ajenas.
+
+**Ojo con la cédula que ya firmó el asistente.** Si se firmó desde el dashboard
+(`POST /api/firmar`), el asistente ya la marcó `firmada` y guardó su
+`ruta_firmada` (`servidor.py:297`). El portal sólo acepta cédulas en `generada`,
+así que subir ese mismo PDF devuelve **409**: no es un error de permisos ni del
+archivo, es que el trabajo ya está hecho.
+
+Son **dos caminos alternativos**, no dos pasos:
+
+- el asistente firma y deja la cédula lista para presentar, o
+- el PDF se firma por fuera (FirmAr) y el portal lo recibe, y es el portal el
+  que marca `firmada` con su propia ruta.
+
+Para probar la subida hace falta una cédula que el asistente **no** haya
+firmado. La cédula marca el camino: no se puede recorrer los dos.
+
 **Alcance de la validación**: es un control contra errores humanos (subir el
 PDF equivocado, uno sin firmar, el de otra causa), **no** una validación
 criptográfica. No verifica el certificado del firmante ni la integridad del
@@ -397,8 +435,20 @@ nada ni genera backups de más.
 ### Panel mínimo
 
 `/` y `/panel` sirven un HTML sin dependencias externas: login, resumen, tabla
-de **Novedades** (cédulas visibles, con pendientes si sos admin) y tabla de
-**Actividad** (log filtrado por identidad).
+de **Novedades** y tabla de **Actividad** (log filtrado por identidad).
+
+**Qué aparece en Novedades**: las cédulas que esa persona puede ver
+(`filtrar_cedulas`), **ordenadas por `fecha_generada` de la más nueva a la más
+vieja** (las que no tienen fecha van al final conservando el orden), con
+Id, Carátula, CUIJ, Estado, Identidad y la columna Acciones. Los
+**pendientes** (decretos que todavía no tienen cédula ni identidad) se muestran
+**solo a un administrador**; no son cédulas y no se pueden operar desde ahí.
+No aparecen decretos ni movimientos del SISFE: el portal lee `estado.json`.
+
+**Sesión**: vence por **inactividad** (`PORTAL_SESION_HORAS`, 12 por defecto);
+cada pedido renovado corre el vencimiento. No hace falta "acordarse de cerrarla",
+y el botón **Salir** (POST `/logout` con token CSRF) cierra la sesión en la
+base, borra la cookie y deja el evento en `auditoria`.
 
 Por cada cédula, la columna **Acciones** muestra una de tres cosas, decididas
 en el servidor:

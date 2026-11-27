@@ -3,6 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Token compartido con el servidor (Fase B, épica 1). El servidor lo
+     reemplaza al servir la página; si está vacío, el servidor no lo exige. -->
+<meta name="asistente-token" content="__TOKEN_ASISTENTE__">
+<script>
+// Manda el token compartido en cada pedido. Sin esto, el servidor rechaza
+// las acciones con 401 cuando TOKEN_ASISTENTE está configurado.
+// Un sitio de otro origen no puede leer este HTML, así que no obtiene el token.
+(function () {
+  var meta = document.querySelector('meta[name="asistente-token"]');
+  var token = meta ? (meta.getAttribute('content') || '').trim() : '';
+  if (!token || token.charAt(0) === '_') return;  // sin configurar
+  var original = window.fetch;
+  window.fetch = function (url, opts) {
+    opts = opts || {};
+    var headers = new Headers(opts.headers || {});
+    headers.set('X-Asistente-Token', token);
+    opts.headers = headers;
+    return original.call(window, url, opts);
+  };
+})();
+</script>
 <title>Asistente Jurídico — Estudio Segovia</title>
 <!-- Ícono de la pestaña: la misma «§» del encabezado, embebida para que no
      dependa de un archivo (y para que el navegador no pida un favicon.ico
@@ -457,6 +478,10 @@
     <div class="item" title="SISFE, FirmAr y el clic final en Notificar los hace una persona">
       <span class="dot warn"></span><span>SISFE y FirmAr: los abrís vos</span>
     </div>
+    <div class="item" title="CSV con las cédulas. Tiene datos de clientes: es de uso interno.">
+      <a class="btn" href="/api/reporte.csv" download
+         style="padding:5px 10px;font-size:12px;text-decoration:none">Exportar reporte</a>
+    </div>
   </div>
 </div>
 
@@ -641,6 +666,9 @@ let cedulas = [
   }
 ];
 
+// Trabajos que quedaron dudosos en la cola (Fase B): JOBS se vacia al
+// reiniciar, asi que se leen del disco.
+let colaDudosos = [];
 let atencion = [
   {
     caratula:"PEREZ c/ ART EJEMPLO S/ EJECUCION",
@@ -847,7 +875,7 @@ function renderListas(){ renderFilas(); renderMetricas(); }
 
 function renderAtencion(){
   const el = document.getElementById("atencion");
-  el.innerHTML = atencion.map(c=>`
+  const filasCedulas = atencion.map(c=>`
     <div class="row attn">
       <div class="row-top">
         <div class="row-main">
@@ -864,6 +892,20 @@ function renderAtencion(){
         </div>
       </div>
     </div>`).join("");
+  const filasCola = colaDudosos.map(t=>`
+    <div class="row attn">
+      <div class="row-top">
+        <div class="row-main">
+          <div class="caratula">Trabajo sin terminar</div>
+          <div class="meta">
+            <span class="cuij">${esc(t.tipo||"")}</span>
+            <span class="sep">·</span><span>${esc(t.id_cedula||"sin cedula")}</span>
+          </div>
+          <div class="attn-note"><span class="ic">!</span><span>Se corto mientras corria (${esc(t.motivo||"sin motivo")}). Revisa en SISFE antes de reintentar.</span></div>
+        </div>
+      </div>
+    </div>`).join("");
+  el.innerHTML = filasCedulas + filasCola;
 }
 
 /* ---------------- Pendientes de clasificar ---------------- */
@@ -1922,6 +1964,10 @@ async function loadData(){
       atencion = todas.filter(c=>c.estado==='atencion');
     }
   }catch(e){ /* sin servidor: queda la demo cargada arriba */ }
+  try{
+    const rc = await fetch('/api/cola?estado=dudoso');
+    if(rc.ok){ const jc = await rc.json(); colaDudosos = Array.isArray(jc.trabajos) ? jc.trabajos : []; }
+  }catch(e){ colaDudosos = []; }
   pintarConexion();
   renderListas();
   renderAtencion();
