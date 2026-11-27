@@ -220,10 +220,41 @@ para cuando se sumen Jr y el Socio. **No implementado todavía**: depende de
 reconectar la casilla de Gmail del asistente, que hoy está vencida.
 
 **Vista consolidada — opción elegida: reporte exportable.** Cada asistente
-exporta un CSV con sus cédulas (`GET /api/reporte.csv`, botón "Exportar
-reporte" en la barra). Implementado. La idea a futuro, planteada por Lisandro:
-que n8n + Playwright naveguen cada máquina, descarguen el reporte y lo envíen
-a una cuenta del estudio, de forma automática. Eso es un proyecto aparte.
+expone `GET /api/reporte.csv` (uso interno) y `GET /api/resumen` (agregado, sin
+datos de clientes). Implementado.
+
+**Cómo se envía, corregido:** **no** es n8n ni Playwright entrando a cada PC.
+El asistente escucha sólo en `127.0.0.1` y cada PC está detrás de su red: nadie
+de afuera puede entrar. El sentido es el inverso:
+
+> Una **tarea programada de Windows en cada PC** llama a `/api/resumen` y manda
+> el resultado hacia afuera (webhook de n8n o correo + Drive). **El cron vive en
+> cada PC, no en n8n.**
+
+Pendiente de construir, y bloqueado por la decisión de hosting de n8n.
+
+## Correo de trabajo — módulo propio por SMTP (propuesta, no construido)
+
+**Problema:** `mail_gmail.py` usa el `google_token.json` **de Hermes**, no una
+credencial del asistente. Esa app está en modo Testing y la autorización se
+revoca cada pocos días. Reconectar con *test users* sirve para ver llegar el
+primer correo hoy, pero **va a volver a vencer**. El asistente no debería
+depender de las credenciales del agente que lo construyó.
+
+**Propuesta:** un módulo chico y aparte, `mail_smtp.py`, con `smtplib` y
+**contraseña de aplicación** de una cuenta del estudio.
+
+| Pieza | Detalle |
+|---|---|
+| Módulo | `mail_smtp.py`, nuevo. **`mail_gmail.py` no se toca** |
+| Auth | Contraseña de aplicación de Gmail (requiere 2FA en la cuenta) |
+| Config | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_DESDE` en `config.py`, fuera del repo |
+| Ventaja | No depende de OAuth, no vence, no hay app que publicar |
+| Riesgo | La contraseña vive en `config.py`: mismo cuidado que el resto de los secretos |
+| Costo | ~4 horas con pruebas |
+
+**Para hoy:** reconectar con *test users* alcanza para probar que el correo
+llega. No es la solución.
 
 ## Pendientes de Santiago
 
