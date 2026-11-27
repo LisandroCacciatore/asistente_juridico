@@ -132,3 +132,21 @@ def test_dos_workers_no_toman_el_mismo_trabajo(tmp_path):
 
     assert len(tomados) == 6
     assert len(set(tomados)) == 6, "un trabajo se tomo dos veces"
+
+
+def test_api_cola_muestra_los_dudosos(tmp_path, monkeypatch):
+    """Tras un reinicio JOBS se vacia: el panel tiene que leerlos del disco."""
+    import servidor
+    from fastapi.testclient import TestClient
+
+    cola = faseb_cola.Cola(str(tmp_path / "c.json"))
+    t = cola.crear("firmar", "c-1", "Santiago")
+    cola.encolar(t["id"])
+    cola.pasar(t["id"], "corriendo")
+    cola.recuperar()
+
+    monkeypatch.setattr(servidor, "COLA", cola)
+    r = TestClient(servidor.app).get("/api/cola?estado=dudoso")
+    assert r.status_code == 200
+    assert len(r.json()["trabajos"]) == 1
+    assert r.json()["trabajos"][0]["estado"] == "dudoso"

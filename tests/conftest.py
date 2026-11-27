@@ -32,3 +32,15 @@ def _sin_token_por_defecto(monkeypatch):
         return
     monkeypatch.setattr(servidor, "TOKEN_ASISTENTE", "", raising=False)
     monkeypatch.setattr(servidor, "TOKEN_PORTAL", "", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _cola_temporal(tmp_path_factory, monkeypatch):
+    """La cola escribe en disco: en pruebas va a un archivo temporal."""
+    try:
+        import servidor
+        import faseb_cola
+    except Exception:
+        return
+    ruta = tmp_path_factory.mktemp("cola") / "cola.json"
+    monkeypatch.setattr(servidor, "COLA", faseb_cola.Cola(str(ruta)))
