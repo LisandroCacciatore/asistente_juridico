@@ -210,14 +210,30 @@ promesa de "firma automática" sin token es falsa.
 - Validación criptográfica de la firma (pyHanko), que es un tema aparte del
   portal y no del agente.
 
-## Pendientes de Santiago (no decididos)
+## Correo de trabajo y vista consolidada (26/11/2026)
 
-Ninguno de los dos está decidido. Quedan como preguntas abiertas.
+**Correo — decisión de Lisandro**, no de Santiago: el aviso de un trabajo
+trabado va al **dueño de la cédula** y **además** a Santiago, cada uno por
+separado (dos destinatarios, no una casilla compartida). Hoy el único usuario
+es Santiago, así que en la práctica llega a él; la lista queda configurable
+para cuando se sumen Jr y el Socio. **No implementado todavía**: depende de
+reconectar la casilla de Gmail del asistente, que hoy está vencida.
 
-1. **El correo cuando un trabajo se traba.** Sin portal central, no hay un solo
-   lugar que avise: hay que definir **quién manda el correo desde cada PC** (la
-   propia persona, o una casilla del estudio). Hoy el trabajo trabado se ve en el
-   panel de esa máquina, y nada más.
-2. **Una vista consolidada de los tres.** No se construye. Queda como posibilidad
-   si Santiago pide ver el estado de los tres en un solo lugar; en ese momento se
-   retoma el diseño de sincronización, que hoy está descartado.
+**Vista consolidada — opción elegida: reporte exportable.** Cada asistente
+exporta un CSV con sus cédulas (`GET /api/reporte.csv`, botón "Exportar
+reporte" en la barra). Implementado. La idea a futuro, planteada por Lisandro:
+que n8n + Playwright naveguen cada máquina, descarguen el reporte y lo envíen
+a una cuenta del estudio, de forma automática. Eso es un proyecto aparte.
+
+## Pendientes de Santiago
+
+Los dos puntos de arriba **los resolvió Lisandro** (26/11), no Santiago. Queda
+una sola pregunta abierta para el estudio:
+
+1. **¿Quiere, más adelante, ver el estado de los tres en un solo lugar?** Hoy
+   la respuesta es el reporte exportable. Si algún día pide la vista
+   consolidada, se retoma el diseño de sincronización, que hoy está descartado.
+
+Y del correo queda pendiente la confirmación de Santiago sobre **a qué casilla
+quiere recibirlo**: hoy la decisión dice "Santiago", pero falta que él diga
+cuál dirección.
