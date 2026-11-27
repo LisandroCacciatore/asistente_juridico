@@ -12,6 +12,7 @@
 #  Luego abrir http://localhost:8000
 # ============================================================
 
+import collections
 import csv
 import datetime
 import hmac
@@ -31,7 +32,7 @@ for _flujo in (sys.stdout, sys.stderr):
         pass
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -600,6 +601,39 @@ def api_mail_borradores(max: int = 8):
     except Exception as e:
         _avisar_mail(e)
         return {"error": _error_mail(e)}
+
+
+@app.get("/api/resumen")
+def api_resumen(formato: str = "txt"):
+    """Resumen agregado: cantidades por estado y por identidad.
+
+    Sin datos de clientes: no lleva caratulas, CUIJ ni ids. Es lo que se puede
+    mandar por correo o archivar en Drive. El CSV completo es de uso interno.
+    """
+    datos = estado.cargar()
+    cedulas = datos.get("cedulas", [])
+    por_estado = collections.Counter((c.get("estado") or "sin estado") for c in cedulas)
+    por_identidad = collections.Counter((c.get("identidad_cadena") or "sin identidad") for c in cedulas)
+    hoy = datetime.date.today().isoformat()
+    if formato == "json":
+        return {
+            "ok": True,
+            "fecha": hoy,
+            "total": len(cedulas),
+            "por_estado": dict(por_estado),
+            "por_identidad": dict(por_identidad),
+        }
+    lineas = [f"Resumen de cedulas - {hoy}", "-" * 40, f"Total: {len(cedulas)}", ""]
+    lineas.append("Por estado:")
+    for k, v in sorted(por_estado.items()):
+        lineas.append(f"  {k}: {v}")
+    lineas.append("")
+    lineas.append("Por identidad:")
+    for k, v in sorted(por_identidad.items()):
+        lineas.append(f"  {k}: {v}")
+    lineas.append("")
+    lineas.append("Sin datos de clientes: solo cantidades.")
+    return PlainTextResponse(chr(10).join(lineas) + chr(10))
 
 
 @app.get("/api/reporte.csv")
